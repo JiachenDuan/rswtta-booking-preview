@@ -7,16 +7,20 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  KeyRound,
   LayoutDashboard,
+  LogIn,
+  LogOut,
   Mail,
   Phone,
   RefreshCcw,
   Table2,
+  UserPlus,
   UserRound,
   UsersRound,
   X
 } from "lucide-react";
-import type { BillNotification, Booking, BookingStatus } from "@/lib/db";
+import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/db";
 
 const coaches = ["Coach A", "Coach B"];
 const calendarTimes = ["4:30 PM", "5:15 PM", "6:00 PM", "7:00 PM"];
@@ -44,9 +48,18 @@ type CalendarSlot = CalendarDay & {
   startsAt: string;
 };
 
+type DemoParentAccount = ParentAccount & {
+  password: string;
+  confirmationCode: string;
+};
+
 const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const demoBookingKey = "rswtta-demo-bookings";
 const demoBillKey = "rswtta-demo-bills";
+const demoParentAccountKey = "rswtta-demo-parent-accounts";
+const parentSessionKey = "rswtta-parent-session";
+const clubSessionKey = "rswtta-club-session";
+const clubPassword = "club123";
 
 const demoBookings: Booking[] = [
   {
@@ -172,6 +185,8 @@ export function ClubApp() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
   const [notice, setNotice] = useState("数据库已连接 / Backend database connected.");
+  const [parentSession, setParentSession] = useState<ParentAccount | null>(null);
+  const [clubAuthenticated, setClubAuthenticated] = useState(false);
   const [studentName, setStudentName] = useState("Ethan Chen");
   const [familyName, setFamilyName] = useState("Chen Family");
   const [studentEmail, setStudentEmail] = useState("parent@example.com");
@@ -194,6 +209,89 @@ export function ClubApp() {
   const completedTotal = parentBookings
     .filter((booking) => booking.status === "coach_confirmed")
     .reduce((sum, booking) => sum + booking.priceCents, 0);
+
+  function applyParentSession(account: ParentAccount) {
+    const family = `${account.studentName.split(" ").slice(-1)[0] || account.studentName} Family`;
+    setParentSession(account);
+    setStudentName(account.studentName);
+    setFamilyName(family);
+    setStudentEmail(account.email);
+    setPhone(account.phone);
+    window.localStorage.setItem(parentSessionKey, JSON.stringify(account));
+  }
+
+  async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
+    if (demoMode) {
+      const accounts = JSON.parse(window.localStorage.getItem(demoParentAccountKey) ?? "[]") as DemoParentAccount[];
+      const confirmationCode = String(Math.floor(100000 + Math.random() * 900000));
+      const account: DemoParentAccount = {
+        id: crypto.randomUUID(),
+        studentName: input.studentName,
+        email: input.email.toLowerCase(),
+        phone: input.phone,
+        password: input.password,
+        confirmationCode,
+        confirmed: false,
+        createdAt: new Date().toISOString()
+      };
+      const next = [account, ...accounts.filter((item) => item.email !== account.email)];
+      window.localStorage.setItem(demoParentAccountKey, JSON.stringify(next));
+      return { confirmationCode };
+    }
+
+    const response = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) throw new Error("Registration failed");
+    return (await response.json()) as { confirmationCode: string };
+  }
+
+  async function confirmParent(email: string, confirmationCode: string) {
+    if (demoMode) {
+      const accounts = JSON.parse(window.localStorage.getItem(demoParentAccountKey) ?? "[]") as DemoParentAccount[];
+      const account = accounts.find((item) => item.email === email.toLowerCase() && item.confirmationCode === confirmationCode);
+      if (!account) throw new Error("Invalid confirmation code");
+      const confirmed = { ...account, confirmed: true };
+      window.localStorage.setItem(
+        demoParentAccountKey,
+        JSON.stringify(accounts.map((item) => (item.id === account.id ? confirmed : item)))
+      );
+      applyParentSession(confirmed);
+      return;
+    }
+
+    const response = await fetch("/api/auth/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, confirmationCode })
+    });
+    if (!response.ok) throw new Error("Confirmation failed");
+    const data = (await response.json()) as { account: ParentAccount };
+    applyParentSession(data.account);
+  }
+
+  async function loginParent(identifier: string, password: string) {
+    if (demoMode) {
+      const accounts = JSON.parse(window.localStorage.getItem(demoParentAccountKey) ?? "[]") as DemoParentAccount[];
+      const account = accounts.find(
+        (item) => (item.email === identifier.toLowerCase() || item.phone === identifier) && item.password === password && item.confirmed
+      );
+      if (!account) throw new Error("Invalid login");
+      applyParentSession(account);
+      return;
+    }
+
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier, password })
+    });
+    if (!response.ok) throw new Error("Login failed");
+    const data = (await response.json()) as { account: ParentAccount };
+    applyParentSession(data.account);
+  }
 
   async function loadAll() {
     if (demoMode) {
@@ -375,6 +473,11 @@ export function ClubApp() {
   }
 
   useEffect(() => {
+    const storedParent = window.localStorage.getItem(parentSessionKey);
+    if (storedParent) {
+      applyParentSession(JSON.parse(storedParent) as ParentAccount);
+    }
+    setClubAuthenticated(window.localStorage.getItem(clubSessionKey) === "true");
     loadAll();
     const interval = window.setInterval(loadAll, 5000);
     return () => window.clearInterval(interval);
@@ -413,13 +516,37 @@ export function ClubApp() {
             <p className="screen-subtitle">
               {mode === "parent"
                 ? "家长端 / Parent App: view club calendar, request class, check confirmed classes"
-                : "俱乐部端 / Club App: confirm requests, mark completed, generate bills"}
+                : "俱乐部端 / Club App: confirm requests and mark classes completed"}
             </p>
           </div>
           <div className="top-actions">
             <button className="icon-button" aria-label="Notifications">
               <Bell size={19} />
             </button>
+            {mode === "parent" && parentSession ? (
+              <button
+                className="filter-button"
+                onClick={() => {
+                  setParentSession(null);
+                  window.localStorage.removeItem(parentSessionKey);
+                }}
+              >
+                <LogOut size={17} />
+                退出 / Logout
+              </button>
+            ) : null}
+            {mode === "club" && clubAuthenticated ? (
+              <button
+                className="filter-button"
+                onClick={() => {
+                  setClubAuthenticated(false);
+                  window.localStorage.removeItem(clubSessionKey);
+                }}
+              >
+                <LogOut size={17} />
+                退出 / Logout
+              </button>
+            ) : null}
             <div className="mode-switch" aria-label="Switch app view">
               <button className={mode === "parent" ? "selected" : ""} onClick={() => setMode("parent")}>
                 家长 Parent
@@ -437,7 +564,13 @@ export function ClubApp() {
           {demoMode ? <span>GitHub preview mode</span> : null}
         </section>
 
-        {mode === "parent" ? (
+        {mode === "parent" && !parentSession ? (
+          <ParentAuth
+            onRegister={registerParent}
+            onConfirm={confirmParent}
+            onLogin={loginParent}
+          />
+        ) : mode === "parent" ? (
           <ParentApp
             bookings={parentBookings}
             allBookings={bookings}
@@ -491,6 +624,13 @@ export function ClubApp() {
               updateBooking(booking.id, "cancelled");
             }}
           />
+        ) : !clubAuthenticated ? (
+          <ClubLogin
+            onLogin={() => {
+              setClubAuthenticated(true);
+              window.localStorage.setItem(clubSessionKey, "true");
+            }}
+          />
         ) : (
           <ClubAppView
             bookings={bookings}
@@ -514,6 +654,214 @@ export function ClubApp() {
         )}
       </section>
     </main>
+  );
+}
+
+function ParentAuth({
+  onRegister,
+  onConfirm,
+  onLogin
+}: {
+  onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<{ confirmationCode: string }>;
+  onConfirm: (email: string, confirmationCode: string) => Promise<void>;
+  onLogin: (identifier: string, password: string) => Promise<void>;
+}) {
+  const [authMode, setAuthMode] = useState<"login" | "register" | "confirm">("register");
+  const [studentName, setStudentName] = useState("Ethan Chen");
+  const [email, setEmail] = useState("parent@example.com");
+  const [phone, setPhone] = useState("(650) 555-0188");
+  const [password, setPassword] = useState("parent123");
+  const [identifier, setIdentifier] = useState("parent@example.com");
+  const [confirmationCode, setConfirmationCode] = useState("");
+  const [pendingEmail, setPendingEmail] = useState("parent@example.com");
+  const [notice, setNotice] = useState("请注册学生账号 / Register student account.");
+  const [busy, setBusy] = useState(false);
+
+  async function handleRegister() {
+    setBusy(true);
+    try {
+      const result = await onRegister({ studentName, email, phone, password });
+      setPendingEmail(email);
+      setConfirmationCode(result.confirmationCode);
+      setAuthMode("confirm");
+      setNotice(`确认码已发送到邮箱 / Confirmation code sent: ${result.confirmationCode}`);
+    } catch {
+      setNotice("注册失败 / Registration failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleConfirm() {
+    setBusy(true);
+    try {
+      await onConfirm(pendingEmail, confirmationCode);
+      setNotice("注册完成 / Registration complete.");
+    } catch {
+      setNotice("确认码不正确 / Invalid confirmation code.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleLogin() {
+    setBusy(true);
+    try {
+      await onLogin(identifier, password);
+      setNotice("登录成功 / Login successful.");
+    } catch {
+      setNotice("登录失败或邮箱未确认 / Login failed or email not confirmed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="auth-panel">
+      <div className="auth-card">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">家长登录 / Parent login</p>
+            <h2>先注册学生账号</h2>
+            <p className="section-subtitle">注册后确认邮箱，登录后查看 club coach calendar。</p>
+          </div>
+        </div>
+
+        <div className="mode-switch auth-switch">
+          <button className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
+            注册 Register
+          </button>
+          <button className={authMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
+            登录 Login
+          </button>
+        </div>
+
+        {authMode === "register" ? (
+          <div className="simple-form auth-form">
+            <label>
+              <span>学生名字 / Student name</span>
+              <div className="input-shell">
+                <UserRound size={18} />
+                <input value={studentName} onChange={(event) => setStudentName(event.target.value)} />
+              </div>
+            </label>
+            <label>
+              <span>邮箱 / Email</span>
+              <div className="input-shell">
+                <Mail size={18} />
+                <input value={email} onChange={(event) => setEmail(event.target.value)} />
+              </div>
+            </label>
+            <label>
+              <span>电话 / Phone</span>
+              <div className="input-shell">
+                <Phone size={18} />
+                <input value={phone} onChange={(event) => setPhone(event.target.value)} />
+              </div>
+            </label>
+            <label>
+              <span>密码 / Password</span>
+              <div className="input-shell">
+                <KeyRound size={18} />
+                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              </div>
+            </label>
+            <button className="primary-button auth-submit" disabled={busy} onClick={handleRegister}>
+              <UserPlus size={18} />
+              注册并发送确认 / Register
+            </button>
+          </div>
+        ) : null}
+
+        {authMode === "confirm" ? (
+          <div className="simple-form auth-form">
+            <label>
+              <span>邮箱 / Email</span>
+              <div className="input-shell">
+                <Mail size={18} />
+                <input value={pendingEmail} onChange={(event) => setPendingEmail(event.target.value)} />
+              </div>
+            </label>
+            <label>
+              <span>确认码 / Confirmation code</span>
+              <div className="input-shell">
+                <KeyRound size={18} />
+                <input value={confirmationCode} onChange={(event) => setConfirmationCode(event.target.value)} />
+              </div>
+            </label>
+            <button className="primary-button auth-submit" disabled={busy} onClick={handleConfirm}>
+              <Check size={18} />
+              完成注册 / Confirm
+            </button>
+          </div>
+        ) : null}
+
+        {authMode === "login" ? (
+          <div className="simple-form auth-form">
+            <label>
+              <span>邮箱或电话 / Email or phone</span>
+              <div className="input-shell">
+                <Mail size={18} />
+                <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} />
+              </div>
+            </label>
+            <label>
+              <span>密码 / Password</span>
+              <div className="input-shell">
+                <KeyRound size={18} />
+                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              </div>
+            </label>
+            <button className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
+              <LogIn size={18} />
+              登录 / Login
+            </button>
+          </div>
+        ) : null}
+
+        <p className="system-note">{notice}</p>
+      </div>
+    </section>
+  );
+}
+
+function ClubLogin({ onLogin }: { onLogin: () => void }) {
+  const [password, setPassword] = useState("club123");
+  const [notice, setNotice] = useState("Club 使用一个管理密码 / One club manager login.");
+
+  return (
+    <section className="auth-panel">
+      <div className="auth-card compact-auth">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">俱乐部登录 / Club login</p>
+            <h2>管理 booking calendar</h2>
+            <p className="section-subtitle">登录后确认 request，并点击 calendar class 完成课程。</p>
+          </div>
+        </div>
+        <label className="solo-label">
+          <span>管理密码 / Manager password</span>
+          <div className="input-shell">
+            <KeyRound size={18} />
+            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+          </div>
+        </label>
+        <button
+          className="primary-button auth-submit"
+          onClick={() => {
+            if (password !== clubPassword) {
+              setNotice("密码不正确 / Wrong password.");
+              return;
+            }
+            onLogin();
+          }}
+        >
+          <LogIn size={18} />
+          登录 Club / Login
+        </button>
+        <p className="system-note">{notice}</p>
+      </div>
+    </section>
   );
 }
 

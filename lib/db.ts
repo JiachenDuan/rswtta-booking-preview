@@ -1,3 +1,4 @@
+import { pbkdf2Sync, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -33,6 +34,15 @@ export type BillNotification = {
   createdAt: string;
 };
 
+export type ParentAccount = {
+  id: string;
+  studentName: string;
+  email: string;
+  phone: string;
+  confirmed: boolean;
+  createdAt: string;
+};
+
 type DbBooking = {
   id: string;
   student_name: string;
@@ -60,6 +70,18 @@ type DbBill = {
   class_count: number;
   amount_cents: number;
   message: string;
+  created_at: string;
+};
+
+type DbParentAccount = {
+  id: string;
+  student_name: string;
+  email: string;
+  phone: string;
+  password_hash: string;
+  password_salt: string;
+  confirmation_code: string;
+  confirmed_at: string | null;
   created_at: string;
 };
 
@@ -120,6 +142,29 @@ function rowToBill(row: DbBill): BillNotification {
   };
 }
 
+function rowToParentAccount(row: DbParentAccount): ParentAccount {
+  return {
+    id: row.id,
+    studentName: row.student_name,
+    email: row.email,
+    phone: row.phone,
+    confirmed: Boolean(row.confirmed_at),
+    createdAt: row.created_at
+  };
+}
+
+function hashPassword(password: string, salt = randomBytes(16).toString("hex")) {
+  const hash = pbkdf2Sync(password, salt, 100000, 32, "sha256").toString("hex");
+  return { salt, hash };
+}
+
+function verifyPassword(password: string, salt: string, storedHash: string) {
+  const { hash } = hashPassword(password, salt);
+  const actual = Buffer.from(hash, "hex");
+  const expected = Buffer.from(storedHash, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 export function getDb() {
   if (db) return db;
 
@@ -155,12 +200,95 @@ export function getDb() {
       message TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS parent_accounts (
+      id TEXT PRIMARY KEY,
+      student_name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      phone TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      confirmation_code TEXT NOT NULL,
+      confirmed_at TEXT,
+      created_at TEXT NOT NULL
+    );
   `);
   rebuildLegacyBookingsTable();
   migrateBookings();
   seedBookingsIfEmpty();
 
   return db;
+}
+
+export function createParentAccount(input: { studentName: string; email: string; phone: string; password: string }) {
+  const existing = getDb()
+    .prepare("SELECT * FROM parent_accounts WHERE lower(email) = lower(?)")
+    .get(input.email) as DbParentAccount | undefined;
+
+  if (existing) {
+    return { account: rowToParentAccount(existing), confirmationCode: existing.confirmation_code, alreadyExists: true };
+  }
+
+  const id = crypto.randomUUID();
+  const createdAt = nowIso();
+  const confirmationCode = String(Math.floor(100000 + Math.random() * 900000));
+  const password = hashPassword(input.password);
+
+  getDb()
+    .prepare(
+      `INSERT INTO parent_accounts (
+        id, student_name, email, phone, password_hash, password_salt,
+        confirmation_code, confirmed_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      input.studentName,
+      input.email.toLowerCase(),
+      input.phone,
+      password.hash,
+      password.salt,
+      confirmationCode,
+      null,
+      createdAt
+    );
+
+  return {
+    account: {
+      id,
+      studentName: input.studentName,
+      email: input.email.toLowerCase(),
+      phone: input.phone,
+      confirmed: false,
+      createdAt
+    },
+    confirmationCode,
+    alreadyExists: false
+  };
+}
+
+export function confirmParentAccount(email: string, confirmationCode: string) {
+  const row = getDb()
+    .prepare("SELECT * FROM parent_accounts WHERE lower(email) = lower(?)")
+    .get(email) as DbParentAccount | undefined;
+
+  if (!row || row.confirmation_code !== confirmationCode) return null;
+
+  getDb()
+    .prepare("UPDATE parent_accounts SET confirmed_at = COALESCE(confirmed_at, ?) WHERE id = ?")
+    .run(nowIso(), row.id);
+
+  const updated = getDb().prepare("SELECT * FROM parent_accounts WHERE id = ?").get(row.id) as DbParentAccount;
+  return rowToParentAccount(updated);
+}
+
+export function loginParentAccount(identifier: string, password: string) {
+  const row = getDb()
+    .prepare("SELECT * FROM parent_accounts WHERE lower(email) = lower(?) OR phone = ?")
+    .get(identifier, identifier) as DbParentAccount | undefined;
+
+  if (!row || !row.confirmed_at || !verifyPassword(password, row.password_salt, row.password_hash)) return null;
+  return rowToParentAccount(row);
 }
 
 export function listBookings() {

@@ -806,6 +806,47 @@ p {
   margin: 10px 0 0;
 }
 
+.auth-panel {
+  display: grid;
+  min-height: 60vh;
+  place-items: center;
+}
+
+.auth-card {
+  width: min(760px, 100%);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+
+.compact-auth {
+  width: min(460px, 100%);
+}
+
+.auth-switch {
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+.auth-form {
+  align-items: end;
+}
+
+.auth-submit {
+  grid-column: 1 / -1;
+}
+
+.solo-label {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .login-block {
   background: linear-gradient(180deg, #ffffff, #f4fbf7);
 }
