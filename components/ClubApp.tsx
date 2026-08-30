@@ -7,6 +7,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Download,
   Eye,
   EyeOff,
   KeyRound,
@@ -59,6 +60,7 @@ type DemoParentAccount = ParentAccount & {
 };
 
 type ClubCalendarTab = (typeof clubCalendarTabs)[number];
+type ExportPeriod = "weekly" | "monthly";
 
 const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const demoBookingKey = "rswtta-demo-bookings";
@@ -134,6 +136,23 @@ function coachTabText(tab: ClubCalendarTab) {
   return tab === "Combined" ? "全部 / Combined" : tab.replace("Coach ", "");
 }
 
+function csvValue(value: string | number) {
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function downloadTextFile(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function addDays(date: Date, days: number) {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
@@ -153,6 +172,20 @@ function startOfWeek(date: Date) {
   next.setDate(next.getDate() + offset);
   next.setHours(0, 0, 0, 0);
   return next;
+}
+
+function endOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
+  return next;
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function endOfMonth(date: Date) {
+  return endOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0));
 }
 
 function dateLabel(date: Date) {
@@ -1272,8 +1305,101 @@ function ClubAppView({
   onApproveCancel: (booking: Booking) => void;
   onCoachComplete: (booking: Booking) => void;
 }) {
+  const [exportPeriod, setExportPeriod] = useState<ExportPeriod>("weekly");
   const requested = bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
   const confirmed = bookings.filter((booking) => booking.status === "club_confirmed");
+
+  function exportCompletedClassReport() {
+    const anchorDate = selectedSlot.date;
+    const periodStart = exportPeriod === "weekly" ? startOfWeek(anchorDate) : startOfMonth(anchorDate);
+    const periodEnd = exportPeriod === "weekly" ? endOfDay(addDays(periodStart, 6)) : endOfMonth(anchorDate);
+    const periodTitle =
+      exportPeriod === "weekly"
+        ? `${dateLabel(periodStart)} - ${dateLabel(periodEnd)}`
+        : new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(anchorDate);
+
+    const inPeriod = bookings.filter((booking) => {
+      const startsAt = new Date(booking.startsAt);
+      return startsAt >= periodStart && startsAt <= periodEnd && booking.status !== "cancelled";
+    });
+
+    const grouped = new Map<
+      string,
+      {
+        studentName: string;
+        email: string;
+        phone: string;
+        completedCount: number;
+        notCoachConfirmedCount: number;
+        completedAmountCents: number;
+      }
+    >();
+
+    for (const booking of inPeriod) {
+      const key = `${booking.studentName}|${booking.studentEmail}|${booking.phone}`;
+      const existing =
+        grouped.get(key) ??
+        {
+          studentName: booking.studentName,
+          email: booking.studentEmail,
+          phone: booking.phone,
+          completedCount: 0,
+          notCoachConfirmedCount: 0,
+          completedAmountCents: 0
+        };
+
+      if (booking.status === "coach_confirmed") {
+        existing.completedCount += 1;
+        existing.completedAmountCents += booking.priceCents;
+      } else {
+        existing.notCoachConfirmedCount += 1;
+      }
+
+      grouped.set(key, existing);
+    }
+
+    const summaryRows = [
+      ["Student", "Email", "Phone", "Completed classes", "Not coach final confirmed", "Completed bill amount"],
+      ...[...grouped.values()].map((row) => [
+        row.studentName,
+        row.email,
+        row.phone,
+        row.completedCount,
+        row.notCoachConfirmedCount,
+        dollars(row.completedAmountCents)
+      ])
+    ];
+
+    const detailRows = [
+      ["Date", "Time", "Student", "Coach", "Status", "Price", "Parent note"],
+      ...inPeriod
+        .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
+        .map((booking) => [
+          booking.dateLabel,
+          booking.timeLabel,
+          booking.studentName,
+          booking.assignedCoach,
+          statusText(booking.status),
+          dollars(booking.priceCents),
+          booking.parentNote
+        ])
+    ];
+
+    const csv = [
+      ["RSWTTA class report", periodTitle],
+      ["Report type", exportPeriod],
+      [],
+      ["Summary by student"],
+      ...summaryRows,
+      [],
+      ["Class details"],
+      ...detailRows
+    ]
+      .map((row) => row.map((cell) => csvValue(cell)).join(","))
+      .join("\n");
+
+    downloadTextFile(`rswtta-${exportPeriod}-classes-${periodStart.toISOString().slice(0, 10)}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
+  }
 
   return (
     <section className="calendar-first">
@@ -1316,6 +1442,30 @@ function ClubAppView({
       </section>
 
       <section className="support-grid">
+        <section className="section-block">
+          <div className="section-head">
+            <div>
+              <p className="eyebrow">下载表格 / Export</p>
+              <h2>下载 completed class 汇总</h2>
+              <p className="section-subtitle">Weekly or monthly CSV for Excel / 按学生统计完成课和未最终确认课</p>
+            </div>
+          </div>
+          <div className="export-panel">
+            <div className="export-toggle" aria-label="Report period">
+              <button className={exportPeriod === "weekly" ? "selected" : ""} onClick={() => setExportPeriod("weekly")}>
+                每周 / Weekly
+              </button>
+              <button className={exportPeriod === "monthly" ? "selected" : ""} onClick={() => setExportPeriod("monthly")}>
+                每月 / Monthly
+              </button>
+            </div>
+            <button className="primary-button wide-button" onClick={exportCompletedClassReport}>
+              <Download size={18} />
+              下载 Excel CSV / Download
+            </button>
+          </div>
+        </section>
+
         <section className="section-block">
           <div className="section-head">
             <div>
