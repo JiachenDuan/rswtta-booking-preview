@@ -482,7 +482,7 @@ p {
 
 .support-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 0.76fr) minmax(0, 1fr) minmax(320px, 0.76fr);
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 18px;
   align-items: start;
 }
@@ -951,6 +951,14 @@ p {
   box-shadow: inset 0 0 0 2px #1d5b46;
 }
 
+.calendar-cell.actionable {
+  background: #f6fbff;
+}
+
+.calendar-cell.actionable:hover {
+  box-shadow: inset 0 0 0 2px #1d4f91;
+}
+
 .open-slot,
 .selected-label,
 .calendar-booking {
@@ -1006,6 +1014,18 @@ p {
 .calendar-booking em {
   margin-top: 2px;
   font-style: normal;
+}
+
+.calendar-booking b {
+  display: block;
+  margin-top: 6px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  background: #0d1d18;
+  color: #fff;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  text-align: center;
 }
 
 .request-stack {

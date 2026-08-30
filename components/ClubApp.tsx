@@ -433,7 +433,7 @@ export function ClubApp() {
 
         <section className="system-banner">
           <strong>流程 / Journey</strong>
-          <span>家长请求 → 俱乐部确认 → 教练确认完成 → 生成账单提醒</span>
+          <span>家长请求 → 俱乐部确认 → 教练点击课程完成</span>
           {demoMode ? <span>GitHub preview mode</span> : null}
         </section>
 
@@ -499,7 +499,6 @@ export function ClubApp() {
             weekLabel={weekLabel(calendarDays)}
             canGoPrevious={canGoPrevious}
             canGoNext={canGoNext}
-            bills={bills}
             notice={notice}
             requestedCoach={requestedCoach}
             onSlotChange={setSelectedSlot}
@@ -511,7 +510,6 @@ export function ClubApp() {
             }}
             onConfirm={(booking, coach) => updateBooking(booking.id, "club_confirmed", coach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
-            onGenerateBills={generateBills}
           />
         )}
       </section>
@@ -755,13 +753,15 @@ function ClubCalendar({
   selectedSlot,
   requestedCoach,
   calendarDays,
-  onSlotChange
+  onSlotChange,
+  onCoachComplete
 }: {
   bookings: Booking[];
   selectedSlot: CalendarSlot;
   requestedCoach: string;
   calendarDays: CalendarDay[];
   onSlotChange: (value: CalendarSlot) => void;
+  onCoachComplete?: (booking: Booking) => void;
 }) {
   return (
     <div className="week-calendar" aria-label="Club calendar view">
@@ -781,13 +781,25 @@ function ClubCalendar({
           {calendarDays.map((day) => {
             const startsAt = makeStartsAt(day.date, timeLabel);
             const slotBookings = bookings.filter((booking) => booking.startsAt === startsAt && booking.status !== "cancelled");
+            const completeTarget = slotBookings.find((booking) => booking.status === "club_confirmed");
             const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlot.startsAt === startsAt;
+            const actionable = Boolean(onCoachComplete && completeTarget);
             return (
               <button
-                className={selected ? "calendar-cell selected" : "calendar-cell"}
+                className={[
+                  "calendar-cell",
+                  selected ? "selected" : "",
+                  actionable ? "actionable" : ""
+                ].filter(Boolean).join(" ")}
                 key={startsAt}
-                onClick={() => onSlotChange(slot)}
+                onClick={() => {
+                  if (onCoachComplete && completeTarget) {
+                    onCoachComplete(completeTarget);
+                    return;
+                  }
+                  onSlotChange(slot);
+                }}
               >
                 {slotBookings.length === 0 ? (
                   <span className="open-slot">可预约<br />Available</span>
@@ -797,6 +809,7 @@ function ClubCalendar({
                       <strong>{booking.assignedCoach}</strong>
                       <small>{booking.studentName}</small>
                       <em>{statusText(booking.status)}</em>
+                      {onCoachComplete && booking.status === "club_confirmed" ? <b>点击完成 / Click complete</b> : null}
                     </span>
                   ))
                 )}
@@ -817,7 +830,6 @@ function ClubAppView({
   weekLabel,
   canGoPrevious,
   canGoNext,
-  bills,
   notice,
   requestedCoach,
   onSlotChange,
@@ -825,8 +837,7 @@ function ClubAppView({
   onNextWeek,
   onToday,
   onConfirm,
-  onCoachComplete,
-  onGenerateBills
+  onCoachComplete
 }: {
   bookings: Booking[];
   selectedSlot: CalendarSlot;
@@ -834,7 +845,6 @@ function ClubAppView({
   weekLabel: string;
   canGoPrevious: boolean;
   canGoNext: boolean;
-  bills: BillNotification[];
   notice: string;
   requestedCoach: string;
   onSlotChange: (value: CalendarSlot) => void;
@@ -843,11 +853,9 @@ function ClubAppView({
   onToday: () => void;
   onConfirm: (booking: Booking, coach: string) => void;
   onCoachComplete: (booking: Booking) => void;
-  onGenerateBills: () => void;
 }) {
   const requested = bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
   const confirmed = bookings.filter((booking) => booking.status === "club_confirmed");
-  const completed = bookings.filter((booking) => booking.status === "coach_confirmed");
 
   return (
     <section className="calendar-first">
@@ -856,7 +864,7 @@ function ClubAppView({
           <div>
             <p className="eyebrow">俱乐部日历 / Club calendar</p>
             <h2>确认请求并完成课程</h2>
-            <p className="section-subtitle">俱乐部端 / Club App: 前后三个月都可以查看和排课。</p>
+            <p className="section-subtitle">俱乐部端 / Club App: 点击已确认课程即可标记完成。</p>
           </div>
           <span className="status-chip">{requested.length} 待确认 / pending</span>
         </div>
@@ -875,6 +883,7 @@ function ClubAppView({
             requestedCoach={requestedCoach}
             calendarDays={calendarDays}
             onSlotChange={onSlotChange}
+            onCoachComplete={onCoachComplete}
           />
         </div>
         <p className="system-note">{notice}</p>
@@ -919,8 +928,8 @@ function ClubAppView({
           <div className="section-head">
             <div>
               <p className="eyebrow">教练完成 / Coach complete</p>
-              <h2>确认课程完成</h2>
-              <p className="section-subtitle">Only coach-confirmed classes count toward billing / 教练确认完成后才计费</p>
+              <h2>从日历点击完成</h2>
+              <p className="section-subtitle">Confirmed classes can be completed directly from the calendar / 已确认课程可直接在日历完成</p>
             </div>
             <span className="status-chip good">{confirmed.length} ready</span>
           </div>
@@ -937,44 +946,6 @@ function ClubAppView({
                   <Check size={18} />
                   完成 / Complete
                 </button>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="section-block">
-          <div className="section-head">
-            <div>
-              <p className="eyebrow">双周账单 / Billing</p>
-              <h2>生成学生账单提醒</h2>
-              <p className="section-subtitle">Bill from coach-completed classes / 根据教练确认完成课程生成</p>
-            </div>
-            <button className="filter-button" onClick={onGenerateBills}>
-              <RefreshCcw size={17} />
-              生成 / Generate
-            </button>
-          </div>
-          <div className="mini-ledger">
-            <div>
-              <span>已完成 / Completed</span>
-              <strong>{completed.length}</strong>
-            </div>
-            <div>
-              <span>待计费 / To bill</span>
-              <strong>{dollars(completed.reduce((sum, booking) => sum + booking.priceCents, 0))}</strong>
-            </div>
-          </div>
-          <div className="bill-list">
-            {bills.map((bill) => (
-              <article className="bill-row" key={bill.id}>
-                <div>
-                  <h3>{bill.studentName}</h3>
-                  <p>{bill.message}</p>
-                </div>
-                <div>
-                  <strong>{dollars(bill.amountCents)}</strong>
-                  <span>{bill.classCount} classes</span>
-                </div>
               </article>
             ))}
           </div>
