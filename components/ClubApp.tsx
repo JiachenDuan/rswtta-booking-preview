@@ -23,7 +23,8 @@ import {
 } from "lucide-react";
 import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/db";
 
-const coaches = ["Coach A", "Coach B"];
+const coaches = ["Coach A", "Coach B", "Coach Tian Ye", "Coach Jorden"] as const;
+const clubCalendarTabs = ["Combined", ...coaches] as const;
 const calendarTimes = ["4:30 PM", "5:15 PM", "6:00 PM", "7:00 PM"];
 const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const dayNamesZh = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -56,6 +57,8 @@ type DemoParentAccount = ParentAccount & {
   password: string;
   confirmationCode: string;
 };
+
+type ClubCalendarTab = (typeof clubCalendarTabs)[number];
 
 const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const demoBookingKey = "rswtta-demo-bookings";
@@ -117,6 +120,18 @@ function canParentRequestChange(booking: Booking) {
 function isCancellationRequest(booking: Booking) {
   const note = booking.parentNote.toLowerCase();
   return booking.status === "change_requested" && (note.includes("cancel") || booking.parentNote.includes("取消"));
+}
+
+function lessonProgram(coach: string) {
+  return coach === "Coach A" || coach === "Coach Tian Ye" ? "Private lesson" : "Group lesson";
+}
+
+function lessonPriceCents(coach: string) {
+  return coach === "Coach A" || coach === "Coach Tian Ye" ? 15000 : 7500;
+}
+
+function coachTabText(tab: ClubCalendarTab) {
+  return tab === "Combined" ? "全部 / Combined" : tab.replace("Coach ", "");
 }
 
 function addDays(date: Date, days: number) {
@@ -218,7 +233,8 @@ export function ClubApp() {
   const [familyName, setFamilyName] = useState("Chen Family");
   const [studentEmail, setStudentEmail] = useState("parent@example.com");
   const [phone, setPhone] = useState("(650) 555-0188");
-  const [requestedCoach, setRequestedCoach] = useState(coaches[0]);
+  const [requestedCoach, setRequestedCoach] = useState<string>(coaches[0]);
+  const [clubCalendarTab, setClubCalendarTab] = useState<ClubCalendarTab>("Combined");
   const [visibleWeekStart, setVisibleWeekStart] = useState(initialWeekStart);
   const [selectedSlot, setSelectedSlot] = useState<CalendarSlot>(initialCalendarSlot);
   const [recurring, setRecurring] = useState(false);
@@ -363,11 +379,11 @@ export function ClubApp() {
           phone,
           requestedCoach,
           assignedCoach: requestedCoach,
-          program: requestedCoach === "Coach A" ? "Private lesson" : "Group lesson",
+          program: lessonProgram(requestedCoach),
           dateLabel: slot.dateLabel,
           timeLabel: slot.timeLabel,
           startsAt: slot.startsAt,
-          priceCents: requestedCoach === "Coach A" ? 15000 : 7500,
+          priceCents: lessonPriceCents(requestedCoach),
           status: "requested",
           parentNote: recurring ? `每周重复预约 / Weekly recurring request. ${parentNote}` : parentNote,
           createdAt,
@@ -392,11 +408,11 @@ export function ClubApp() {
               studentEmail,
               phone,
               requestedCoach,
-              program: requestedCoach === "Coach A" ? "Private lesson" : "Group lesson",
+              program: lessonProgram(requestedCoach),
               dateLabel: slot.dateLabel,
               timeLabel: slot.timeLabel,
               startsAt: slot.startsAt,
-              priceCents: requestedCoach === "Coach A" ? 15000 : 7500,
+              priceCents: lessonPriceCents(requestedCoach),
               parentNote: recurring ? `每周重复预约 / Weekly recurring request. ${parentNote}` : parentNote
             })
           })
@@ -671,7 +687,9 @@ export function ClubApp() {
             canGoNext={canGoNext}
             notice={notice}
             requestedCoach={requestedCoach}
+            activeCalendarTab={clubCalendarTab}
             onSlotChange={setSelectedSlot}
+            onCalendarTabChange={setClubCalendarTab}
             onPreviousWeek={() => setVisibleWeekStart((week) => addDays(week, -7))}
             onNextWeek={() => setVisibleWeekStart((week) => addDays(week, 7))}
             onToday={() => {
@@ -1135,6 +1153,7 @@ function ClubCalendar({
   bookings,
   selectedSlot,
   requestedCoach,
+  visibleCoachTab = "Combined",
   calendarDays,
   onSlotChange,
   onCoachComplete
@@ -1142,6 +1161,7 @@ function ClubCalendar({
   bookings: Booking[];
   selectedSlot: CalendarSlot;
   requestedCoach: string;
+  visibleCoachTab?: ClubCalendarTab;
   calendarDays: CalendarDay[];
   onSlotChange: (value: CalendarSlot) => void;
   onCoachComplete?: (booking: Booking) => void;
@@ -1164,7 +1184,12 @@ function ClubCalendar({
           </div>
           {calendarDays.map((day) => {
             const startsAt = makeStartsAt(day.date, timeLabel);
-            const slotBookings = bookings.filter((booking) => booking.startsAt === startsAt && booking.status !== "cancelled");
+            const slotBookings = bookings.filter((booking) => {
+              const matchesSlot = booking.startsAt === startsAt && booking.status !== "cancelled";
+              const matchesCoach =
+                visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
+              return matchesSlot && matchesCoach;
+            });
             const completeTarget = slotBookings.find((booking) => booking.status === "club_confirmed");
             const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlot.startsAt === startsAt;
@@ -1219,7 +1244,9 @@ function ClubAppView({
   canGoNext,
   notice,
   requestedCoach,
+  activeCalendarTab,
   onSlotChange,
+  onCalendarTabChange,
   onPreviousWeek,
   onNextWeek,
   onToday,
@@ -1235,7 +1262,9 @@ function ClubAppView({
   canGoNext: boolean;
   notice: string;
   requestedCoach: string;
+  activeCalendarTab: ClubCalendarTab;
   onSlotChange: (value: CalendarSlot) => void;
+  onCalendarTabChange: (value: ClubCalendarTab) => void;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
@@ -1265,11 +1294,19 @@ function ClubAppView({
           onNextWeek={onNextWeek}
           onToday={onToday}
         />
+        <div className="calendar-tabs" aria-label="Coach calendar views">
+          {clubCalendarTabs.map((tab) => (
+            <button className={activeCalendarTab === tab ? "selected" : ""} key={tab} onClick={() => onCalendarTabChange(tab)}>
+              {coachTabText(tab)}
+            </button>
+          ))}
+        </div>
         <div className="calendar-board">
           <ClubCalendar
             bookings={bookings}
             selectedSlot={selectedSlot}
             requestedCoach={requestedCoach}
+            visibleCoachTab={activeCalendarTab}
             calendarDays={calendarDays}
             onSlotChange={onSlotChange}
             onCoachComplete={onCoachComplete}
@@ -1305,14 +1342,12 @@ function ClubAppView({
                   </button>
                 ) : (
                   <div className="confirm-actions">
-                    <button className="accept" onClick={() => onConfirm(booking, "Coach A")}>
-                      <Check size={17} />
-                      Coach A
-                    </button>
-                    <button className="accept" onClick={() => onConfirm(booking, "Coach B")}>
-                      <Check size={17} />
-                      Coach B
-                    </button>
+                    {coaches.map((coach) => (
+                      <button className="accept" key={coach} onClick={() => onConfirm(booking, coach)}>
+                        <Check size={17} />
+                        {coach.replace("Coach ", "")}
+                      </button>
+                    ))}
                   </div>
                 )}
               </article>
