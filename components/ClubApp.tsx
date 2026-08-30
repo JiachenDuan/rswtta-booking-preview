@@ -29,8 +29,11 @@ import {
   listBookings,
   loginParentAccount,
   registerParentAccount,
+  resetPasswordForEmail,
+  updateUserPassword,
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
+import { supabase } from "@/lib/supabase";
 import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const coaches = ["Coach A", "Coach B", "Coach Tian Ye", "Coach Jorden"] as const;
@@ -65,6 +68,7 @@ type CalendarSlot = CalendarDay & {
 
 type ClubCalendarTab = (typeof clubCalendarTabs)[number];
 type ExportPeriod = "weekly" | "monthly";
+type AuthMode = "login" | "register" | "forgot" | "updatePassword";
 
 const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
@@ -239,7 +243,7 @@ export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
-  const [notice, setNotice] = useState("数据库已连接 / Backend database connected.");
+  const [notice, setNotice] = useState("");
   const [parentSession, setParentSession] = useState<ParentAccount | null>(null);
   const [clubAuthenticated, setClubAuthenticated] = useState(false);
   const [studentName, setStudentName] = useState("Ethan Chen");
@@ -284,6 +288,14 @@ export function ClubApp() {
   async function loginParent(identifier: string, password: string) {
     const account = await loginParentAccount(identifier, password);
     applyParentSession(account);
+  }
+
+  async function requestPasswordReset(email: string) {
+    await resetPasswordForEmail(email);
+  }
+
+  async function updatePassword(password: string) {
+    await updateUserPassword(password);
   }
 
   async function loginUnified(identifier: string, password: string) {
@@ -348,7 +360,6 @@ export function ClubApp() {
 
       await loadAll();
       setNotice(`已保存 ${slots.length} 个请求 / Saved ${slots.length} request${slots.length === 1 ? "" : "s"}.`);
-      setMode("club");
     } catch {
       setNotice("无法保存预约请求 / Could not save booking request.");
     } finally {
@@ -455,13 +466,9 @@ export function ClubApp() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">核心预约流程 / Core booking flow</p>
+            <p className="eyebrow">Rising Stars World</p>
             <h1>{mode === "parent" ? "家长预约课程" : "俱乐部确认课程"}</h1>
-            <p className="screen-subtitle">
-              {mode === "parent"
-                ? "家长端 / Parent App: view club calendar, request class, check confirmed classes"
-                : "俱乐部端 / Club App: confirm requests and mark classes completed"}
-            </p>
+            <p className="screen-subtitle">{mode === "parent" ? "家长预约 / Parent booking" : "俱乐部管理 / Club dashboard"}</p>
           </div>
           <div className="top-actions">
             <button className="icon-button" aria-label="Notifications">
@@ -502,18 +509,14 @@ export function ClubApp() {
           </div>
         </header>
 
-        <section className="system-banner">
-          <strong>状态 / Status</strong>
-          <span>家长请求 → 俱乐部确认 → 教练完成</span>
-          <span>真实数据库 / Live database</span>
-        </section>
-
         {mode === "parent" && !parentSession ? (
           <UnifiedAuth
             initialAuthMode="register"
             intent="parent"
             onRegister={registerParent}
             onLogin={loginUnified}
+            onRequestPasswordReset={requestPasswordReset}
+            onUpdatePassword={updatePassword}
           />
         ) : mode === "parent" && parentSession ? (
           <ParentApp
@@ -579,6 +582,8 @@ export function ClubApp() {
             intent="club"
             onRegister={registerParent}
             onLogin={loginUnified}
+            onRequestPasswordReset={requestPasswordReset}
+            onUpdatePassword={updatePassword}
           />
         ) : (
           <ClubAppView
@@ -613,34 +618,51 @@ function UnifiedAuth({
   initialAuthMode,
   intent,
   onRegister,
-  onLogin
+  onLogin,
+  onRequestPasswordReset,
+  onUpdatePassword
 }: {
   initialAuthMode: "login" | "register";
   intent: "parent" | "club";
   onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogin: (identifier: string, password: string) => Promise<void>;
+  onRequestPasswordReset: (email: string) => Promise<void>;
+  onUpdatePassword: (password: string) => Promise<void>;
 }) {
-  const [authMode, setAuthMode] = useState<"login" | "register">(initialAuthMode);
+  const [authMode, setAuthMode] = useState<AuthMode>(initialAuthMode);
   const [studentName, setStudentName] = useState("Ethan Chen");
   const [email, setEmail] = useState("parent@example.com");
   const [phone, setPhone] = useState("(650) 555-0188");
   const [password, setPassword] = useState(intent === "club" ? clubPassword : "parent123");
+  const [newPassword, setNewPassword] = useState("");
   const [identifier, setIdentifier] = useState(intent === "club" ? clubEmail : "parent@example.com");
   const [notice, setNotice] = useState(
     intent === "club"
-      ? "输入俱乐部邮箱和密码后会直接进入 Club 管理界面 / Club credentials open the club app automatically."
-      : "家长注册学生账号；俱乐部也用这个登录页 / Parents register student account; club uses the same login page."
+      ? "俱乐部登录会直接进入管理界面 / Club login opens the dashboard."
+      : "家长注册或登录；俱乐部也从这里登录 / Parent and club use the same login."
   );
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    setAuthMode(initialAuthMode);
+    const isRecoveryLink =
+      window.location.hash.includes("type=recovery") || window.location.search.includes("type=recovery");
+    setAuthMode(isRecoveryLink && intent === "parent" ? "updatePassword" : initialAuthMode);
     if (intent === "club") {
       setIdentifier(clubEmail);
       setPassword(clubPassword);
-      setNotice("输入俱乐部邮箱和密码后会直接进入 Club 管理界面 / Club credentials open the club app automatically.");
+      setNotice("俱乐部登录会直接进入管理界面 / Club login opens the dashboard.");
     }
   }, [initialAuthMode, intent]);
+
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY" && intent === "parent") {
+        setAuthMode("updatePassword");
+        setNotice("请输入新密码 / Enter a new password.");
+      }
+    });
+    return () => data.subscription.unsubscribe();
+  }, [intent]);
 
   async function handleRegister() {
     setBusy(true);
@@ -666,6 +688,33 @@ function UnifiedAuth({
     }
   }
 
+  async function handleResetRequest() {
+    setBusy(true);
+    try {
+      await onRequestPasswordReset(email);
+      setNotice("重置邮件已发送 / Password reset email sent. Check the Supabase email.");
+    } catch {
+      setNotice("无法发送重置邮件 / Could not send password reset email.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUpdatePassword() {
+    setBusy(true);
+    try {
+      await onUpdatePassword(newPassword);
+      setNewPassword("");
+      setAuthMode("login");
+      setNotice("密码已更新 / Password updated. You can log in with the new password.");
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } catch {
+      setNotice("无法更新密码 / Could not update password. Open the latest reset link and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="auth-panel">
       <div className="auth-card">
@@ -676,7 +725,7 @@ function UnifiedAuth({
             <p className="section-subtitle">
               {intent === "club"
                 ? "俱乐部输入管理邮箱后自动进入 Club 界面 / Club manager login opens the club app."
-                : "家长注册学生账号；俱乐部用同一个登录页 / One login page for parent and club."}
+                : "家长和俱乐部共用这个登录页 / One login page for parent and club."}
             </p>
           </div>
         </div>
@@ -743,11 +792,50 @@ function UnifiedAuth({
               <LogIn size={18} />
               登录 / Login
             </button>
+            {intent === "parent" ? (
+              <button type="button" className="text-button auth-submit" disabled={busy} onClick={() => setAuthMode("forgot")}>
+                忘记密码？/ Forgot password?
+              </button>
+            ) : null}
             <p className="helper-line">
               {intent === "club"
-                ? "使用 rswtta@gmail.com / rswtta888 会直接进入 Club App。"
-                : "Club 使用管理邮箱登录 / Club uses manager email login."}
+                ? "登录后进入 Club App。"
+                : "俱乐部使用管理邮箱登录 / Club uses the manager email."}
             </p>
+          </div>
+        ) : null}
+
+        {authMode === "forgot" && intent === "parent" ? (
+          <div className="simple-form auth-form">
+            <label>
+              <span>邮箱 / Email</span>
+              <div className="input-shell">
+                <Mail size={18} />
+                <input value={email} onChange={(event) => setEmail(event.target.value)} />
+              </div>
+            </label>
+            <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleResetRequest}>
+              <Mail size={18} />
+              发送重置邮件 / Send reset email
+            </button>
+            <button type="button" className="text-button auth-submit" disabled={busy} onClick={() => setAuthMode("login")}>
+              返回登录 / Back to login
+            </button>
+            <p className="helper-line">MVP 可以使用 Supabase 默认邮件；生产环境需要在 Supabase Auth 配置 custom SMTP。</p>
+          </div>
+        ) : null}
+
+        {authMode === "updatePassword" && intent === "parent" ? (
+          <div className="simple-form auth-form">
+            <label>
+              <span>新密码 / New password</span>
+              <PasswordField value={newPassword} onChange={setNewPassword} />
+            </label>
+            <button type="button" className="primary-button auth-submit" disabled={busy || newPassword.length < 6} onClick={handleUpdatePassword}>
+              <KeyRound size={18} />
+              更新密码 / Update password
+            </button>
+            <p className="helper-line">请从最新的 Supabase 重置邮件打开这个页面 / Open this page from the latest Supabase reset email.</p>
           </div>
         ) : null}
 

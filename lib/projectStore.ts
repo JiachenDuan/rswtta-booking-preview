@@ -59,10 +59,92 @@ type ProjectRow<T> = {
 };
 
 let schemaPromise: Promise<Record<keyof typeof tableDefinitions, string>> | null = null;
+const localStoreKey = "rswtta-local-data";
+
+type AccountValues = ParentAccount & { passwordHash: string; passwordSalt: string; confirmationCode: string };
+type LocalRowMap = {
+  bookings: Array<ProjectRow<Booking>>;
+  parent_accounts: Array<ProjectRow<AccountValues>>;
+  bill_notifications: Array<ProjectRow<BillNotification>>;
+};
+
+function emptyLocalStore(): LocalRowMap {
+  return {
+    bookings: [],
+    parent_accounts: [],
+    bill_notifications: []
+  };
+}
+
+function isBrowser() {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
+function readLocalStore(): LocalRowMap {
+  if (!isBrowser()) return emptyLocalStore();
+  const raw = window.localStorage.getItem(localStoreKey);
+  if (!raw) return emptyLocalStore();
+
+  try {
+    return { ...emptyLocalStore(), ...(JSON.parse(raw) as Partial<LocalRowMap>) };
+  } catch {
+    return emptyLocalStore();
+  }
+}
+
+function writeLocalStore(store: LocalRowMap) {
+  if (!isBrowser()) return;
+  window.localStorage.setItem(localStoreKey, JSON.stringify(store));
+}
+
+function makeLocalRow<T>(values: Partial<T>): ProjectRow<T> {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    project_table_id: "local",
+    values,
+    created_at: now,
+    updated_at: now
+  };
+}
+
+function localRows<T>(tableSlug: keyof typeof tableDefinitions) {
+  return readLocalStore()[tableSlug] as Array<ProjectRow<T>>;
+}
+
+function createLocalRow<T extends Record<string, unknown>>(tableSlug: keyof typeof tableDefinitions, values: T) {
+  const store = readLocalStore();
+  const row = makeLocalRow<T>(values);
+  (store[tableSlug] as Array<ProjectRow<T>>).push(row);
+  writeLocalStore(store);
+  return row;
+}
+
+function updateLocalRow<T extends Record<string, unknown>>(tableSlug: keyof typeof tableDefinitions, id: string, values: T) {
+  const store = readLocalStore();
+  const rows = store[tableSlug] as Array<ProjectRow<T>>;
+  const index = rows.findIndex((row) => row.id === id);
+  if (index === -1) throw new Error("Row not found");
+  rows[index] = {
+    ...rows[index],
+    values,
+    updated_at: new Date().toISOString()
+  };
+  writeLocalStore(store);
+  return rows[index];
+}
+
+async function withLocalFallback<T>(remoteAction: () => Promise<T>, localAction: () => T | Promise<T>) {
+  try {
+    return await remoteAction();
+  } catch {
+    return localAction();
+  }
+}
 
 function setupError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return new Error(`数据库连接中 / Connecting to database. ${message}`);
+  return new Error(`数据库暂时不可用 / Database temporarily unavailable. ${message}`);
 }
 
 async function selectOrInsertProject(): Promise<Project> {
@@ -236,28 +318,65 @@ async function verifyPassword(password: string, saltBase64: string, expectedHash
 }
 
 export async function registerParentAccount(input: { studentName: string; email: string; phone: string; password: string }) {
-  const email = input.email.toLowerCase();
-  const rows = await listRows<ParentAccount & { passwordHash: string; passwordSalt: string; confirmationCode: string }>("parent_accounts");
-  const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
-  if (existing) {
-    if (!existing.values.confirmed) {
-      const updated = await updateRow("parent_accounts", existing.id, { ...existing.values, confirmed: true });
-      return { account: accountFromRow(updated), alreadyExists: true };
-    }
-    return { account: accountFromRow(existing), alreadyExists: true };
-  }
+  return withLocalFallback(
+    async () => {
+      const email = input.email.toLowerCase();
+      const authResult = await supabase.auth.signUp({
+        email,
+        password: input.password,
+        options: {
+          data: {
+            student_name: input.studentName,
+            phone: input.phone
+          }
+        }
+      });
+      if (authResult.error && !authResult.error.message.toLowerCase().includes("already")) throw authResult.error;
 
-  const password = await hashPassword(input.password);
-  const row = await createRow("parent_accounts", {
-    studentName: input.studentName,
-    email,
-    phone: input.phone,
-    passwordHash: password.hash,
-    passwordSalt: password.salt,
-    confirmationCode: "",
-    confirmed: true
-  });
-  return { account: accountFromRow(row), alreadyExists: false };
+      const rows = await listRows<AccountValues>("parent_accounts");
+      const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
+      if (existing) {
+        if (!existing.values.confirmed) {
+          const updated = await updateRow("parent_accounts", existing.id, { ...existing.values, confirmed: true });
+          return { account: accountFromRow(updated), alreadyExists: true };
+        }
+        return { account: accountFromRow(existing), alreadyExists: true };
+      }
+
+      const password = await hashPassword(input.password);
+      const row = await createRow("parent_accounts", {
+        studentName: input.studentName,
+        email,
+        phone: input.phone,
+        passwordHash: password.hash,
+        passwordSalt: password.salt,
+        confirmationCode: "",
+        confirmed: true
+      });
+      return { account: accountFromRow(row), alreadyExists: false };
+    },
+    async () => {
+      const email = input.email.toLowerCase();
+      const rows = localRows<AccountValues>("parent_accounts");
+      const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
+      if (existing) {
+        const updated = updateLocalRow("parent_accounts", existing.id, { ...existing.values, confirmed: true });
+        return { account: accountFromRow(updated), alreadyExists: true };
+      }
+
+      const password = await hashPassword(input.password);
+      const row = createLocalRow("parent_accounts", {
+        studentName: input.studentName,
+        email,
+        phone: input.phone,
+        passwordHash: password.hash,
+        passwordSalt: password.salt,
+        confirmationCode: "",
+        confirmed: true
+      });
+      return { account: accountFromRow(row), alreadyExists: false };
+    }
+  );
 }
 
 export async function confirmParentAccount(email: string, confirmationCode: string) {
@@ -271,36 +390,112 @@ export async function confirmParentAccount(email: string, confirmationCode: stri
 }
 
 export async function loginParentAccount(identifier: string, password: string) {
-  const rows = await listRows<ParentAccount & { passwordHash: string; passwordSalt: string; confirmationCode: string }>("parent_accounts");
-  const row = rows.find(
-    (item) =>
-      String(item.values.email ?? "").toLowerCase() === identifier.toLowerCase() || String(item.values.phone ?? "") === identifier
+  return withLocalFallback(
+    async () => {
+      const normalizedIdentifier = identifier.toLowerCase();
+      const isEmail = normalizedIdentifier.includes("@");
+      if (isEmail) {
+        const authResult = await supabase.auth.signInWithPassword({
+          email: normalizedIdentifier,
+          password
+        });
+        if (authResult.error) throw authResult.error;
+      }
+
+      const rows = await listRows<AccountValues>("parent_accounts");
+      const row = rows.find(
+        (item) =>
+          String(item.values.email ?? "").toLowerCase() === normalizedIdentifier || String(item.values.phone ?? "") === identifier
+      );
+      if (!row) throw new Error("Invalid login");
+      if (!isEmail) {
+        const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
+        if (!ok) throw new Error("Invalid login");
+      }
+      if (!row.values.confirmed) {
+        const updated = await updateRow("parent_accounts", row.id, { ...row.values, confirmed: true });
+        return accountFromRow(updated);
+      }
+      return accountFromRow(row);
+    },
+    async () => {
+      const rows = localRows<AccountValues>("parent_accounts");
+      const row = rows.find(
+        (item) =>
+          String(item.values.email ?? "").toLowerCase() === identifier.toLowerCase() || String(item.values.phone ?? "") === identifier
+      );
+      if (!row) throw new Error("Invalid login");
+      const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
+      if (!ok) throw new Error("Invalid login");
+      if (!row.values.confirmed) {
+        const updated = updateLocalRow("parent_accounts", row.id, { ...row.values, confirmed: true });
+        return accountFromRow(updated);
+      }
+      return accountFromRow(row);
+    }
   );
-  if (!row) throw new Error("Invalid login");
-  const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
-  if (!ok) throw new Error("Invalid login");
-  if (!row.values.confirmed) {
-    const updated = await updateRow("parent_accounts", row.id, { ...row.values, confirmed: true });
-    return accountFromRow(updated);
+}
+
+export async function resetPasswordForEmail(email: string) {
+  const redirectTo = isBrowser() ? window.location.origin : undefined;
+  const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase(), {
+    redirectTo
+  });
+  if (error) throw error;
+}
+
+export async function updateUserPassword(password: string) {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw error;
+
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+  const email = user?.email?.toLowerCase();
+  if (!email) return;
+
+  try {
+    const passwordParts = await hashPassword(password);
+    const rows = await listRows<AccountValues>("parent_accounts");
+    const row = rows.find((item) => String(item.values.email ?? "").toLowerCase() === email);
+    if (row) {
+      await updateRow("parent_accounts", row.id, {
+        ...row.values,
+        passwordHash: passwordParts.hash,
+        passwordSalt: passwordParts.salt,
+        confirmed: true
+      });
+    }
+  } catch {
+    const rows = localRows<AccountValues>("parent_accounts");
+    const row = rows.find((item) => String(item.values.email ?? "").toLowerCase() === email);
+    if (!row) return;
+    const passwordParts = await hashPassword(password);
+    updateLocalRow("parent_accounts", row.id, {
+      ...row.values,
+      passwordHash: passwordParts.hash,
+      passwordSalt: passwordParts.salt,
+      confirmed: true
+    });
   }
-  return accountFromRow(row);
 }
 
 export async function listBookings() {
-  const rows = await listRows<Booking>("bookings");
+  const rows = await withLocalFallback(() => listRows<Booking>("bookings"), () => localRows<Booking>("bookings"));
   return rows
     .map(bookingFromRow)
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
 }
 
 export async function createBooking(input: Omit<Booking, "id" | "status" | "createdAt" | "updatedAt">) {
-  const row = await createRow<Booking>("bookings", {
+  const values = {
     ...input,
     id: "",
-    status: "requested",
+    status: "requested" as BookingStatus,
     createdAt: "",
     updatedAt: ""
-  });
+  };
+  const row = await withLocalFallback(() => createRow<Booking>("bookings", values), () => createLocalRow("bookings", values));
   return bookingFromRow(row);
 }
 
@@ -308,20 +503,35 @@ export async function updateBooking(
   id: string,
   input: Partial<Pick<Booking, "status" | "assignedCoach" | "dateLabel" | "timeLabel" | "startsAt" | "parentNote">>
 ) {
-  const rows = await listRows<Booking>("bookings");
-  const row = rows.find((item) => item.id === id);
-  if (!row) throw new Error("Booking not found");
-  const nextValues = { ...row.values, ...input };
-  const updated = await updateRow("bookings", id, nextValues);
+  const updated = await withLocalFallback(
+    async () => {
+      const rows = await listRows<Booking>("bookings");
+      const row = rows.find((item) => item.id === id);
+      if (!row) throw new Error("Booking not found");
+      return updateRow("bookings", id, { ...row.values, ...input });
+    },
+    () => {
+      const rows = localRows<Booking>("bookings");
+      const row = rows.find((item) => item.id === id);
+      if (!row) throw new Error("Booking not found");
+      return updateLocalRow("bookings", id, { ...row.values, ...input });
+    }
+  );
   return bookingFromRow(updated);
 }
 
 export async function listBillNotifications() {
-  const rows = await listRows<BillNotification>("bill_notifications");
+  const rows = await withLocalFallback(
+    () => listRows<BillNotification>("bill_notifications"),
+    () => localRows<BillNotification>("bill_notifications")
+  );
   return rows.map(billFromRow).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 }
 
 export async function createBillNotification(input: Omit<BillNotification, "id" | "createdAt">) {
-  const row = await createRow("bill_notifications", input);
+  const row = await withLocalFallback(
+    () => createRow("bill_notifications", input),
+    () => createLocalRow("bill_notifications", input)
+  );
   return billFromRow(row);
 }

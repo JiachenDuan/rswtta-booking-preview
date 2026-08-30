@@ -839,6 +839,19 @@ p {
   grid-column: 1 / -1;
 }
 
+.text-button {
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: #1d5b46;
+  font-weight: 900;
+}
+
+.text-button:hover {
+  color: #0d1d18;
+  text-decoration: underline;
+}
+
 .helper-line {
   grid-column: 1 / -1;
   margin: -2px 0 0;
