@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Rising Star World Table Tennis",
-  description: "Parent booking and club management for Rising Star World Table Tennis"
+  title: "Rising Stars World Table Tennis Academy",
+  description: "Parent booking and club management for Rising Stars World Table Tennis Academy"
 };
 
 export default function RootLayout({

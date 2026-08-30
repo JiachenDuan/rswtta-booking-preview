@@ -566,8 +566,8 @@ export function ClubApp() {
             <Table2 size={22} />
           </div>
           <div>
-            <strong>Rising Star World</strong>
-            <span>Table Tennis</span>
+            <strong>Rising Stars World</strong>
+            <span>Table Tennis Academy</span>
           </div>
         </div>
 
