@@ -240,21 +240,24 @@ export async function registerParentAccount(input: { studentName: string; email:
   const rows = await listRows<ParentAccount & { passwordHash: string; passwordSalt: string; confirmationCode: string }>("parent_accounts");
   const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
   if (existing) {
-    return { account: accountFromRow(existing), confirmationCode: String(existing.values.confirmationCode ?? ""), alreadyExists: true };
+    if (!existing.values.confirmed) {
+      const updated = await updateRow("parent_accounts", existing.id, { ...existing.values, confirmed: true });
+      return { account: accountFromRow(updated), alreadyExists: true };
+    }
+    return { account: accountFromRow(existing), alreadyExists: true };
   }
 
   const password = await hashPassword(input.password);
-  const confirmationCode = String(Math.floor(100000 + Math.random() * 900000));
   const row = await createRow("parent_accounts", {
     studentName: input.studentName,
     email,
     phone: input.phone,
     passwordHash: password.hash,
     passwordSalt: password.salt,
-    confirmationCode,
-    confirmed: false
+    confirmationCode: "",
+    confirmed: true
   });
-  return { account: accountFromRow(row), confirmationCode, alreadyExists: false };
+  return { account: accountFromRow(row), alreadyExists: false };
 }
 
 export async function confirmParentAccount(email: string, confirmationCode: string) {
@@ -273,9 +276,13 @@ export async function loginParentAccount(identifier: string, password: string) {
     (item) =>
       String(item.values.email ?? "").toLowerCase() === identifier.toLowerCase() || String(item.values.phone ?? "") === identifier
   );
-  if (!row || !row.values.confirmed) throw new Error("Invalid login");
+  if (!row) throw new Error("Invalid login");
   const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
   if (!ok) throw new Error("Invalid login");
+  if (!row.values.confirmed) {
+    const updated = await updateRow("parent_accounts", row.id, { ...row.values, confirmed: true });
+    return accountFromRow(updated);
+  }
   return accountFromRow(row);
 }
 

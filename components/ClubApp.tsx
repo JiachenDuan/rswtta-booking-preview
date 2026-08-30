@@ -23,7 +23,6 @@ import {
   X
 } from "lucide-react";
 import {
-  confirmParentAccount,
   createBillNotification,
   createBooking,
   listBillNotifications,
@@ -277,12 +276,7 @@ export function ClubApp() {
 
   async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
     const result = await registerParentAccount(input);
-    return { confirmationCode: result.confirmationCode };
-  }
-
-  async function confirmParent(email: string, confirmationCode: string) {
-    const account = await confirmParentAccount(email, confirmationCode);
-    applyParentSession(account);
+    applyParentSession(result.account);
   }
 
   async function loginParent(identifier: string, password: string) {
@@ -500,7 +494,6 @@ export function ClubApp() {
         {mode === "parent" && !parentSession ? (
           <ParentAuth
             onRegister={registerParent}
-            onConfirm={confirmParent}
             onLogin={loginParent}
           />
         ) : mode === "parent" ? (
@@ -599,46 +592,27 @@ export function ClubApp() {
 
 function ParentAuth({
   onRegister,
-  onConfirm,
   onLogin
 }: {
-  onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<{ confirmationCode: string }>;
-  onConfirm: (email: string, confirmationCode: string) => Promise<void>;
+  onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogin: (identifier: string, password: string) => Promise<void>;
 }) {
-  const [authMode, setAuthMode] = useState<"login" | "register" | "confirm">("register");
+  const [authMode, setAuthMode] = useState<"login" | "register">("register");
   const [studentName, setStudentName] = useState("Ethan Chen");
   const [email, setEmail] = useState("parent@example.com");
   const [phone, setPhone] = useState("(650) 555-0188");
   const [password, setPassword] = useState("parent123");
   const [identifier, setIdentifier] = useState("parent@example.com");
-  const [confirmationCode, setConfirmationCode] = useState("");
-  const [pendingEmail, setPendingEmail] = useState("parent@example.com");
   const [notice, setNotice] = useState("请注册学生账号 / Register student account.");
   const [busy, setBusy] = useState(false);
 
   async function handleRegister() {
     setBusy(true);
     try {
-      const result = await onRegister({ studentName, email, phone, password });
-      setPendingEmail(email);
-      setConfirmationCode(result.confirmationCode);
-      await onConfirm(email, result.confirmationCode);
-      setNotice("注册和确认已完成 / Registration verified.");
-    } catch {
-      setNotice("注册失败 / Registration failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleConfirm() {
-    setBusy(true);
-    try {
-      await onConfirm(pendingEmail, confirmationCode);
+      await onRegister({ studentName, email, phone, password });
       setNotice("注册完成 / Registration complete.");
     } catch {
-      setNotice("确认码不正确 / Invalid confirmation code.");
+      setNotice("注册失败 / Registration failed.");
     } finally {
       setBusy(false);
     }
@@ -650,7 +624,7 @@ function ParentAuth({
       await onLogin(identifier, password);
       setNotice("登录成功 / Login successful.");
     } catch {
-      setNotice("登录失败或邮箱未确认 / Login failed or email not confirmed.");
+      setNotice("登录失败 / Login failed.");
     } finally {
       setBusy(false);
     }
@@ -663,7 +637,7 @@ function ParentAuth({
           <div>
             <p className="eyebrow">家长登录 / Parent login</p>
             <h2>先注册学生账号</h2>
-            <p className="section-subtitle">注册后确认邮箱，登录后查看 club coach calendar。</p>
+            <p className="section-subtitle">注册后直接进入日历，不需要邮箱验证 / Register and open the calendar directly.</p>
           </div>
         </div>
 
@@ -705,30 +679,7 @@ function ParentAuth({
             </label>
             <button className="primary-button auth-submit" disabled={busy} onClick={handleRegister}>
               <UserPlus size={18} />
-              注册并完成确认 / Register
-            </button>
-          </div>
-        ) : null}
-
-        {authMode === "confirm" ? (
-          <div className="simple-form auth-form">
-            <label>
-              <span>邮箱 / Email</span>
-              <div className="input-shell">
-                <Mail size={18} />
-                <input value={pendingEmail} onChange={(event) => setPendingEmail(event.target.value)} />
-              </div>
-            </label>
-            <label>
-              <span>确认码 / Confirmation code</span>
-              <div className="input-shell">
-                <KeyRound size={18} />
-                <input value={confirmationCode} onChange={(event) => setConfirmationCode(event.target.value)} />
-              </div>
-            </label>
-            <button className="primary-button auth-submit" disabled={busy} onClick={handleConfirm}>
-              <Check size={18} />
-              完成注册 / Confirm
+              注册 / Register
             </button>
           </div>
         ) : null}
