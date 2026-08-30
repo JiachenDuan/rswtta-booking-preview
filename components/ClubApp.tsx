@@ -68,7 +68,8 @@ type ExportPeriod = "weekly" | "monthly";
 
 const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
-const clubPassword = "club123";
+const clubEmail = "rswtta@gmail.com";
+const clubPassword = "rswtta888";
 
 function dollars(cents: number) {
   return new Intl.NumberFormat("en-US", {
@@ -284,6 +285,21 @@ export function ClubApp() {
     applyParentSession(account);
   }
 
+  async function loginUnified(identifier: string, password: string) {
+    if (identifier.trim().toLowerCase() === clubEmail) {
+      if (password !== clubPassword) {
+        throw new Error("Wrong club password");
+      }
+      setClubAuthenticated(true);
+      window.localStorage.setItem(clubSessionKey, "true");
+      setMode("club");
+      return;
+    }
+
+    await loginParent(identifier, password);
+    setMode("parent");
+  }
+
   async function loadAll() {
     try {
       const [nextBookings, nextBills] = await Promise.all([listBookings(), listBillNotifications()]);
@@ -291,7 +307,7 @@ export function ClubApp() {
       setBills(nextBills);
       setNotice("Supabase 已连接 / Supabase backend connected.");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Supabase setup needed.");
+      setNotice(error instanceof Error ? error.message : "数据库暂时不可用 / Database is not ready.");
     }
   }
 
@@ -486,17 +502,17 @@ export function ClubApp() {
         </header>
 
         <section className="system-banner">
-          <strong>流程 / Journey</strong>
-          <span>家长请求 → 俱乐部确认 → 教练点击课程完成</span>
-          <span>{notice.startsWith("Supabase setup needed") ? "需要运行 SQL migration / Setup needed" : "Supabase backend"}</span>
+          <strong>状态 / Status</strong>
+          <span>家长请求 → 俱乐部确认 → 教练完成</span>
+          <span>真实数据库 / Live database</span>
         </section>
 
         {mode === "parent" && !parentSession ? (
-          <ParentAuth
+          <UnifiedAuth
             onRegister={registerParent}
-            onLogin={loginParent}
+            onLogin={loginUnified}
           />
-        ) : mode === "parent" ? (
+        ) : mode === "parent" && parentSession ? (
           <ParentApp
             bookings={parentBookings}
             allBookings={bookings}
@@ -554,12 +570,10 @@ export function ClubApp() {
               updateBooking(booking.id, "cancelled");
             }}
           />
-        ) : !clubAuthenticated ? (
-          <ClubLogin
-            onLogin={() => {
-              setClubAuthenticated(true);
-              window.localStorage.setItem(clubSessionKey, "true");
-            }}
+        ) : mode === "club" && !clubAuthenticated ? (
+          <UnifiedAuth
+            onRegister={registerParent}
+            onLogin={loginUnified}
           />
         ) : (
           <ClubAppView
@@ -590,7 +604,7 @@ export function ClubApp() {
   );
 }
 
-function ParentAuth({
+function UnifiedAuth({
   onRegister,
   onLogin
 }: {
@@ -603,7 +617,7 @@ function ParentAuth({
   const [phone, setPhone] = useState("(650) 555-0188");
   const [password, setPassword] = useState("parent123");
   const [identifier, setIdentifier] = useState("parent@example.com");
-  const [notice, setNotice] = useState("请注册学生账号 / Register student account.");
+  const [notice, setNotice] = useState("家长用学生账号登录；俱乐部用管理邮箱登录 / Parents use student account; club uses manager email.");
   const [busy, setBusy] = useState(false);
 
   async function handleRegister() {
@@ -635,17 +649,17 @@ function ParentAuth({
       <div className="auth-card">
         <div className="section-head">
           <div>
-            <p className="eyebrow">家长登录 / Parent login</p>
-            <h2>先注册学生账号</h2>
-            <p className="section-subtitle">注册后直接进入日历，不需要邮箱验证 / Register and open the calendar directly.</p>
+            <p className="eyebrow">统一登录 / One login</p>
+            <h2>统一登录入口</h2>
+            <p className="section-subtitle">家长注册学生账号；俱乐部用 rswtta@gmail.com 登录 / One login page for parent and club.</p>
           </div>
         </div>
 
         <div className="mode-switch auth-switch">
-          <button className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
+          <button type="button" className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
             注册 Register
           </button>
-          <button className={authMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
+          <button type="button" className={authMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
             登录 Login
           </button>
         </div>
@@ -677,7 +691,7 @@ function ParentAuth({
               <span>密码 / Password</span>
               <PasswordField value={password} onChange={setPassword} />
             </label>
-            <button className="primary-button auth-submit" disabled={busy} onClick={handleRegister}>
+            <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleRegister}>
               <UserPlus size={18} />
               注册 / Register
             </button>
@@ -697,50 +711,14 @@ function ParentAuth({
               <span>密码 / Password</span>
               <PasswordField value={password} onChange={setPassword} />
             </label>
-            <button className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
+            <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
               <LogIn size={18} />
               登录 / Login
             </button>
+            <p className="helper-line">Club 使用管理邮箱登录 / Club uses manager email login.</p>
           </div>
         ) : null}
 
-        <p className="system-note">{notice}</p>
-      </div>
-    </section>
-  );
-}
-
-function ClubLogin({ onLogin }: { onLogin: () => void }) {
-  const [password, setPassword] = useState("club123");
-  const [notice, setNotice] = useState("Club 使用一个管理密码 / One club manager login.");
-
-  return (
-    <section className="auth-panel">
-      <div className="auth-card compact-auth">
-        <div className="section-head">
-          <div>
-            <p className="eyebrow">俱乐部登录 / Club login</p>
-            <h2>管理 booking calendar</h2>
-            <p className="section-subtitle">登录后确认 request，并点击 calendar class 完成课程。</p>
-          </div>
-        </div>
-        <label className="solo-label">
-          <span>管理密码 / Manager password</span>
-          <PasswordField value={password} onChange={setPassword} />
-        </label>
-        <button
-          className="primary-button auth-submit"
-          onClick={() => {
-            if (password !== clubPassword) {
-              setNotice("密码不正确 / Wrong password.");
-              return;
-            }
-            onLogin();
-          }}
-        >
-          <LogIn size={18} />
-          登录 Club / Login
-        </button>
         <p className="system-note">{notice}</p>
       </div>
     </section>

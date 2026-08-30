@@ -839,6 +839,14 @@ p {
   grid-column: 1 / -1;
 }
 
+.helper-line {
+  grid-column: 1 / -1;
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
 .solo-label {
   display: grid;
   gap: 7px;

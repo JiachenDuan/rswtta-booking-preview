@@ -62,7 +62,7 @@ let schemaPromise: Promise<Record<keyof typeof tableDefinitions, string>> | null
 
 function setupError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return new Error(`Supabase setup needed: run supabase/migrations/20260830230000_project_rows.sql first. ${message}`);
+  return new Error(`数据库暂时不可用 / Database is not ready. ${message}`);
 }
 
 async function selectOrInsertProject(): Promise<Project> {
