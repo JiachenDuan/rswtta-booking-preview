@@ -151,6 +151,21 @@ h1 {
   line-height: 1.05;
 }
 
+.screen-subtitle,
+.section-subtitle {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.screen-subtitle {
+  max-width: 720px;
+  font-size: 0.98rem;
+}
+
+.section-subtitle {
+  font-size: 0.88rem;
+}
+
 h2 {
   margin-bottom: 0;
   font-size: 1.28rem;
@@ -594,6 +609,8 @@ p {
   padding: 7px 9px;
   border-radius: 999px;
   font-size: 0.78rem;
+  text-align: center;
+  white-space: normal;
 }
 
 .confirmed {
@@ -785,7 +802,7 @@ p {
 .calendar-slot {
   display: grid;
   gap: 6px;
-  min-height: 116px;
+  min-height: 158px;
   padding: 12px;
   text-align: left;
 }
@@ -798,6 +815,28 @@ p {
 
 .calendar-slot strong {
   font-size: 1.2rem;
+}
+
+.slot-bookings {
+  display: grid;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.slot-bookings em {
+  padding: 6px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.74);
+  color: #1b332b;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.calendar-slot.selected .slot-bookings em {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
 }
 
 .request-stack {
@@ -819,7 +858,7 @@ p {
 }
 
 .simple-row {
-  grid-template-columns: 42px minmax(0, 1fr) 128px;
+  grid-template-columns: 42px minmax(0, 1fr) minmax(150px, auto);
 }
 
 .parent-actions {

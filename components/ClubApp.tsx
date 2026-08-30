@@ -62,11 +62,11 @@ function dollars(cents: number) {
 
 function statusText(status: BookingStatus) {
   const labels: Record<BookingStatus, string> = {
-    requested: "Requested",
-    club_confirmed: "Club confirmed",
-    change_requested: "Change requested",
-    cancelled: "Cancelled",
-    coach_confirmed: "Coach completed"
+    requested: "Requested / 已请求",
+    club_confirmed: "Club confirmed / 俱乐部已确认",
+    change_requested: "Change requested / 改期请求",
+    cancelled: "Cancelled / 已取消",
+    coach_confirmed: "Coach completed / 教练确认完成"
   };
   return labels[status];
 }
@@ -274,11 +274,11 @@ export function ClubApp() {
         <nav className="nav-list">
           <button className={mode === "parent" ? "nav-item active" : "nav-item"} onClick={() => setMode("parent")}>
             <Phone size={18} />
-            <span>Parent App</span>
+            <span>Parent 家长</span>
           </button>
           <button className={mode === "club" ? "nav-item active" : "nav-item"} onClick={() => setMode("club")}>
             <LayoutDashboard size={18} />
-            <span>Club App</span>
+            <span>Club 俱乐部</span>
           </button>
         </nav>
       </aside>
@@ -288,6 +288,11 @@ export function ClubApp() {
           <div>
             <p className="eyebrow">Simple MVP flow</p>
             <h1>{mode === "parent" ? "Parent requests a class" : "Club confirms and bills"}</h1>
+            <p className="screen-subtitle">
+              {mode === "parent"
+                ? "Parent App 家长端: view club calendar, request class, check confirmed classes"
+                : "Club App 俱乐部端: confirm requests, mark completed, generate weekly bills"}
+            </p>
           </div>
           <div className="top-actions">
             <button className="icon-button" aria-label="Notifications">
@@ -295,10 +300,10 @@ export function ClubApp() {
             </button>
             <div className="mode-switch" aria-label="Switch app view">
               <button className={mode === "parent" ? "selected" : ""} onClick={() => setMode("parent")}>
-                Parent
+                Parent 家长
               </button>
               <button className={mode === "club" ? "selected" : ""} onClick={() => setMode("club")}>
-                Club
+                Club 俱乐部
               </button>
             </div>
           </div>
@@ -313,6 +318,7 @@ export function ClubApp() {
         {mode === "parent" ? (
           <ParentApp
             bookings={parentBookings}
+            allBookings={bookings}
             completedTotal={completedTotal}
             notice={notice}
             studentName={studentName}
@@ -353,6 +359,7 @@ export function ClubApp() {
 
 function ParentApp({
   bookings,
+  allBookings,
   completedTotal,
   notice,
   studentName,
@@ -373,6 +380,7 @@ function ParentApp({
   onCancel
 }: {
   bookings: Booking[];
+  allBookings: Booking[];
   completedTotal: number;
   notice: string;
   studentName: string;
@@ -398,8 +406,9 @@ function ParentApp({
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">Student login</p>
+              <p className="eyebrow">Student login 学生资料</p>
               <h2>Basic parent and student info</h2>
+              <p className="section-subtitle">Basic email and phone / 基本邮箱和电话</p>
             </div>
           </div>
           <div className="simple-form">
@@ -437,8 +446,9 @@ function ParentApp({
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">Coach calendar</p>
-              <h2>View the whole club calendar and mark a class request</h2>
+              <p className="eyebrow">Club calendar 俱乐部日历</p>
+              <h2>View booked classes and mark a request</h2>
+              <p className="section-subtitle">Parents can see the whole coach schedule / 家长可查看整体教练课表</p>
             </div>
           </div>
           <div className="coach-toggle">
@@ -449,13 +459,27 @@ function ParentApp({
             ))}
           </div>
           <div className="calendar-board">
-            {calendarSlots.map((slot) => (
-              <button className={selectedSlot.startsAt === slot.startsAt ? "calendar-slot selected" : "calendar-slot"} key={slot.startsAt} onClick={() => onSlotChange(slot)}>
-                <span>{slot.day}</span>
-                <strong>{slot.timeLabel}</strong>
-                <small>{coaches.join(" / ")}</small>
-              </button>
-            ))}
+            {calendarSlots.map((slot) => {
+              const slotBookings = allBookings.filter((booking) => booking.startsAt === slot.startsAt && booking.status !== "cancelled");
+              return (
+                <button className={selectedSlot.startsAt === slot.startsAt ? "calendar-slot selected" : "calendar-slot"} key={slot.startsAt} onClick={() => onSlotChange(slot)}>
+                  <span>{slot.day}</span>
+                  <strong>{slot.timeLabel}</strong>
+                  <small>{coaches.join(" / ")}</small>
+                  <div className="slot-bookings">
+                    {slotBookings.length === 0 ? (
+                      <em>Available / 可预约</em>
+                    ) : (
+                      slotBookings.map((booking) => (
+                        <em key={booking.id}>
+                          {booking.assignedCoach}: {booking.studentName} · {statusText(booking.status)}
+                        </em>
+                      ))
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           </div>
           <button className="primary-button wide-button" disabled={saving} onClick={onRequestBooking}>
             <CalendarDays size={18} />
@@ -469,8 +493,9 @@ function ParentApp({
         <section className="section-block">
           <div className="section-head compact">
             <div>
-              <p className="eyebrow">Parent view</p>
+              <p className="eyebrow">Parent view 家长查看</p>
               <h2>Confirmed and requested classes</h2>
+              <p className="section-subtitle">Same status as club app / 与俱乐部端同步</p>
             </div>
           </div>
           <div className="mini-ledger">
@@ -521,6 +546,7 @@ function ClubAppView({
             <div>
               <p className="eyebrow">Club manager</p>
               <h2>Confirm requests and assign coach</h2>
+              <p className="section-subtitle">Club App 俱乐部端: confirm class time and coach</p>
             </div>
             <span className="status-chip">{requested.length} pending</span>
           </div>
@@ -556,6 +582,7 @@ function ClubAppView({
             <div>
               <p className="eyebrow">Coach completion</p>
               <h2>Coach confirms class was completed</h2>
+              <p className="section-subtitle">Coach completed status counts toward billing / 教练确认完成后才计费</p>
             </div>
             <span className="status-chip good">{confirmed.length} ready</span>
           </div>
@@ -582,8 +609,9 @@ function ClubAppView({
         <section className="section-block">
           <div className="section-head compact">
             <div>
-              <p className="eyebrow">All classes</p>
+              <p className="eyebrow">All classes 全部课程</p>
               <h2>Shared database view</h2>
+              <p className="section-subtitle">Parent and club see the same confirmed classes / 双方同步查看</p>
             </div>
           </div>
           <BookingList bookings={bookings} />
@@ -592,8 +620,9 @@ function ClubAppView({
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">Weekly billing</p>
+              <p className="eyebrow">Weekly billing 每周账单</p>
               <h2>Generate bill notification per student</h2>
+              <p className="section-subtitle">Bill from coach-completed classes / 根据教练确认完成课程生成</p>
             </div>
             <button className="filter-button" onClick={onGenerateBills}>
               <RefreshCcw size={17} />
