@@ -20,6 +20,7 @@ html,
 body {
   min-height: 100%;
   margin: 0;
+  overflow-x: hidden;
 }
 
 body {
@@ -923,12 +924,15 @@ p {
   overflow-x: auto;
   margin-bottom: 12px;
   padding-bottom: 4px;
+  border-radius: 8px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
 }
 
 .week-calendar {
   display: grid;
-  grid-template-columns: 82px repeat(6, minmax(136px, 1fr));
-  min-width: 900px;
+  grid-template-columns: 74px repeat(6, minmax(128px, 1fr));
+  min-width: 842px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -955,15 +959,29 @@ p {
 
 .calendar-day-head {
   display: grid;
-  gap: 2px;
-  padding: 12px;
+  justify-items: center;
+  gap: 3px;
+  min-height: 84px;
+  padding: 9px 8px;
   border-left: 1px solid var(--line);
   text-align: center;
+  scroll-snap-align: start;
 }
 
 .calendar-day-head strong,
 .calendar-day-head span {
   display: block;
+}
+
+.calendar-day-head strong {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  font-size: 1.05rem;
 }
 
 .calendar-day-head span {
@@ -972,11 +990,21 @@ p {
   font-weight: 800;
 }
 
+.calendar-day-head .day-zh {
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.calendar-day-head.today strong {
+  background: #1d5b46;
+  color: #fff;
+}
+
 .calendar-cell {
   display: grid;
   align-content: start;
   gap: 6px;
-  min-height: 112px;
+  min-height: 116px;
   padding: 8px;
   border: 0;
   border-left: 1px solid var(--line);
@@ -1010,12 +1038,27 @@ p {
 }
 
 .open-slot {
-  padding: 7px;
+  display: grid;
+  gap: 2px;
+  padding: 8px 7px;
   border: 1px dashed #bdd4ca;
   color: var(--muted);
-  font-size: 0.76rem;
   font-weight: 900;
   text-align: center;
+}
+
+.open-slot strong,
+.open-slot small {
+  display: block;
+}
+
+.open-slot strong {
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.open-slot small {
+  font-size: 0.72rem;
 }
 
 .selected-label {
@@ -1357,8 +1400,47 @@ p {
 }
 
 @media (max-width: 760px) {
+  .shell {
+    display: block;
+  }
+
+  .sidebar {
+    position: sticky;
+    z-index: 20;
+    top: 0;
+    padding: 10px 12px;
+  }
+
+  .brand {
+    min-height: 36px;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand strong {
+    font-size: 0.92rem;
+  }
+
+  .brand span {
+    font-size: 0.74rem;
+  }
+
+  .nav-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 10px;
+  }
+
+  .nav-item {
+    min-height: 38px;
+    padding: 0 10px;
+    font-size: 0.88rem;
+  }
+
   .workspace {
-    padding: 16px;
+    padding: 12px;
   }
 
   .topbar,
@@ -1369,10 +1451,6 @@ p {
 
   .search {
     width: 100%;
-  }
-
-  .nav-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hero-band {
@@ -1389,9 +1467,169 @@ p {
   .price-grid,
   .membership-grid,
   .phone-login,
-  .simple-form,
-  .calendar-board {
+  .simple-form {
     grid-template-columns: 1fr;
+  }
+
+  .section-block {
+    padding: 12px;
+  }
+
+  .section-head {
+    align-items: start;
+    margin-bottom: 12px;
+  }
+
+  .section-head .status-chip {
+    display: none;
+  }
+
+  .topbar {
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .top-actions {
+    gap: 8px;
+  }
+
+  .top-actions .icon-button,
+  .top-actions .mode-switch {
+    display: none;
+  }
+
+  .top-actions .filter-button {
+    min-height: 36px;
+    font-size: 0.82rem;
+  }
+
+  .mode-switch {
+    width: 100%;
+  }
+
+  h1 {
+    font-size: 1.45rem;
+  }
+
+  h2 {
+    font-size: 1.08rem;
+  }
+
+  .screen-subtitle,
+  .system-banner {
+    display: none;
+  }
+
+  .calendar-core > .section-head .section-subtitle {
+    display: none;
+  }
+
+  .booking-toolbar {
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .wide-button {
+    min-height: 48px;
+    white-space: normal;
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .coach-toggle button {
+    overflow: hidden;
+    min-width: 0;
+    padding: 0 8px;
+    text-overflow: ellipsis;
+  }
+
+  .recurring-row {
+    gap: 8px;
+    font-size: 0.8rem;
+  }
+
+  .calendar-controls {
+    grid-template-columns: 40px minmax(0, 1fr) 72px 40px;
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .calendar-controls .icon-button {
+    width: 40px;
+  }
+
+  .calendar-controls .filter-button {
+    width: auto;
+    min-height: 40px;
+    padding: 0 8px;
+    font-size: 0.78rem;
+  }
+
+  .calendar-controls strong {
+    font-size: 0.88rem;
+  }
+
+  .calendar-controls span {
+    display: none;
+  }
+
+  .calendar-board {
+    margin-right: -12px;
+    margin-left: -12px;
+    padding: 0 12px 8px;
+  }
+
+  .week-calendar {
+    grid-template-columns: 58px repeat(6, 112px);
+    min-width: 730px;
+  }
+
+  .calendar-corner,
+  .calendar-time {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    padding: 8px 4px;
+    font-size: 0.7rem;
+  }
+
+  .calendar-day-head {
+    min-height: 72px;
+    padding: 7px 5px;
+  }
+
+  .calendar-day-head strong {
+    width: 30px;
+    height: 30px;
+    font-size: 0.96rem;
+  }
+
+  .calendar-day-head span {
+    font-size: 0.68rem;
+  }
+
+  .calendar-day-head .day-zh {
+    font-size: 0.74rem;
+  }
+
+  .calendar-cell {
+    min-height: 108px;
+    padding: 6px;
+  }
+
+  .calendar-booking {
+    padding: 6px;
+  }
+
+  .calendar-booking strong {
+    font-size: 0.72rem;
+  }
+
+  .calendar-booking small,
+  .calendar-booking em,
+  .selected-label,
+  .open-slot small {
+    font-size: 0.66rem;
   }
 
   .phone-login .primary-button {

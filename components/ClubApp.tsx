@@ -42,6 +42,9 @@ type CalendarDay = {
   date: Date;
   dateLabel: string;
   dateZh: string;
+  dateNumber: string;
+  monthLabel: string;
+  isToday: boolean;
 };
 
 type CalendarSlot = CalendarDay & {
@@ -132,12 +135,20 @@ function dateLabel(date: Date) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     month: "short",
-    day: "numeric"
+    day: "numeric",
+    year: "numeric"
   }).format(date);
 }
 
 function dateZh(date: Date) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function monthLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric"
+  }).format(date);
 }
 
 function makeStartsAt(date: Date, timeLabel: string) {
@@ -148,12 +159,17 @@ function makeStartsAt(date: Date, timeLabel: string) {
 }
 
 function makeCalendarDay(date: Date, index: number): CalendarDay {
+  const normalized = new Date(date);
+  normalized.setHours(0, 0, 0, 0);
   return {
     day: dayNames[index],
     dayZh: dayNamesZh[index],
     date,
     dateLabel: dateLabel(date),
-    dateZh: dateZh(date)
+    dateZh: dateZh(date),
+    dateNumber: String(date.getDate()),
+    monthLabel: monthLabel(date),
+    isToday: normalized.getTime() === today.getTime()
   };
 }
 
@@ -172,7 +188,8 @@ function weekDays(weekStart: Date) {
 function weekLabel(days: CalendarDay[]) {
   const first = days[0];
   const last = days[days.length - 1];
-  return `${first.dateZh} - ${last.dateZh} / ${first.dateLabel} - ${last.dateLabel}`;
+  const year = first.date.getFullYear() === last.date.getFullYear() ? first.date.getFullYear() : `${first.date.getFullYear()}-${last.date.getFullYear()}`;
+  return `${year}年 ${first.dateZh} - ${last.dateZh} / ${first.monthLabel} - ${last.monthLabel}, ${year}`;
 }
 
 const minCalendarDate = addMonths(today, -3);
@@ -961,6 +978,15 @@ function ParentApp({
           onNextWeek={onNextWeek}
           onToday={onToday}
         />
+        <div className="calendar-board">
+          <ClubCalendar
+            bookings={allBookings}
+            selectedSlot={selectedSlot}
+            requestedCoach={requestedCoach}
+            calendarDays={calendarDays}
+            onSlotChange={onSlotChange}
+          />
+        </div>
         <div className="booking-toolbar">
           <div className="coach-toggle">
             {coaches.map((coach) => (
@@ -991,15 +1017,6 @@ function ParentApp({
           <span>
             当前选择 / Selected: {selectedSlot.dayZh} {selectedSlot.timeLabel} - 8:00 PM
           </span>
-        </div>
-        <div className="calendar-board">
-          <ClubCalendar
-            bookings={allBookings}
-            selectedSlot={selectedSlot}
-            requestedCoach={requestedCoach}
-            calendarDays={calendarDays}
-            onSlotChange={onSlotChange}
-          />
         </div>
         <p className="system-note">{notice}</p>
       </section>
@@ -1120,9 +1137,10 @@ function ClubCalendar({
     <div className="week-calendar" aria-label="Club calendar view">
       <div className="calendar-corner">Time<br />时间</div>
       {calendarDays.map((day) => (
-        <div className="calendar-day-head" key={day.dateLabel}>
-          <strong>{day.day}</strong>
-          <span>{day.dayZh}</span>
+        <div className={day.isToday ? "calendar-day-head today" : "calendar-day-head"} key={day.dateLabel}>
+          <span className="day-zh">{day.dayZh}</span>
+          <strong>{day.dateNumber}</strong>
+          <span>{day.day} · {day.monthLabel}</span>
         </div>
       ))}
 
@@ -1155,7 +1173,10 @@ function ClubCalendar({
                 }}
               >
                 {slotBookings.length === 0 ? (
-                  <span className="open-slot">可预约<br />Available</span>
+                  <span className="open-slot">
+                    <strong>{timeLabel}</strong>
+                    <small>可预约 / Available</small>
+                  </span>
                 ) : (
                   slotBookings.map((booking) => (
                     <span className={`calendar-booking ${booking.status}`} key={booking.id}>
