@@ -1137,6 +1137,27 @@ p {
   outline: 0;
 }
 
+.password-shell {
+  padding-right: 6px;
+}
+
+.password-toggle {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.password-toggle:hover {
+  background: #eef6f2;
+  color: #1d5b46;
+}
+
 .booking-panel {
   position: sticky;
   top: 18px;

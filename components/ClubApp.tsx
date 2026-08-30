@@ -7,6 +7,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  EyeOff,
   KeyRound,
   LayoutDashboard,
   LogIn,
@@ -682,8 +684,8 @@ function ParentAuth({
       const result = await onRegister({ studentName, email, phone, password });
       setPendingEmail(email);
       setConfirmationCode(result.confirmationCode);
-      setAuthMode("confirm");
-      setNotice(`确认码已发送到邮箱 / Confirmation code sent: ${result.confirmationCode}`);
+      await onConfirm(email, result.confirmationCode);
+      setNotice("注册和确认已完成 / Registration verified.");
     } catch {
       setNotice("注册失败 / Registration failed.");
     } finally {
@@ -760,14 +762,11 @@ function ParentAuth({
             </label>
             <label>
               <span>密码 / Password</span>
-              <div className="input-shell">
-                <KeyRound size={18} />
-                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-              </div>
+              <PasswordField value={password} onChange={setPassword} />
             </label>
             <button className="primary-button auth-submit" disabled={busy} onClick={handleRegister}>
               <UserPlus size={18} />
-              注册并发送确认 / Register
+              注册并完成确认 / Register
             </button>
           </div>
         ) : null}
@@ -806,10 +805,7 @@ function ParentAuth({
             </label>
             <label>
               <span>密码 / Password</span>
-              <div className="input-shell">
-                <KeyRound size={18} />
-                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-              </div>
+              <PasswordField value={password} onChange={setPassword} />
             </label>
             <button className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
               <LogIn size={18} />
@@ -840,10 +836,7 @@ function ClubLogin({ onLogin }: { onLogin: () => void }) {
         </div>
         <label className="solo-label">
           <span>管理密码 / Manager password</span>
-          <div className="input-shell">
-            <KeyRound size={18} />
-            <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
-          </div>
+          <PasswordField value={password} onChange={setPassword} />
         </label>
         <button
           className="primary-button auth-submit"
@@ -861,6 +854,30 @@ function ClubLogin({ onLogin }: { onLogin: () => void }) {
         <p className="system-note">{notice}</p>
       </div>
     </section>
+  );
+}
+
+function PasswordField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="input-shell password-shell">
+      <KeyRound size={18} />
+      <input
+        type={visible ? "text" : "password"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <button
+        className="password-toggle"
+        type="button"
+        aria-label={visible ? "Hide password" : "Show password"}
+        title={visible ? "隐藏密码 / Hide password" : "显示密码 / Show password"}
+        onClick={() => setVisible((current) => !current)}
+      >
+        {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
   );
 }
 
