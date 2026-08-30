@@ -931,8 +931,8 @@ p {
 
 .week-calendar {
   display: grid;
-  grid-template-columns: 74px repeat(6, minmax(128px, 1fr));
-  min-width: 842px;
+  grid-template-columns: 74px repeat(7, minmax(128px, 1fr));
+  min-width: 970px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1580,8 +1580,8 @@ p {
   }
 
   .week-calendar {
-    grid-template-columns: 58px repeat(6, 112px);
-    min-width: 730px;
+    grid-template-columns: 58px repeat(7, 112px);
+    min-width: 842px;
   }
 
   .calendar-corner,

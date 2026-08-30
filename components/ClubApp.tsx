@@ -25,8 +25,8 @@ import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/
 
 const coaches = ["Coach A", "Coach B"];
 const calendarTimes = ["4:30 PM", "5:15 PM", "6:00 PM", "7:00 PM"];
-const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const dayNamesZh = ["周一", "周二", "周三", "周四", "周五", "周六"];
+const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const dayNamesZh = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const timeParts: Record<string, [number, number]> = {
   "4:30 PM": [16, 30],
   "5:15 PM": [17, 15],
@@ -98,16 +98,25 @@ function statusText(status: BookingStatus) {
   const labels: Record<BookingStatus, string> = {
     requested: "已请求 / Requested",
     club_confirmed: "已确认 / Club confirmed",
-    change_requested: "改期请求 / Change requested",
+    change_requested: "改期/取消请求 / Change/cancel requested",
     cancelled: "已取消 / Cancelled",
     coach_confirmed: "教练确认完成 / Coach completed"
   };
   return labels[status];
 }
 
-function canParentChange(booking: Booking) {
+function isMoreThan12HoursBeforeClass(booking: Booking) {
   const starts = new Date(booking.startsAt).getTime();
-  return starts - Date.now() > 12 * 60 * 60 * 1000 && ["requested", "club_confirmed"].includes(booking.status);
+  return starts - Date.now() > 12 * 60 * 60 * 1000;
+}
+
+function canParentRequestChange(booking: Booking) {
+  return ["requested", "club_confirmed"].includes(booking.status);
+}
+
+function isCancellationRequest(booking: Booking) {
+  const note = booking.parentNote.toLowerCase();
+  return booking.status === "change_requested" && (note.includes("cancel") || booking.parentNote.includes("取消"));
 }
 
 function addDays(date: Date, days: number) {
@@ -334,7 +343,7 @@ export function ClubApp() {
 
     return Array.from({ length: recurringWeeks }, (_, index) => {
       const date = addDays(selectedSlot.date, index * 7);
-      const dayIndex = Math.max(0, date.getDay() - 1);
+      const dayIndex = (date.getDay() + 6) % 7;
       return makeCalendarSlot(makeCalendarDay(date, dayIndex), selectedSlot.timeLabel);
     }).filter((slot) => new Date(slot.startsAt) <= maxCalendarDate);
   }
@@ -623,20 +632,23 @@ export function ClubApp() {
             onRecurringWeeksChange={setRecurringWeeks}
             onRequestBooking={() => requestBooking()}
             onChangeRequest={(booking) => {
-              if (!canParentChange(booking)) {
-                setNotice("12小时内不能线上改期或取消 / Less than 12 hours: please contact the club.");
-                return;
-              }
               updateBooking(booking.id, "change_requested", requestedCoach, {
                 dateLabel: selectedSlot.dateLabel,
                 timeLabel: selectedSlot.timeLabel,
                 startsAt: selectedSlot.startsAt,
-                parentNote: `家长申请改期 / Parent requested change from ${booking.dateLabel} ${booking.timeLabel}`
+                parentNote: isMoreThan12HoursBeforeClass(booking)
+                  ? `家长申请改期 / Parent requested change from ${booking.dateLabel} ${booking.timeLabel}`
+                  : `12小时内改期请求 / Late change request from ${booking.dateLabel} ${booking.timeLabel}`
               });
             }}
             onCancel={(booking) => {
-              if (!canParentChange(booking)) {
-                setNotice("12小时内不能线上改期或取消 / Less than 12 hours: please contact the club.");
+              if (!isMoreThan12HoursBeforeClass(booking)) {
+                updateBooking(booking.id, "change_requested", booking.assignedCoach, {
+                  dateLabel: booking.dateLabel,
+                  timeLabel: booking.timeLabel,
+                  startsAt: booking.startsAt,
+                  parentNote: `12小时内取消请求 / Late cancellation request for ${booking.dateLabel} ${booking.timeLabel}`
+                });
                 return;
               }
               updateBooking(booking.id, "cancelled");
@@ -667,6 +679,7 @@ export function ClubApp() {
               setSelectedSlot(initialCalendarSlot);
             }}
             onConfirm={(booking, coach) => updateBooking(booking.id, "club_confirmed", coach)}
+            onApproveCancel={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
           />
         )}
@@ -1060,7 +1073,7 @@ function ParentApp({
             <div>
               <p className="eyebrow">我的课程 / My classes</p>
               <h2>请求、确认、完成</h2>
-              <p className="section-subtitle">12小时前可线上改期或取消 / Changes allowed more than 12 hours before class.</p>
+              <p className="section-subtitle">超过12小时可取消；12小时内会发送请求给club确认 / Inside 12 hours sends a club approval request.</p>
             </div>
           </div>
           <div className="mini-ledger">
@@ -1211,6 +1224,7 @@ function ClubAppView({
   onNextWeek,
   onToday,
   onConfirm,
+  onApproveCancel,
   onCoachComplete
 }: {
   bookings: Booking[];
@@ -1226,6 +1240,7 @@ function ClubAppView({
   onNextWeek: () => void;
   onToday: () => void;
   onConfirm: (booking: Booking, coach: string) => void;
+  onApproveCancel: (booking: Booking) => void;
   onCoachComplete: (booking: Booking) => void;
 }) {
   const requested = bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
@@ -1283,16 +1298,23 @@ function ClubAppView({
                   </p>
                   {booking.parentNote ? <p>{booking.parentNote}</p> : null}
                 </div>
-                <div className="confirm-actions">
-                  <button className="accept" onClick={() => onConfirm(booking, "Coach A")}>
-                    <Check size={17} />
-                    Coach A
+                {isCancellationRequest(booking) ? (
+                  <button className="decline" onClick={() => onApproveCancel(booking)}>
+                    <X size={17} />
+                    批准取消 / Approve cancel
                   </button>
-                  <button className="accept" onClick={() => onConfirm(booking, "Coach B")}>
-                    <Check size={17} />
-                    Coach B
-                  </button>
-                </div>
+                ) : (
+                  <div className="confirm-actions">
+                    <button className="accept" onClick={() => onConfirm(booking, "Coach A")}>
+                      <Check size={17} />
+                      Coach A
+                    </button>
+                    <button className="accept" onClick={() => onConfirm(booking, "Coach B")}>
+                      <Check size={17} />
+                      Coach B
+                    </button>
+                  </div>
+                )}
               </article>
             ))}
           </div>
@@ -1360,10 +1382,10 @@ function BookingList({
           <strong className={booking.status}>{statusText(booking.status)}</strong>
           {parentActions ? (
             <div className="row-actions parent-actions">
-              <button disabled={!canParentChange(booking)} onClick={() => onChangeRequest?.(booking)}>
+              <button disabled={!canParentRequestChange(booking)} onClick={() => onChangeRequest?.(booking)}>
                 <RefreshCcw size={15} />
               </button>
-              <button disabled={!canParentChange(booking)} onClick={() => onCancel?.(booking)}>
+              <button disabled={!canParentRequestChange(booking)} onClick={() => onCancel?.(booking)}>
                 <X size={15} />
               </button>
             </div>
