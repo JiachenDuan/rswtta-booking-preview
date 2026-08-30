@@ -22,7 +22,17 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/db";
+import {
+  confirmParentAccount,
+  createBillNotification,
+  createBooking,
+  listBillNotifications,
+  listBookings,
+  loginParentAccount,
+  registerParentAccount,
+  updateBooking as updateStoredBooking
+} from "@/lib/projectStore";
+import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const coaches = ["Coach A", "Coach B", "Coach Tian Ye", "Coach Jorden"] as const;
 const clubCalendarTabs = ["Combined", ...coaches] as const;
@@ -54,42 +64,12 @@ type CalendarSlot = CalendarDay & {
   startsAt: string;
 };
 
-type DemoParentAccount = ParentAccount & {
-  password: string;
-  confirmationCode: string;
-};
-
 type ClubCalendarTab = (typeof clubCalendarTabs)[number];
 type ExportPeriod = "weekly" | "monthly";
 
-const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-const demoBookingKey = "rswtta-demo-bookings";
-const demoBillKey = "rswtta-demo-bills";
-const demoParentAccountKey = "rswtta-demo-parent-accounts";
 const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
 const clubPassword = "club123";
-
-const demoBookings: Booking[] = [
-  {
-    id: "demo-1",
-    studentName: "Ethan Chen",
-    familyName: "Chen Family",
-    studentEmail: "parent@example.com",
-    phone: "(650) 555-0188",
-    requestedCoach: "Coach A",
-    assignedCoach: "Coach A",
-    program: "Private lesson",
-    dateLabel: "Mon Sep 1",
-    timeLabel: "4:30 PM",
-    startsAt: "2026-09-01T16:30:00-07:00",
-    priceCents: 15000,
-    status: "club_confirmed",
-    parentNote: "",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  }
-];
 
 function dollars(cents: number) {
   return new Intl.NumberFormat("en-US", {
@@ -296,95 +276,29 @@ export function ClubApp() {
   }
 
   async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
-    if (demoMode) {
-      const accounts = JSON.parse(window.localStorage.getItem(demoParentAccountKey) ?? "[]") as DemoParentAccount[];
-      const confirmationCode = String(Math.floor(100000 + Math.random() * 900000));
-      const account: DemoParentAccount = {
-        id: crypto.randomUUID(),
-        studentName: input.studentName,
-        email: input.email.toLowerCase(),
-        phone: input.phone,
-        password: input.password,
-        confirmationCode,
-        confirmed: false,
-        createdAt: new Date().toISOString()
-      };
-      const next = [account, ...accounts.filter((item) => item.email !== account.email)];
-      window.localStorage.setItem(demoParentAccountKey, JSON.stringify(next));
-      return { confirmationCode };
-    }
-
-    const response = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input)
-    });
-    if (!response.ok) throw new Error("Registration failed");
-    return (await response.json()) as { confirmationCode: string };
+    const result = await registerParentAccount(input);
+    return { confirmationCode: result.confirmationCode };
   }
 
   async function confirmParent(email: string, confirmationCode: string) {
-    if (demoMode) {
-      const accounts = JSON.parse(window.localStorage.getItem(demoParentAccountKey) ?? "[]") as DemoParentAccount[];
-      const account = accounts.find((item) => item.email === email.toLowerCase() && item.confirmationCode === confirmationCode);
-      if (!account) throw new Error("Invalid confirmation code");
-      const confirmed = { ...account, confirmed: true };
-      window.localStorage.setItem(
-        demoParentAccountKey,
-        JSON.stringify(accounts.map((item) => (item.id === account.id ? confirmed : item)))
-      );
-      applyParentSession(confirmed);
-      return;
-    }
-
-    const response = await fetch("/api/auth/confirm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, confirmationCode })
-    });
-    if (!response.ok) throw new Error("Confirmation failed");
-    const data = (await response.json()) as { account: ParentAccount };
-    applyParentSession(data.account);
+    const account = await confirmParentAccount(email, confirmationCode);
+    applyParentSession(account);
   }
 
   async function loginParent(identifier: string, password: string) {
-    if (demoMode) {
-      const accounts = JSON.parse(window.localStorage.getItem(demoParentAccountKey) ?? "[]") as DemoParentAccount[];
-      const account = accounts.find(
-        (item) => (item.email === identifier.toLowerCase() || item.phone === identifier) && item.password === password && item.confirmed
-      );
-      if (!account) throw new Error("Invalid login");
-      applyParentSession(account);
-      return;
-    }
-
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifier, password })
-    });
-    if (!response.ok) throw new Error("Login failed");
-    const data = (await response.json()) as { account: ParentAccount };
-    applyParentSession(data.account);
+    const account = await loginParentAccount(identifier, password);
+    applyParentSession(account);
   }
 
   async function loadAll() {
-    if (demoMode) {
-      const storedBookings = window.localStorage.getItem(demoBookingKey);
-      const storedBills = window.localStorage.getItem(demoBillKey);
-      setBookings(storedBookings ? (JSON.parse(storedBookings) as Booking[]) : demoBookings);
-      setBills(storedBills ? (JSON.parse(storedBills) as BillNotification[]) : []);
-      return;
+    try {
+      const [nextBookings, nextBills] = await Promise.all([listBookings(), listBillNotifications()]);
+      setBookings(nextBookings);
+      setBills(nextBills);
+      setNotice("Supabase 已连接 / Supabase backend connected.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Supabase setup needed.");
     }
-
-    const [bookingResponse, billResponse] = await Promise.all([
-      fetch("/api/bookings", { cache: "no-store" }),
-      fetch("/api/bills/weekly", { cache: "no-store" })
-    ]);
-    const bookingData = (await bookingResponse.json()) as { bookings: Booking[] };
-    const billData = (await billResponse.json()) as { bills: BillNotification[] };
-    setBookings(bookingData.bookings);
-    setBills(billData.bills);
   }
 
   function recurringSlots() {
@@ -402,57 +316,25 @@ export function ClubApp() {
     setSaving(true);
     setNotice("正在保存家长请求 / Saving parent request...");
     try {
-      if (demoMode) {
-        const createdAt = new Date().toISOString();
-        const nextBookings: Booking[] = slots.map((slot) => ({
-          id: crypto.randomUUID(),
-          studentName,
-          familyName,
-          studentEmail,
-          phone,
-          requestedCoach,
-          assignedCoach: requestedCoach,
-          program: lessonProgram(requestedCoach),
-          dateLabel: slot.dateLabel,
-          timeLabel: slot.timeLabel,
-          startsAt: slot.startsAt,
-          priceCents: lessonPriceCents(requestedCoach),
-          status: "requested",
-          parentNote: recurring ? `每周重复预约 / Weekly recurring request. ${parentNote}` : parentNote,
-          createdAt,
-          updatedAt: createdAt
-        }));
-        const next = [...nextBookings, ...bookings];
-        window.localStorage.setItem(demoBookingKey, JSON.stringify(next));
-        setBookings(next);
-        setNotice(`已保存 ${nextBookings.length} 个请求 / Saved ${nextBookings.length} request${nextBookings.length === 1 ? "" : "s"}.`);
-        setMode("club");
-        return;
-      }
-
-      const responses = await Promise.all(
+      await Promise.all(
         slots.map((slot) =>
-          fetch("/api/bookings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              studentName,
-              familyName,
-              studentEmail,
-              phone,
-              requestedCoach,
-              program: lessonProgram(requestedCoach),
-              dateLabel: slot.dateLabel,
-              timeLabel: slot.timeLabel,
-              startsAt: slot.startsAt,
-              priceCents: lessonPriceCents(requestedCoach),
-              parentNote: recurring ? `每周重复预约 / Weekly recurring request. ${parentNote}` : parentNote
-            })
+          createBooking({
+            studentName,
+            familyName,
+            studentEmail,
+            phone,
+            requestedCoach,
+            assignedCoach: requestedCoach,
+            program: lessonProgram(requestedCoach),
+            dateLabel: slot.dateLabel,
+            timeLabel: slot.timeLabel,
+            startsAt: slot.startsAt,
+            priceCents: lessonPriceCents(requestedCoach),
+            parentNote: recurring ? `每周重复预约 / Weekly recurring request. ${parentNote}` : parentNote
           })
         )
       );
 
-      if (responses.some((response) => !response.ok)) throw new Error("Booking request failed");
       await loadAll();
       setNotice(`已保存 ${slots.length} 个请求 / Saved ${slots.length} request${slots.length === 1 ? "" : "s"}.`);
       setMode("club");
@@ -470,44 +352,18 @@ export function ClubApp() {
     schedule?: { dateLabel: string; timeLabel: string; startsAt: string; parentNote?: string }
   ) {
     setNotice(`Updating status to ${statusText(status)}...`);
-    if (demoMode) {
-      const next = bookings.map((booking) =>
-        booking.id === id
-          ? {
-              ...booking,
-              status,
-              assignedCoach: assignedCoach ?? booking.assignedCoach,
-              dateLabel: schedule?.dateLabel ?? booking.dateLabel,
-              timeLabel: schedule?.timeLabel ?? booking.timeLabel,
-              startsAt: schedule?.startsAt ?? booking.startsAt,
-              parentNote: schedule?.parentNote ?? booking.parentNote,
-              updatedAt: new Date().toISOString()
-            }
-          : booking
-      );
-      window.localStorage.setItem(demoBookingKey, JSON.stringify(next));
-      setBookings(next);
-      setNotice(`Saved: ${statusText(status)}. Parent and club views now match.`);
-      return;
-    }
-
-    const response = await fetch(`/api/bookings/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, assignedCoach, ...schedule })
-    });
-
-    if (response.ok) {
+    try {
+      await updateStoredBooking(id, { status, assignedCoach, ...schedule });
       await loadAll();
       setNotice(`Saved: ${statusText(status)}. Parent and club views now match.`);
-    } else {
+    } catch {
       setNotice("无法更新课程 / Could not update booking.");
     }
   }
 
   async function generateBills() {
     setNotice("Generating weekly student bill notifications...");
-    if (demoMode) {
+    try {
       const completed = bookings.filter((booking) => booking.status === "coach_confirmed");
       const grouped = new Map<string, BillNotification>();
 
@@ -531,18 +387,20 @@ export function ClubApp() {
         }
       }
 
-      const next = [...grouped.values(), ...bills];
-      window.localStorage.setItem(demoBillKey, JSON.stringify(next));
-      setBills(next);
-      setNotice("账单提醒已生成 / Bill notifications generated from coach-completed classes.");
-      return;
-    }
-
-    const response = await fetch("/api/bills/weekly", { method: "POST" });
-    if (response.ok) {
+      await Promise.all(
+        [...grouped.values()].map((bill) =>
+          createBillNotification({
+            studentName: bill.studentName,
+            familyName: bill.familyName,
+            classCount: bill.classCount,
+            amountCents: bill.amountCents,
+            message: bill.message
+          })
+        )
+      );
       await loadAll();
       setNotice("账单提醒已生成 / Bill notifications generated from coach-completed classes.");
-    } else {
+    } catch {
       setNotice("无法生成账单 / Could not generate bills.");
     }
   }
@@ -636,7 +494,7 @@ export function ClubApp() {
         <section className="system-banner">
           <strong>流程 / Journey</strong>
           <span>家长请求 → 俱乐部确认 → 教练点击课程完成</span>
-          {demoMode ? <span>GitHub preview mode</span> : null}
+          <span>{notice.startsWith("Supabase setup needed") ? "需要运行 SQL migration / Setup needed" : "Supabase backend"}</span>
         </section>
 
         {mode === "parent" && !parentSession ? (

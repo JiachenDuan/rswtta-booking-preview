@@ -23,8 +23,7 @@ try {
     stdio: "inherit",
     env: {
       ...process.env,
-      GITHUB_PAGES: "true",
-      NEXT_PUBLIC_DEMO_MODE: "true"
+      GITHUB_PAGES: "true"
     }
   });
 
