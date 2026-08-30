@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Bell,
   CalendarDays,
@@ -20,12 +20,35 @@ import type { BillNotification, Booking, BookingStatus } from "@/lib/db";
 
 const coaches = ["Coach A", "Coach B"];
 const calendarSlots = [
-  { day: "Mon", dateLabel: "Mon Sep 1", timeLabel: "4:30 PM", startsAt: "2026-09-01T16:30:00-07:00" },
-  { day: "Tue", dateLabel: "Tue Sep 2", timeLabel: "5:15 PM", startsAt: "2026-09-02T17:15:00-07:00" },
-  { day: "Wed", dateLabel: "Wed Sep 3", timeLabel: "6:00 PM", startsAt: "2026-09-03T18:00:00-07:00" },
-  { day: "Thu", dateLabel: "Thu Sep 4", timeLabel: "4:30 PM", startsAt: "2026-09-04T16:30:00-07:00" },
-  { day: "Sat", dateLabel: "Sat Sep 6", timeLabel: "10:00 AM", startsAt: "2026-09-06T10:00:00-07:00" }
+  { day: "Mon", dayZh: "周一", dateLabel: "Mon Sep 1", timeLabel: "4:30 PM", startsAt: "2026-09-01T16:30:00-07:00" },
+  { day: "Tue", dayZh: "周二", dateLabel: "Tue Sep 2", timeLabel: "5:15 PM", startsAt: "2026-09-02T17:15:00-07:00" },
+  { day: "Wed", dayZh: "周三", dateLabel: "Wed Sep 3", timeLabel: "6:00 PM", startsAt: "2026-09-03T18:00:00-07:00" },
+  { day: "Thu", dayZh: "周四", dateLabel: "Thu Sep 4", timeLabel: "4:30 PM", startsAt: "2026-09-04T16:30:00-07:00" },
+  { day: "Sat", dayZh: "周六", dateLabel: "Sat Sep 6", timeLabel: "10:00 AM", startsAt: "2026-09-06T10:00:00-07:00" }
 ];
+const calendarDays = [
+  { day: "Mon", dayZh: "周一", dateLabel: "Mon Sep 1", dateZh: "9月1日" },
+  { day: "Tue", dayZh: "周二", dateLabel: "Tue Sep 2", dateZh: "9月2日" },
+  { day: "Wed", dayZh: "周三", dateLabel: "Wed Sep 3", dateZh: "9月3日" },
+  { day: "Thu", dayZh: "周四", dateLabel: "Thu Sep 4", dateZh: "9月4日" },
+  { day: "Fri", dayZh: "周五", dateLabel: "Fri Sep 5", dateZh: "9月5日" },
+  { day: "Sat", dayZh: "周六", dateLabel: "Sat Sep 6", dateZh: "9月6日" }
+];
+const calendarTimes = ["4:30 PM", "5:15 PM", "6:00 PM", "7:00 PM"];
+const dayStartDates: Record<string, string> = {
+  "Mon Sep 1": "2026-09-01",
+  "Tue Sep 2": "2026-09-02",
+  "Wed Sep 3": "2026-09-03",
+  "Thu Sep 4": "2026-09-04",
+  "Fri Sep 5": "2026-09-05",
+  "Sat Sep 6": "2026-09-06"
+};
+const timeStartHours: Record<string, string> = {
+  "4:30 PM": "16:30:00",
+  "5:15 PM": "17:15:00",
+  "6:00 PM": "18:00:00",
+  "7:00 PM": "19:00:00"
+};
 
 const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const demoBookingKey = "rswtta-demo-bookings";
@@ -74,6 +97,23 @@ function statusText(status: BookingStatus) {
 function canParentChange(booking: Booking) {
   const starts = new Date(booking.startsAt).getTime();
   return starts - Date.now() > 12 * 60 * 60 * 1000 && ["requested", "club_confirmed"].includes(booking.status);
+}
+
+function makeStartsAt(dateLabel: string, timeLabel: string) {
+  return `${dayStartDates[dateLabel]}T${timeStartHours[timeLabel]}-07:00`;
+}
+
+function findSlot(dateLabel: string, timeLabel: string) {
+  const existing = calendarSlots.find((slot) => slot.dateLabel === dateLabel && slot.timeLabel === timeLabel);
+  if (existing) return existing;
+  const day = calendarDays.find((item) => item.dateLabel === dateLabel) ?? calendarDays[0];
+  return {
+    day: day.day,
+    dayZh: day.dayZh,
+    dateLabel,
+    timeLabel,
+    startsAt: makeStartsAt(dateLabel, timeLabel)
+  };
 }
 
 export function ClubApp() {
@@ -459,31 +499,16 @@ function ParentApp({
             ))}
           </div>
           <div className="calendar-board">
-            {calendarSlots.map((slot) => {
-              const slotBookings = allBookings.filter((booking) => booking.startsAt === slot.startsAt && booking.status !== "cancelled");
-              return (
-                <button className={selectedSlot.startsAt === slot.startsAt ? "calendar-slot selected" : "calendar-slot"} key={slot.startsAt} onClick={() => onSlotChange(slot)}>
-                  <span>{slot.day}</span>
-                  <strong>{slot.timeLabel}</strong>
-                  <small>{coaches.join(" / ")}</small>
-                  <div className="slot-bookings">
-                    {slotBookings.length === 0 ? (
-                      <em>Available / 可预约</em>
-                    ) : (
-                      slotBookings.map((booking) => (
-                        <em key={booking.id}>
-                          {booking.assignedCoach}: {booking.studentName} · {statusText(booking.status)}
-                        </em>
-                      ))
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+            <ClubCalendar
+              bookings={allBookings}
+              selectedSlot={selectedSlot}
+              requestedCoach={requestedCoach}
+              onSlotChange={onSlotChange}
+            />
           </div>
           <button className="primary-button wide-button" disabled={saving} onClick={onRequestBooking}>
             <CalendarDays size={18} />
-            {saving ? "Saving request..." : `Request ${requestedCoach} at ${selectedSlot.timeLabel}`}
+            {saving ? "Saving request..." : `Request ${requestedCoach} / 预约${requestedCoach} ${selectedSlot.dateLabel} ${selectedSlot.timeLabel}`}
           </button>
           <p className="system-note">{notice}</p>
         </section>
@@ -516,6 +541,64 @@ function ParentApp({
         </section>
       </div>
     </section>
+  );
+}
+
+function ClubCalendar({
+  bookings,
+  selectedSlot,
+  requestedCoach,
+  onSlotChange
+}: {
+  bookings: Booking[];
+  selectedSlot: (typeof calendarSlots)[number];
+  requestedCoach: string;
+  onSlotChange: (value: (typeof calendarSlots)[number]) => void;
+}) {
+  return (
+    <div className="week-calendar" aria-label="Club calendar view">
+      <div className="calendar-corner">Time<br />时间</div>
+      {calendarDays.map((day) => (
+        <div className="calendar-day-head" key={day.dateLabel}>
+          <strong>{day.day}</strong>
+          <span>{day.dayZh}</span>
+        </div>
+      ))}
+
+      {calendarTimes.map((timeLabel) => (
+        <Fragment key={timeLabel}>
+          <div className="calendar-time" key={`${timeLabel}-label`}>
+            <strong>{timeLabel}</strong>
+          </div>
+          {calendarDays.map((day) => {
+            const startsAt = makeStartsAt(day.dateLabel, timeLabel);
+            const slotBookings = bookings.filter((booking) => booking.startsAt === startsAt && booking.status !== "cancelled");
+            const slot = findSlot(day.dateLabel, timeLabel);
+            const selected = selectedSlot.startsAt === startsAt;
+            return (
+              <button
+                className={selected ? "calendar-cell selected" : "calendar-cell"}
+                key={startsAt}
+                onClick={() => onSlotChange(slot)}
+              >
+                {slotBookings.length === 0 ? (
+                  <span className="open-slot">Available<br />可预约</span>
+                ) : (
+                  slotBookings.map((booking) => (
+                    <span className={`calendar-booking ${booking.status}`} key={booking.id}>
+                      <strong>{booking.assignedCoach}</strong>
+                      <small>{booking.studentName}</small>
+                      <em>{statusText(booking.status)}</em>
+                    </span>
+                  ))
+                )}
+                {selected ? <span className="selected-label">{requestedCoach} selected / 已选择</span> : null}
+              </button>
+            );
+          })}
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
