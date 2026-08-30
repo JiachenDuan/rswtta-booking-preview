@@ -5,6 +5,8 @@ import {
   Bell,
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   LayoutDashboard,
   Mail,
   Phone,
@@ -17,35 +19,29 @@ import {
 import type { BillNotification, Booking, BookingStatus } from "@/lib/db";
 
 const coaches = ["Coach A", "Coach B"];
-const calendarSlots = [
-  { day: "Mon", dayZh: "周一", dateLabel: "Mon Sep 1", timeLabel: "4:30 PM", startsAt: "2026-09-01T16:30:00-07:00" },
-  { day: "Tue", dayZh: "周二", dateLabel: "Tue Sep 2", timeLabel: "5:15 PM", startsAt: "2026-09-02T17:15:00-07:00" },
-  { day: "Wed", dayZh: "周三", dateLabel: "Wed Sep 3", timeLabel: "6:00 PM", startsAt: "2026-09-03T18:00:00-07:00" },
-  { day: "Thu", dayZh: "周四", dateLabel: "Thu Sep 4", timeLabel: "4:30 PM", startsAt: "2026-09-04T16:30:00-07:00" },
-  { day: "Sat", dayZh: "周六", dateLabel: "Sat Sep 6", timeLabel: "10:00 AM", startsAt: "2026-09-06T10:00:00-07:00" }
-];
-const calendarDays = [
-  { day: "Mon", dayZh: "周一", dateLabel: "Mon Sep 1", dateZh: "9月1日" },
-  { day: "Tue", dayZh: "周二", dateLabel: "Tue Sep 2", dateZh: "9月2日" },
-  { day: "Wed", dayZh: "周三", dateLabel: "Wed Sep 3", dateZh: "9月3日" },
-  { day: "Thu", dayZh: "周四", dateLabel: "Thu Sep 4", dateZh: "9月4日" },
-  { day: "Fri", dayZh: "周五", dateLabel: "Fri Sep 5", dateZh: "9月5日" },
-  { day: "Sat", dayZh: "周六", dateLabel: "Sat Sep 6", dateZh: "9月6日" }
-];
 const calendarTimes = ["4:30 PM", "5:15 PM", "6:00 PM", "7:00 PM"];
-const dayStartDates: Record<string, string> = {
-  "Mon Sep 1": "2026-09-01",
-  "Tue Sep 2": "2026-09-02",
-  "Wed Sep 3": "2026-09-03",
-  "Thu Sep 4": "2026-09-04",
-  "Fri Sep 5": "2026-09-05",
-  "Sat Sep 6": "2026-09-06"
+const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dayNamesZh = ["周一", "周二", "周三", "周四", "周五", "周六"];
+const timeParts: Record<string, [number, number]> = {
+  "4:30 PM": [16, 30],
+  "5:15 PM": [17, 15],
+  "6:00 PM": [18, 0],
+  "7:00 PM": [19, 0]
 };
-const timeStartHours: Record<string, string> = {
-  "4:30 PM": "16:30:00",
-  "5:15 PM": "17:15:00",
-  "6:00 PM": "18:00:00",
-  "7:00 PM": "19:00:00"
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+
+type CalendarDay = {
+  day: string;
+  dayZh: string;
+  date: Date;
+  dateLabel: string;
+  dateZh: string;
+};
+
+type CalendarSlot = CalendarDay & {
+  timeLabel: string;
+  startsAt: string;
 };
 
 const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
@@ -97,22 +93,79 @@ function canParentChange(booking: Booking) {
   return starts - Date.now() > 12 * 60 * 60 * 1000 && ["requested", "club_confirmed"].includes(booking.status);
 }
 
-function makeStartsAt(dateLabel: string, timeLabel: string) {
-  return `${dayStartDates[dateLabel]}T${timeStartHours[timeLabel]}-07:00`;
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
 }
 
-function findSlot(dateLabel: string, timeLabel: string) {
-  const existing = calendarSlots.find((slot) => slot.dateLabel === dateLabel && slot.timeLabel === timeLabel);
-  if (existing) return existing;
-  const day = calendarDays.find((item) => item.dateLabel === dateLabel) ?? calendarDays[0];
+function addMonths(date: Date, months: number) {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function startOfWeek(date: Date) {
+  const next = new Date(date);
+  const day = next.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + offset);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function dateLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric"
+  }).format(date);
+}
+
+function dateZh(date: Date) {
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function makeStartsAt(date: Date, timeLabel: string) {
+  const [hours, minutes] = timeParts[timeLabel];
+  const starts = new Date(date);
+  starts.setHours(hours, minutes, 0, 0);
+  return starts.toISOString();
+}
+
+function makeCalendarDay(date: Date, index: number): CalendarDay {
   return {
-    day: day.day,
-    dayZh: day.dayZh,
-    dateLabel,
-    timeLabel,
-    startsAt: makeStartsAt(dateLabel, timeLabel)
+    day: dayNames[index],
+    dayZh: dayNamesZh[index],
+    date,
+    dateLabel: dateLabel(date),
+    dateZh: dateZh(date)
   };
 }
+
+function makeCalendarSlot(day: CalendarDay, timeLabel: string): CalendarSlot {
+  return {
+    ...day,
+    timeLabel,
+    startsAt: makeStartsAt(day.date, timeLabel)
+  };
+}
+
+function weekDays(weekStart: Date) {
+  return dayNames.map((_, index) => makeCalendarDay(addDays(weekStart, index), index));
+}
+
+function weekLabel(days: CalendarDay[]) {
+  const first = days[0];
+  const last = days[days.length - 1];
+  return `${first.dateZh} - ${last.dateZh} / ${first.dateLabel} - ${last.dateLabel}`;
+}
+
+const minCalendarDate = addMonths(today, -3);
+const maxCalendarDate = addMonths(today, 3);
+const initialWeekStart = startOfWeek(addDays(today, 1));
+const initialCalendarDay = makeCalendarDay(addDays(initialWeekStart, 2), 2);
+const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7:00 PM");
 
 export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
@@ -124,8 +177,14 @@ export function ClubApp() {
   const [studentEmail, setStudentEmail] = useState("parent@example.com");
   const [phone, setPhone] = useState("(650) 555-0188");
   const [requestedCoach, setRequestedCoach] = useState(coaches[0]);
-  const [selectedSlot, setSelectedSlot] = useState(calendarSlots[0]);
+  const [visibleWeekStart, setVisibleWeekStart] = useState(initialWeekStart);
+  const [selectedSlot, setSelectedSlot] = useState<CalendarSlot>(initialCalendarSlot);
+  const [recurring, setRecurring] = useState(false);
+  const [recurringWeeks, setRecurringWeeks] = useState(4);
   const [saving, setSaving] = useState(false);
+  const calendarDays = useMemo(() => weekDays(visibleWeekStart), [visibleWeekStart]);
+  const canGoPrevious = addDays(visibleWeekStart, -7) >= startOfWeek(minCalendarDate);
+  const canGoNext = addDays(visibleWeekStart, 7) <= startOfWeek(maxCalendarDate);
 
   const parentBookings = useMemo(
     () => bookings.filter((booking) => booking.familyName === familyName || booking.phone === phone || booking.studentEmail === studentEmail),
@@ -155,12 +214,24 @@ export function ClubApp() {
     setBills(billData.bills);
   }
 
+  function recurringSlots() {
+    if (!recurring) return [selectedSlot];
+
+    return Array.from({ length: recurringWeeks }, (_, index) => {
+      const date = addDays(selectedSlot.date, index * 7);
+      const dayIndex = Math.max(0, date.getDay() - 1);
+      return makeCalendarSlot(makeCalendarDay(date, dayIndex), selectedSlot.timeLabel);
+    }).filter((slot) => new Date(slot.startsAt) <= maxCalendarDate);
+  }
+
   async function requestBooking(parentNote = "") {
+    const slots = recurringSlots();
     setSaving(true);
     setNotice("正在保存家长请求 / Saving parent request...");
     try {
       if (demoMode) {
-        const booking: Booking = {
+        const createdAt = new Date().toISOString();
+        const nextBookings: Booking[] = slots.map((slot) => ({
           id: crypto.randomUUID(),
           studentName,
           familyName,
@@ -169,44 +240,48 @@ export function ClubApp() {
           requestedCoach,
           assignedCoach: requestedCoach,
           program: requestedCoach === "Coach A" ? "Private lesson" : "Group lesson",
-          dateLabel: selectedSlot.dateLabel,
-          timeLabel: selectedSlot.timeLabel,
-          startsAt: selectedSlot.startsAt,
+          dateLabel: slot.dateLabel,
+          timeLabel: slot.timeLabel,
+          startsAt: slot.startsAt,
           priceCents: requestedCoach === "Coach A" ? 15000 : 7500,
           status: "requested",
-          parentNote,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        const next = [booking, ...bookings];
+          parentNote: recurring ? `每周重复预约 / Weekly recurring request. ${parentNote}` : parentNote,
+          createdAt,
+          updatedAt: createdAt
+        }));
+        const next = [...nextBookings, ...bookings];
         window.localStorage.setItem(demoBookingKey, JSON.stringify(next));
         setBookings(next);
-        setNotice("请求已保存 / Request saved. Club can confirm coach and time.");
+        setNotice(`已保存 ${nextBookings.length} 个请求 / Saved ${nextBookings.length} request${nextBookings.length === 1 ? "" : "s"}.`);
         setMode("club");
         return;
       }
 
-      const response = await fetch("/api/bookings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentName,
-          familyName,
-          studentEmail,
-          phone,
-          requestedCoach,
-          program: requestedCoach === "Coach A" ? "Private lesson" : "Group lesson",
-          dateLabel: selectedSlot.dateLabel,
-          timeLabel: selectedSlot.timeLabel,
-          startsAt: selectedSlot.startsAt,
-          priceCents: requestedCoach === "Coach A" ? 15000 : 7500,
-          parentNote
-        })
-      });
+      const responses = await Promise.all(
+        slots.map((slot) =>
+          fetch("/api/bookings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              studentName,
+              familyName,
+              studentEmail,
+              phone,
+              requestedCoach,
+              program: requestedCoach === "Coach A" ? "Private lesson" : "Group lesson",
+              dateLabel: slot.dateLabel,
+              timeLabel: slot.timeLabel,
+              startsAt: slot.startsAt,
+              priceCents: requestedCoach === "Coach A" ? 15000 : 7500,
+              parentNote: recurring ? `每周重复预约 / Weekly recurring request. ${parentNote}` : parentNote
+            })
+          })
+        )
+      );
 
-      if (!response.ok) throw new Error("Booking request failed");
+      if (responses.some((response) => !response.ok)) throw new Error("Booking request failed");
       await loadAll();
-      setNotice("家长请求已保存 / Parent request saved. Club can confirm coach and time.");
+      setNotice(`已保存 ${slots.length} 个请求 / Saved ${slots.length} request${slots.length === 1 ? "" : "s"}.`);
       setMode("club");
     } catch {
       setNotice("无法保存预约请求 / Could not save booking request.");
@@ -374,6 +449,12 @@ export function ClubApp() {
             phone={phone}
             requestedCoach={requestedCoach}
             selectedSlot={selectedSlot}
+            calendarDays={calendarDays}
+            weekLabel={weekLabel(calendarDays)}
+            canGoPrevious={canGoPrevious}
+            canGoNext={canGoNext}
+            recurring={recurring}
+            recurringWeeks={recurringWeeks}
             saving={saving}
             onStudentNameChange={setStudentName}
             onFamilyNameChange={setFamilyName}
@@ -381,6 +462,14 @@ export function ClubApp() {
             onPhoneChange={setPhone}
             onCoachChange={setRequestedCoach}
             onSlotChange={setSelectedSlot}
+            onPreviousWeek={() => setVisibleWeekStart((week) => addDays(week, -7))}
+            onNextWeek={() => setVisibleWeekStart((week) => addDays(week, 7))}
+            onToday={() => {
+              setVisibleWeekStart(initialWeekStart);
+              setSelectedSlot(initialCalendarSlot);
+            }}
+            onRecurringChange={setRecurring}
+            onRecurringWeeksChange={setRecurringWeeks}
             onRequestBooking={() => requestBooking()}
             onChangeRequest={(booking) => {
               if (!canParentChange(booking)) {
@@ -406,10 +495,20 @@ export function ClubApp() {
           <ClubAppView
             bookings={bookings}
             selectedSlot={selectedSlot}
+            calendarDays={calendarDays}
+            weekLabel={weekLabel(calendarDays)}
+            canGoPrevious={canGoPrevious}
+            canGoNext={canGoNext}
             bills={bills}
             notice={notice}
             requestedCoach={requestedCoach}
             onSlotChange={setSelectedSlot}
+            onPreviousWeek={() => setVisibleWeekStart((week) => addDays(week, -7))}
+            onNextWeek={() => setVisibleWeekStart((week) => addDays(week, 7))}
+            onToday={() => {
+              setVisibleWeekStart(initialWeekStart);
+              setSelectedSlot(initialCalendarSlot);
+            }}
             onConfirm={(booking, coach) => updateBooking(booking.id, "club_confirmed", coach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
             onGenerateBills={generateBills}
@@ -431,6 +530,12 @@ function ParentApp({
   phone,
   requestedCoach,
   selectedSlot,
+  calendarDays,
+  weekLabel,
+  canGoPrevious,
+  canGoNext,
+  recurring,
+  recurringWeeks,
   saving,
   onStudentNameChange,
   onFamilyNameChange,
@@ -438,6 +543,11 @@ function ParentApp({
   onPhoneChange,
   onCoachChange,
   onSlotChange,
+  onPreviousWeek,
+  onNextWeek,
+  onToday,
+  onRecurringChange,
+  onRecurringWeeksChange,
   onRequestBooking,
   onChangeRequest,
   onCancel
@@ -451,14 +561,25 @@ function ParentApp({
   studentEmail: string;
   phone: string;
   requestedCoach: string;
-  selectedSlot: (typeof calendarSlots)[number];
+  selectedSlot: CalendarSlot;
+  calendarDays: CalendarDay[];
+  weekLabel: string;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
+  recurring: boolean;
+  recurringWeeks: number;
   saving: boolean;
   onStudentNameChange: (value: string) => void;
   onFamilyNameChange: (value: string) => void;
   onStudentEmailChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
   onCoachChange: (value: string) => void;
-  onSlotChange: (value: (typeof calendarSlots)[number]) => void;
+  onSlotChange: (value: CalendarSlot) => void;
+  onPreviousWeek: () => void;
+  onNextWeek: () => void;
+  onToday: () => void;
+  onRecurringChange: (value: boolean) => void;
+  onRecurringWeeksChange: (value: number) => void;
   onRequestBooking: () => void;
   onChangeRequest: (booking: Booking) => void;
   onCancel: (booking: Booking) => void;
@@ -470,10 +591,18 @@ function ParentApp({
           <div>
             <p className="eyebrow">俱乐部日历 / Club calendar</p>
             <h2>查看教练课表并请求上课</h2>
-            <p className="section-subtitle">家长端 / Parent App: see the whole coach schedule, then tap a time to request class.</p>
+            <p className="section-subtitle">家长端 / Parent App: 可查看前三个月和后三个月，选择时间请求上课。</p>
           </div>
           <span className="status-chip good">{bookings.length} 课程 / classes</span>
         </div>
+        <CalendarControls
+          weekLabel={weekLabel}
+          canGoPrevious={canGoPrevious}
+          canGoNext={canGoNext}
+          onPreviousWeek={onPreviousWeek}
+          onNextWeek={onNextWeek}
+          onToday={onToday}
+        />
         <div className="booking-toolbar">
           <div className="coach-toggle">
             {coaches.map((coach) => (
@@ -484,14 +613,33 @@ function ParentApp({
           </div>
           <button className="primary-button wide-button" disabled={saving} onClick={onRequestBooking}>
             <CalendarDays size={18} />
-            {saving ? "保存中 / Saving..." : `请求预约 / Request ${requestedCoach} ${selectedSlot.dateLabel} ${selectedSlot.timeLabel}`}
+            {saving
+              ? "保存中 / Saving..."
+              : recurring
+                ? `重复预约 / Weekly ${recurringWeeks} weeks ${selectedSlot.dayZh} ${selectedSlot.timeLabel}`
+                : `请求预约 / Request ${requestedCoach} ${selectedSlot.dateLabel} ${selectedSlot.timeLabel}`}
           </button>
+        </div>
+        <div className="recurring-row">
+          <label>
+            <input type="checkbox" checked={recurring} onChange={(event) => onRecurringChange(event.target.checked)} />
+            <span>每周重复预约 / Weekly recurring</span>
+          </label>
+          <select value={recurringWeeks} onChange={(event) => onRecurringWeeksChange(Number(event.target.value))} disabled={!recurring}>
+            <option value={4}>4 周 / 4 weeks</option>
+            <option value={8}>8 周 / 8 weeks</option>
+            <option value={12}>12 周 / 12 weeks</option>
+          </select>
+          <span>
+            当前选择 / Selected: {selectedSlot.dayZh} {selectedSlot.timeLabel} - 8:00 PM
+          </span>
         </div>
         <div className="calendar-board">
           <ClubCalendar
             bookings={allBookings}
             selectedSlot={selectedSlot}
             requestedCoach={requestedCoach}
+            calendarDays={calendarDays}
             onSlotChange={onSlotChange}
           />
         </div>
@@ -568,16 +716,52 @@ function ParentApp({
   );
 }
 
+function CalendarControls({
+  weekLabel,
+  canGoPrevious,
+  canGoNext,
+  onPreviousWeek,
+  onNextWeek,
+  onToday
+}: {
+  weekLabel: string;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
+  onPreviousWeek: () => void;
+  onNextWeek: () => void;
+  onToday: () => void;
+}) {
+  return (
+    <div className="calendar-controls">
+      <button className="icon-button" disabled={!canGoPrevious} onClick={onPreviousWeek} aria-label="Previous week">
+        <ChevronLeft size={18} />
+      </button>
+      <div>
+        <strong>{weekLabel}</strong>
+        <span>前三个月 - 后三个月 / 3 months back to 3 months forward</span>
+      </div>
+      <button className="filter-button" onClick={onToday}>
+        今天 / Today
+      </button>
+      <button className="icon-button" disabled={!canGoNext} onClick={onNextWeek} aria-label="Next week">
+        <ChevronRight size={18} />
+      </button>
+    </div>
+  );
+}
+
 function ClubCalendar({
   bookings,
   selectedSlot,
   requestedCoach,
+  calendarDays,
   onSlotChange
 }: {
   bookings: Booking[];
-  selectedSlot: (typeof calendarSlots)[number];
+  selectedSlot: CalendarSlot;
   requestedCoach: string;
-  onSlotChange: (value: (typeof calendarSlots)[number]) => void;
+  calendarDays: CalendarDay[];
+  onSlotChange: (value: CalendarSlot) => void;
 }) {
   return (
     <div className="week-calendar" aria-label="Club calendar view">
@@ -595,9 +779,9 @@ function ClubCalendar({
             <strong>{timeLabel}</strong>
           </div>
           {calendarDays.map((day) => {
-            const startsAt = makeStartsAt(day.dateLabel, timeLabel);
+            const startsAt = makeStartsAt(day.date, timeLabel);
             const slotBookings = bookings.filter((booking) => booking.startsAt === startsAt && booking.status !== "cancelled");
-            const slot = findSlot(day.dateLabel, timeLabel);
+            const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlot.startsAt === startsAt;
             return (
               <button
@@ -629,20 +813,34 @@ function ClubCalendar({
 function ClubAppView({
   bookings,
   selectedSlot,
+  calendarDays,
+  weekLabel,
+  canGoPrevious,
+  canGoNext,
   bills,
   notice,
   requestedCoach,
   onSlotChange,
+  onPreviousWeek,
+  onNextWeek,
+  onToday,
   onConfirm,
   onCoachComplete,
   onGenerateBills
 }: {
   bookings: Booking[];
-  selectedSlot: (typeof calendarSlots)[number];
+  selectedSlot: CalendarSlot;
+  calendarDays: CalendarDay[];
+  weekLabel: string;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
   bills: BillNotification[];
   notice: string;
   requestedCoach: string;
-  onSlotChange: (value: (typeof calendarSlots)[number]) => void;
+  onSlotChange: (value: CalendarSlot) => void;
+  onPreviousWeek: () => void;
+  onNextWeek: () => void;
+  onToday: () => void;
   onConfirm: (booking: Booking, coach: string) => void;
   onCoachComplete: (booking: Booking) => void;
   onGenerateBills: () => void;
@@ -658,15 +856,24 @@ function ClubAppView({
           <div>
             <p className="eyebrow">俱乐部日历 / Club calendar</p>
             <h2>确认请求并完成课程</h2>
-            <p className="section-subtitle">俱乐部端 / Club App: requested, confirmed, and completed classes all live on the calendar.</p>
+            <p className="section-subtitle">俱乐部端 / Club App: 前后三个月都可以查看和排课。</p>
           </div>
           <span className="status-chip">{requested.length} 待确认 / pending</span>
         </div>
+        <CalendarControls
+          weekLabel={weekLabel}
+          canGoPrevious={canGoPrevious}
+          canGoNext={canGoNext}
+          onPreviousWeek={onPreviousWeek}
+          onNextWeek={onNextWeek}
+          onToday={onToday}
+        />
         <div className="calendar-board">
           <ClubCalendar
             bookings={bookings}
             selectedSlot={selectedSlot}
             requestedCoach={requestedCoach}
+            calendarDays={calendarDays}
             onSlotChange={onSlotChange}
           />
         </div>
