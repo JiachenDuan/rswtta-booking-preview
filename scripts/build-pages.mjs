@@ -1,4 +1,4 @@
-import { existsSync, renameSync, rmSync } from "node:fs";
+import { existsSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const apiPath = "app/api";
@@ -30,6 +30,8 @@ try {
 
   if (result.status !== 0) {
     process.exitCode = result.status ?? 1;
+  } else {
+    writeFileSync("out/.nojekyll", "");
   }
 } finally {
   restoreApi();
