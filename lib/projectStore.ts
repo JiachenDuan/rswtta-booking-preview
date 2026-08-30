@@ -62,7 +62,7 @@ let schemaPromise: Promise<Record<keyof typeof tableDefinitions, string>> | null
 
 function setupError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
-  return new Error(`数据库暂时不可用 / Database is not ready. ${message}`);
+  return new Error(`数据库连接中 / Connecting to database. ${message}`);
 }
 
 async function selectOrInsertProject(): Promise<Project> {

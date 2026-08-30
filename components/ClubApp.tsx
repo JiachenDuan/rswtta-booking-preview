@@ -278,6 +278,7 @@ export function ClubApp() {
   async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
     const result = await registerParentAccount(input);
     applyParentSession(result.account);
+    setMode("parent");
   }
 
   async function loginParent(identifier: string, password: string) {
@@ -509,6 +510,8 @@ export function ClubApp() {
 
         {mode === "parent" && !parentSession ? (
           <UnifiedAuth
+            initialAuthMode="register"
+            intent="parent"
             onRegister={registerParent}
             onLogin={loginUnified}
           />
@@ -572,6 +575,8 @@ export function ClubApp() {
           />
         ) : mode === "club" && !clubAuthenticated ? (
           <UnifiedAuth
+            initialAuthMode="login"
+            intent="club"
             onRegister={registerParent}
             onLogin={loginUnified}
           />
@@ -605,20 +610,37 @@ export function ClubApp() {
 }
 
 function UnifiedAuth({
+  initialAuthMode,
+  intent,
   onRegister,
   onLogin
 }: {
+  initialAuthMode: "login" | "register";
+  intent: "parent" | "club";
   onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogin: (identifier: string, password: string) => Promise<void>;
 }) {
-  const [authMode, setAuthMode] = useState<"login" | "register">("register");
+  const [authMode, setAuthMode] = useState<"login" | "register">(initialAuthMode);
   const [studentName, setStudentName] = useState("Ethan Chen");
   const [email, setEmail] = useState("parent@example.com");
   const [phone, setPhone] = useState("(650) 555-0188");
-  const [password, setPassword] = useState("parent123");
-  const [identifier, setIdentifier] = useState("parent@example.com");
-  const [notice, setNotice] = useState("家长用学生账号登录；俱乐部用管理邮箱登录 / Parents use student account; club uses manager email.");
+  const [password, setPassword] = useState(intent === "club" ? clubPassword : "parent123");
+  const [identifier, setIdentifier] = useState(intent === "club" ? clubEmail : "parent@example.com");
+  const [notice, setNotice] = useState(
+    intent === "club"
+      ? "输入俱乐部邮箱和密码后会直接进入 Club 管理界面 / Club credentials open the club app automatically."
+      : "家长注册学生账号；俱乐部也用这个登录页 / Parents register student account; club uses the same login page."
+  );
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setAuthMode(initialAuthMode);
+    if (intent === "club") {
+      setIdentifier(clubEmail);
+      setPassword(clubPassword);
+      setNotice("输入俱乐部邮箱和密码后会直接进入 Club 管理界面 / Club credentials open the club app automatically.");
+    }
+  }, [initialAuthMode, intent]);
 
   async function handleRegister() {
     setBusy(true);
@@ -651,20 +673,26 @@ function UnifiedAuth({
           <div>
             <p className="eyebrow">统一登录 / One login</p>
             <h2>统一登录入口</h2>
-            <p className="section-subtitle">家长注册学生账号；俱乐部用 rswtta@gmail.com 登录 / One login page for parent and club.</p>
+            <p className="section-subtitle">
+              {intent === "club"
+                ? "俱乐部输入管理邮箱后自动进入 Club 界面 / Club manager login opens the club app."
+                : "家长注册学生账号；俱乐部用同一个登录页 / One login page for parent and club."}
+            </p>
           </div>
         </div>
 
-        <div className="mode-switch auth-switch">
-          <button type="button" className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
-            注册 Register
-          </button>
-          <button type="button" className={authMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
-            登录 Login
-          </button>
-        </div>
+        {intent === "parent" ? (
+          <div className="mode-switch auth-switch">
+            <button type="button" className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
+              注册 Register
+            </button>
+            <button type="button" className={authMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
+              登录 Login
+            </button>
+          </div>
+        ) : null}
 
-        {authMode === "register" ? (
+        {authMode === "register" && intent === "parent" ? (
           <div className="simple-form auth-form">
             <label>
               <span>学生名字 / Student name</span>
@@ -701,7 +729,7 @@ function UnifiedAuth({
         {authMode === "login" ? (
           <div className="simple-form auth-form">
             <label>
-              <span>邮箱或电话 / Email or phone</span>
+              <span>{intent === "club" ? "俱乐部邮箱 / Club email" : "邮箱或电话 / Email or phone"}</span>
               <div className="input-shell">
                 <Mail size={18} />
                 <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} />
@@ -715,7 +743,11 @@ function UnifiedAuth({
               <LogIn size={18} />
               登录 / Login
             </button>
-            <p className="helper-line">Club 使用管理邮箱登录 / Club uses manager email login.</p>
+            <p className="helper-line">
+              {intent === "club"
+                ? "使用 rswtta@gmail.com / rswtta888 会直接进入 Club App。"
+                : "Club 使用管理邮箱登录 / Club uses manager email login."}
+            </p>
           </div>
         ) : null}
 
