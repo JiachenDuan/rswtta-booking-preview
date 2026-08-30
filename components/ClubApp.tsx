@@ -17,7 +17,6 @@ import {
   Table2,
   UserPlus,
   UserRound,
-  UsersRound,
   X
 } from "lucide-react";
 import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/db";
@@ -211,10 +210,9 @@ export function ClubApp() {
     .reduce((sum, booking) => sum + booking.priceCents, 0);
 
   function applyParentSession(account: ParentAccount) {
-    const family = `${account.studentName.split(" ").slice(-1)[0] || account.studentName} Family`;
     setParentSession(account);
     setStudentName(account.studentName);
-    setFamilyName(family);
+    setFamilyName(account.studentName);
     setStudentEmail(account.email);
     setPhone(account.phone);
     window.localStorage.setItem(parentSessionKey, JSON.stringify(account));
@@ -577,7 +575,6 @@ export function ClubApp() {
             completedTotal={completedTotal}
             notice={notice}
             studentName={studentName}
-            familyName={familyName}
             studentEmail={studentEmail}
             phone={phone}
             requestedCoach={requestedCoach}
@@ -589,8 +586,10 @@ export function ClubApp() {
             recurring={recurring}
             recurringWeeks={recurringWeeks}
             saving={saving}
-            onStudentNameChange={setStudentName}
-            onFamilyNameChange={setFamilyName}
+            onStudentNameChange={(value) => {
+              setStudentName(value);
+              setFamilyName(value);
+            }}
             onStudentEmailChange={setStudentEmail}
             onPhoneChange={setPhone}
             onCoachChange={setRequestedCoach}
@@ -871,7 +870,6 @@ function ParentApp({
   completedTotal,
   notice,
   studentName,
-  familyName,
   studentEmail,
   phone,
   requestedCoach,
@@ -884,7 +882,6 @@ function ParentApp({
   recurringWeeks,
   saving,
   onStudentNameChange,
-  onFamilyNameChange,
   onStudentEmailChange,
   onPhoneChange,
   onCoachChange,
@@ -903,7 +900,6 @@ function ParentApp({
   completedTotal: number;
   notice: string;
   studentName: string;
-  familyName: string;
   studentEmail: string;
   phone: string;
   requestedCoach: string;
@@ -916,7 +912,6 @@ function ParentApp({
   recurringWeeks: number;
   saving: boolean;
   onStudentNameChange: (value: string) => void;
-  onFamilyNameChange: (value: string) => void;
   onStudentEmailChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
   onCoachChange: (value: string) => void;
@@ -1007,13 +1002,6 @@ function ParentApp({
               <div className="input-shell">
                 <UserRound size={18} />
                 <input value={studentName} onChange={(event) => onStudentNameChange(event.target.value)} />
-              </div>
-            </label>
-            <label>
-              <span>家庭 / Family</span>
-              <div className="input-shell">
-                <UsersRound size={18} />
-                <input value={familyName} onChange={(event) => onFamilyNameChange(event.target.value)} />
               </div>
             </label>
             <label>
