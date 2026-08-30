@@ -471,6 +471,30 @@ p {
   gap: 18px;
 }
 
+.calendar-first {
+  display: grid;
+  gap: 18px;
+}
+
+.calendar-core {
+  min-width: 0;
+}
+
+.support-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.76fr) minmax(0, 1fr) minmax(320px, 0.76fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.booking-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 360px) minmax(280px, auto);
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 .parent-grid {
   margin-top: 18px;
 }
@@ -769,7 +793,6 @@ p {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 12px;
 }
 
 .coach-toggle button,
@@ -1160,7 +1183,12 @@ p {
 
   .hero-band,
   .content-grid,
-  .simple-grid {
+  .simple-grid,
+  .support-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .booking-toolbar {
     grid-template-columns: 1fr;
   }
 

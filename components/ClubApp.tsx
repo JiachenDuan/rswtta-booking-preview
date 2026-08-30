@@ -5,8 +5,6 @@ import {
   Bell,
   CalendarDays,
   Check,
-  Clock,
-  CreditCard,
   LayoutDashboard,
   Mail,
   Phone,
@@ -85,11 +83,11 @@ function dollars(cents: number) {
 
 function statusText(status: BookingStatus) {
   const labels: Record<BookingStatus, string> = {
-    requested: "Requested / 已请求",
-    club_confirmed: "Club confirmed / 俱乐部已确认",
-    change_requested: "Change requested / 改期请求",
-    cancelled: "Cancelled / 已取消",
-    coach_confirmed: "Coach completed / 教练确认完成"
+    requested: "已请求 / Requested",
+    club_confirmed: "已确认 / Club confirmed",
+    change_requested: "改期请求 / Change requested",
+    cancelled: "已取消 / Cancelled",
+    coach_confirmed: "教练确认完成 / Coach completed"
   };
   return labels[status];
 }
@@ -120,7 +118,7 @@ export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
-  const [notice, setNotice] = useState("Backend database connected.");
+  const [notice, setNotice] = useState("数据库已连接 / Backend database connected.");
   const [studentName, setStudentName] = useState("Ethan Chen");
   const [familyName, setFamilyName] = useState("Chen Family");
   const [studentEmail, setStudentEmail] = useState("parent@example.com");
@@ -159,7 +157,7 @@ export function ClubApp() {
 
   async function requestBooking(parentNote = "") {
     setSaving(true);
-    setNotice("Saving parent request...");
+    setNotice("正在保存家长请求 / Saving parent request...");
     try {
       if (demoMode) {
         const booking: Booking = {
@@ -183,7 +181,7 @@ export function ClubApp() {
         const next = [booking, ...bookings];
         window.localStorage.setItem(demoBookingKey, JSON.stringify(next));
         setBookings(next);
-        setNotice("Demo request saved in this browser. Club can confirm coach and time.");
+        setNotice("请求已保存 / Request saved. Club can confirm coach and time.");
         setMode("club");
         return;
       }
@@ -208,16 +206,21 @@ export function ClubApp() {
 
       if (!response.ok) throw new Error("Booking request failed");
       await loadAll();
-      setNotice("Parent request saved. Club can confirm coach and time.");
+      setNotice("家长请求已保存 / Parent request saved. Club can confirm coach and time.");
       setMode("club");
     } catch {
-      setNotice("Could not save booking request.");
+      setNotice("无法保存预约请求 / Could not save booking request.");
     } finally {
       setSaving(false);
     }
   }
 
-  async function updateBooking(id: string, status: BookingStatus, assignedCoach?: string) {
+  async function updateBooking(
+    id: string,
+    status: BookingStatus,
+    assignedCoach?: string,
+    schedule?: { dateLabel: string; timeLabel: string; startsAt: string; parentNote?: string }
+  ) {
     setNotice(`Updating status to ${statusText(status)}...`);
     if (demoMode) {
       const next = bookings.map((booking) =>
@@ -226,6 +229,10 @@ export function ClubApp() {
               ...booking,
               status,
               assignedCoach: assignedCoach ?? booking.assignedCoach,
+              dateLabel: schedule?.dateLabel ?? booking.dateLabel,
+              timeLabel: schedule?.timeLabel ?? booking.timeLabel,
+              startsAt: schedule?.startsAt ?? booking.startsAt,
+              parentNote: schedule?.parentNote ?? booking.parentNote,
               updatedAt: new Date().toISOString()
             }
           : booking
@@ -239,14 +246,14 @@ export function ClubApp() {
     const response = await fetch(`/api/bookings/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, assignedCoach })
+      body: JSON.stringify({ status, assignedCoach, ...schedule })
     });
 
     if (response.ok) {
       await loadAll();
       setNotice(`Saved: ${statusText(status)}. Parent and club views now match.`);
     } else {
-      setNotice("Could not update booking.");
+      setNotice("无法更新课程 / Could not update booking.");
     }
   }
 
@@ -279,16 +286,16 @@ export function ClubApp() {
       const next = [...grouped.values(), ...bills];
       window.localStorage.setItem(demoBillKey, JSON.stringify(next));
       setBills(next);
-      setNotice("Weekly bill notifications generated from coach-completed classes.");
+      setNotice("账单提醒已生成 / Bill notifications generated from coach-completed classes.");
       return;
     }
 
     const response = await fetch("/api/bills/weekly", { method: "POST" });
     if (response.ok) {
       await loadAll();
-      setNotice("Weekly bill notifications generated from coach-completed classes.");
+      setNotice("账单提醒已生成 / Bill notifications generated from coach-completed classes.");
     } else {
-      setNotice("Could not generate bills.");
+      setNotice("无法生成账单 / Could not generate bills.");
     }
   }
 
@@ -314,11 +321,11 @@ export function ClubApp() {
         <nav className="nav-list">
           <button className={mode === "parent" ? "nav-item active" : "nav-item"} onClick={() => setMode("parent")}>
             <Phone size={18} />
-            <span>Parent 家长</span>
+            <span>家长 Parent</span>
           </button>
           <button className={mode === "club" ? "nav-item active" : "nav-item"} onClick={() => setMode("club")}>
             <LayoutDashboard size={18} />
-            <span>Club 俱乐部</span>
+            <span>俱乐部 Club</span>
           </button>
         </nav>
       </aside>
@@ -326,12 +333,12 @@ export function ClubApp() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Simple MVP flow</p>
-            <h1>{mode === "parent" ? "Parent requests a class" : "Club confirms and bills"}</h1>
+            <p className="eyebrow">核心预约流程 / Core booking flow</p>
+            <h1>{mode === "parent" ? "家长预约课程" : "俱乐部确认课程"}</h1>
             <p className="screen-subtitle">
               {mode === "parent"
-                ? "Parent App 家长端: view club calendar, request class, check confirmed classes"
-                : "Club App 俱乐部端: confirm requests, mark completed, generate weekly bills"}
+                ? "家长端 / Parent App: view club calendar, request class, check confirmed classes"
+                : "俱乐部端 / Club App: confirm requests, mark completed, generate bills"}
             </p>
           </div>
           <div className="top-actions">
@@ -340,18 +347,18 @@ export function ClubApp() {
             </button>
             <div className="mode-switch" aria-label="Switch app view">
               <button className={mode === "parent" ? "selected" : ""} onClick={() => setMode("parent")}>
-                Parent 家长
+                家长 Parent
               </button>
               <button className={mode === "club" ? "selected" : ""} onClick={() => setMode("club")}>
-                Club 俱乐部
+                俱乐部 Club
               </button>
             </div>
           </div>
         </header>
 
         <section className="system-banner">
-          <strong>Journey</strong>
-          <span>Parent request → club confirms → coach marks completed → weekly bill notification</span>
+          <strong>流程 / Journey</strong>
+          <span>家长请求 → 俱乐部确认 → 教练确认完成 → 生成账单提醒</span>
           {demoMode ? <span>GitHub preview mode</span> : null}
         </section>
 
@@ -376,17 +383,33 @@ export function ClubApp() {
             onSlotChange={setSelectedSlot}
             onRequestBooking={() => requestBooking()}
             onChangeRequest={(booking) => {
-              setRequestedCoach(booking.requestedCoach);
-              setSelectedSlot(calendarSlots[1]);
-              requestBooking(`Change request for previous booking ${booking.id}`);
+              if (!canParentChange(booking)) {
+                setNotice("12小时内不能线上改期或取消 / Less than 12 hours: please contact the club.");
+                return;
+              }
+              updateBooking(booking.id, "change_requested", requestedCoach, {
+                dateLabel: selectedSlot.dateLabel,
+                timeLabel: selectedSlot.timeLabel,
+                startsAt: selectedSlot.startsAt,
+                parentNote: `家长申请改期 / Parent requested change from ${booking.dateLabel} ${booking.timeLabel}`
+              });
             }}
-            onCancel={(booking) => updateBooking(booking.id, "cancelled")}
+            onCancel={(booking) => {
+              if (!canParentChange(booking)) {
+                setNotice("12小时内不能线上改期或取消 / Less than 12 hours: please contact the club.");
+                return;
+              }
+              updateBooking(booking.id, "cancelled");
+            }}
           />
         ) : (
           <ClubAppView
             bookings={bookings}
+            selectedSlot={selectedSlot}
             bills={bills}
             notice={notice}
+            requestedCoach={requestedCoach}
+            onSlotChange={setSelectedSlot}
             onConfirm={(booking, coach) => updateBooking(booking.id, "club_confirmed", coach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
             onGenerateBills={generateBills}
@@ -441,40 +464,73 @@ function ParentApp({
   onCancel: (booking: Booking) => void;
 }) {
   return (
-    <section className="simple-grid">
-      <div className="column">
+    <section className="calendar-first">
+      <section className="section-block calendar-core">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">俱乐部日历 / Club calendar</p>
+            <h2>查看教练课表并请求上课</h2>
+            <p className="section-subtitle">家长端 / Parent App: see the whole coach schedule, then tap a time to request class.</p>
+          </div>
+          <span className="status-chip good">{bookings.length} 课程 / classes</span>
+        </div>
+        <div className="booking-toolbar">
+          <div className="coach-toggle">
+            {coaches.map((coach) => (
+              <button className={requestedCoach === coach ? "selected" : ""} key={coach} onClick={() => onCoachChange(coach)}>
+                {coach}
+              </button>
+            ))}
+          </div>
+          <button className="primary-button wide-button" disabled={saving} onClick={onRequestBooking}>
+            <CalendarDays size={18} />
+            {saving ? "保存中 / Saving..." : `请求预约 / Request ${requestedCoach} ${selectedSlot.dateLabel} ${selectedSlot.timeLabel}`}
+          </button>
+        </div>
+        <div className="calendar-board">
+          <ClubCalendar
+            bookings={allBookings}
+            selectedSlot={selectedSlot}
+            requestedCoach={requestedCoach}
+            onSlotChange={onSlotChange}
+          />
+        </div>
+        <p className="system-note">{notice}</p>
+      </section>
+
+      <section className="support-grid">
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">Student login 学生资料</p>
-              <h2>Basic parent and student info</h2>
+              <p className="eyebrow">学生资料 / Student info</p>
+              <h2>基础登录信息</h2>
               <p className="section-subtitle">Basic email and phone / 基本邮箱和电话</p>
             </div>
           </div>
           <div className="simple-form">
             <label>
-              <span>Student name</span>
+              <span>学生 / Student</span>
               <div className="input-shell">
                 <UserRound size={18} />
                 <input value={studentName} onChange={(event) => onStudentNameChange(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>Family name</span>
+              <span>家庭 / Family</span>
               <div className="input-shell">
                 <UsersRound size={18} />
                 <input value={familyName} onChange={(event) => onFamilyNameChange(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>Email</span>
+              <span>邮箱 / Email</span>
               <div className="input-shell">
                 <Mail size={18} />
                 <input value={studentEmail} onChange={(event) => onStudentEmailChange(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>Phone</span>
+              <span>电话 / Phone</span>
               <div className="input-shell">
                 <Phone size={18} />
                 <input value={phone} onChange={(event) => onPhoneChange(event.target.value)} />
@@ -484,62 +540,30 @@ function ParentApp({
         </section>
 
         <section className="section-block">
-          <div className="section-head">
-            <div>
-              <p className="eyebrow">Club calendar 俱乐部日历</p>
-              <h2>View booked classes and mark a request</h2>
-              <p className="section-subtitle">Parents can see the whole coach schedule / 家长可查看整体教练课表</p>
-            </div>
-          </div>
-          <div className="coach-toggle">
-            {coaches.map((coach) => (
-              <button className={requestedCoach === coach ? "selected" : ""} key={coach} onClick={() => onCoachChange(coach)}>
-                {coach}
-              </button>
-            ))}
-          </div>
-          <div className="calendar-board">
-            <ClubCalendar
-              bookings={allBookings}
-              selectedSlot={selectedSlot}
-              requestedCoach={requestedCoach}
-              onSlotChange={onSlotChange}
-            />
-          </div>
-          <button className="primary-button wide-button" disabled={saving} onClick={onRequestBooking}>
-            <CalendarDays size={18} />
-            {saving ? "Saving request..." : `Request ${requestedCoach} / 预约${requestedCoach} ${selectedSlot.dateLabel} ${selectedSlot.timeLabel}`}
-          </button>
-          <p className="system-note">{notice}</p>
-        </section>
-      </div>
-
-      <div className="column">
-        <section className="section-block">
           <div className="section-head compact">
             <div>
-              <p className="eyebrow">Parent view 家长查看</p>
-              <h2>Confirmed and requested classes</h2>
-              <p className="section-subtitle">Same status as club app / 与俱乐部端同步</p>
+              <p className="eyebrow">我的课程 / My classes</p>
+              <h2>请求、确认、完成</h2>
+              <p className="section-subtitle">12小时前可线上改期或取消 / Changes allowed more than 12 hours before class.</p>
             </div>
           </div>
           <div className="mini-ledger">
             <div>
-              <span>Requested</span>
+              <span>已请求 / Requested</span>
               <strong>{bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested").length}</strong>
             </div>
             <div>
-              <span>Confirmed</span>
+              <span>已确认 / Confirmed</span>
               <strong>{bookings.filter((booking) => booking.status === "club_confirmed").length}</strong>
             </div>
             <div>
-              <span>Completed bill</span>
+              <span>已计费 / Bill</span>
               <strong>{dollars(completedTotal)}</strong>
             </div>
           </div>
           <BookingList bookings={bookings} parentActions onChangeRequest={onChangeRequest} onCancel={onCancel} />
         </section>
-      </div>
+      </section>
     </section>
   );
 }
@@ -582,7 +606,7 @@ function ClubCalendar({
                 onClick={() => onSlotChange(slot)}
               >
                 {slotBookings.length === 0 ? (
-                  <span className="open-slot">Available<br />可预约</span>
+                  <span className="open-slot">可预约<br />Available</span>
                 ) : (
                   slotBookings.map((booking) => (
                     <span className={`calendar-booking ${booking.status}`} key={booking.id}>
@@ -592,7 +616,7 @@ function ClubCalendar({
                     </span>
                   ))
                 )}
-                {selected ? <span className="selected-label">{requestedCoach} selected / 已选择</span> : null}
+                {selected ? <span className="selected-label">已选择 / {requestedCoach} selected</span> : null}
               </button>
             );
           })}
@@ -604,15 +628,21 @@ function ClubCalendar({
 
 function ClubAppView({
   bookings,
+  selectedSlot,
   bills,
   notice,
+  requestedCoach,
+  onSlotChange,
   onConfirm,
   onCoachComplete,
   onGenerateBills
 }: {
   bookings: Booking[];
+  selectedSlot: (typeof calendarSlots)[number];
   bills: BillNotification[];
   notice: string;
+  requestedCoach: string;
+  onSlotChange: (value: (typeof calendarSlots)[number]) => void;
   onConfirm: (booking: Booking, coach: string) => void;
   onCoachComplete: (booking: Booking) => void;
   onGenerateBills: () => void;
@@ -622,16 +652,35 @@ function ClubAppView({
   const completed = bookings.filter((booking) => booking.status === "coach_confirmed");
 
   return (
-    <section className="simple-grid">
-      <div className="column">
+    <section className="calendar-first">
+      <section className="section-block calendar-core">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">俱乐部日历 / Club calendar</p>
+            <h2>确认请求并完成课程</h2>
+            <p className="section-subtitle">俱乐部端 / Club App: requested, confirmed, and completed classes all live on the calendar.</p>
+          </div>
+          <span className="status-chip">{requested.length} 待确认 / pending</span>
+        </div>
+        <div className="calendar-board">
+          <ClubCalendar
+            bookings={bookings}
+            selectedSlot={selectedSlot}
+            requestedCoach={requestedCoach}
+            onSlotChange={onSlotChange}
+          />
+        </div>
+        <p className="system-note">{notice}</p>
+      </section>
+
+      <section className="support-grid">
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">Club manager</p>
-              <h2>Confirm requests and assign coach</h2>
-              <p className="section-subtitle">Club App 俱乐部端: confirm class time and coach</p>
+              <p className="eyebrow">待确认 / Requests</p>
+              <h2>确认时间和教练</h2>
+              <p className="section-subtitle">Confirm class time and coach / 确认上课时间和教练</p>
             </div>
-            <span className="status-chip">{requested.length} pending</span>
           </div>
           <div className="request-stack">
             {requested.map((booking) => (
@@ -640,7 +689,7 @@ function ClubAppView({
                   <span className={`status-chip ${booking.status}`}>{statusText(booking.status)}</span>
                   <h3>{booking.studentName}</h3>
                   <p>
-                    Wants {booking.requestedCoach} on {booking.dateLabel} at {booking.timeLabel}
+                    请求 / Wants {booking.requestedCoach}: {booking.dateLabel} {booking.timeLabel}
                   </p>
                   {booking.parentNote ? <p>{booking.parentNote}</p> : null}
                 </div>
@@ -657,15 +706,14 @@ function ClubAppView({
               </article>
             ))}
           </div>
-          <p className="system-note">{notice}</p>
         </section>
 
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">Coach completion</p>
-              <h2>Coach confirms class was completed</h2>
-              <p className="section-subtitle">Coach completed status counts toward billing / 教练确认完成后才计费</p>
+              <p className="eyebrow">教练完成 / Coach complete</p>
+              <h2>确认课程完成</h2>
+              <p className="section-subtitle">Only coach-confirmed classes count toward billing / 教练确认完成后才计费</p>
             </div>
             <span className="status-chip good">{confirmed.length} ready</span>
           </div>
@@ -675,50 +723,37 @@ function ClubAppView({
                 <div>
                   <h3>{booking.studentName}</h3>
                   <p>
-                    {booking.assignedCoach} confirmed for {booking.dateLabel} at {booking.timeLabel}
+                    {booking.assignedCoach}: {booking.dateLabel} {booking.timeLabel}
                   </p>
                 </div>
                 <button className="primary-button" onClick={() => onCoachComplete(booking)}>
                   <Check size={18} />
-                  Coach completed
+                  完成 / Complete
                 </button>
               </article>
             ))}
           </div>
         </section>
-      </div>
-
-      <div className="column">
-        <section className="section-block">
-          <div className="section-head compact">
-            <div>
-              <p className="eyebrow">All classes 全部课程</p>
-              <h2>Shared database view</h2>
-              <p className="section-subtitle">Parent and club see the same confirmed classes / 双方同步查看</p>
-            </div>
-          </div>
-          <BookingList bookings={bookings} />
-        </section>
 
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">Weekly billing 每周账单</p>
-              <h2>Generate bill notification per student</h2>
+              <p className="eyebrow">双周账单 / Billing</p>
+              <h2>生成学生账单提醒</h2>
               <p className="section-subtitle">Bill from coach-completed classes / 根据教练确认完成课程生成</p>
             </div>
             <button className="filter-button" onClick={onGenerateBills}>
               <RefreshCcw size={17} />
-              Generate
+              生成 / Generate
             </button>
           </div>
           <div className="mini-ledger">
             <div>
-              <span>Completed</span>
+              <span>已完成 / Completed</span>
               <strong>{completed.length}</strong>
             </div>
             <div>
-              <span>To bill</span>
+              <span>待计费 / To bill</span>
               <strong>{dollars(completed.reduce((sum, booking) => sum + booking.priceCents, 0))}</strong>
             </div>
           </div>
@@ -737,7 +772,7 @@ function ClubAppView({
             ))}
           </div>
         </section>
-      </div>
+      </section>
     </section>
   );
 }
