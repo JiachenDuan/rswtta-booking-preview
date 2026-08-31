@@ -1242,7 +1242,18 @@ p {
   color: #8f1d31;
 }
 
+.calendar-booking.blocked-time {
+  border-color: rgba(242, 61, 85, 0.22);
+  border-left-color: #f23d55;
+  background: #ffe0e5;
+  color: #8f1d31;
+}
+
 .calendar-booking.unavailable-private small {
+  color: #8f1d31;
+}
+
+.calendar-booking.blocked-time small {
   color: #8f1d31;
 }
 
@@ -1465,6 +1476,43 @@ button.student-result.selected {
   background: #f7fbf8;
   color: var(--muted);
   font-weight: 800;
+}
+
+.modal-recurring {
+  margin-bottom: 0;
+}
+
+.tryout-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.tryout-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.tryout-fields input,
+.tryout-fields textarea {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+}
+
+.tryout-fields textarea {
+  min-height: 86px;
+  padding: 10px 12px;
+  resize: vertical;
 }
 
 .student-result span {

@@ -328,6 +328,14 @@ function weekDays(weekStart: Date) {
   });
 }
 
+function repeatedCalendarSlots(baseSlot: CalendarSlot, weeks: number) {
+  return Array.from({ length: weeks }, (_, index) => {
+    const date = addDays(baseSlot.date, index * 7);
+    const dayIndex = (date.getDay() + 6) % 7;
+    return makeCalendarSlot(makeCalendarDay(date, dayIndex), baseSlot.timeLabel);
+  }).filter((slot) => new Date(slot.startsAt) <= maxCalendarDate);
+}
+
 function weekLabel(days: CalendarDay[], language: Language) {
   const first = days[0];
   const last = days[days.length - 1];
@@ -362,8 +370,6 @@ export function ClubApp() {
   const [selectedDurationMinutes, setSelectedDurationMinutes] = useState(60);
   const [showRequestConfirm, setShowRequestConfirm] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [recurring, setRecurring] = useState(false);
-  const [recurringWeeks, setRecurringWeeks] = useState(4);
   const [saving, setSaving] = useState(false);
   const calendarDays = useMemo(() => weekDays(visibleWeekStart), [visibleWeekStart]);
   const canGoPrevious = addDays(visibleWeekStart, -7) >= startOfWeek(minCalendarDate);
@@ -446,20 +452,8 @@ export function ClubApp() {
     }
   }
 
-  function recurringSlots() {
-    if (!recurring) return selectedSlots;
-
-    return selectedSlots.flatMap((baseSlot) =>
-      Array.from({ length: recurringWeeks }, (_, index) => {
-        const date = addDays(baseSlot.date, index * 7);
-        const dayIndex = (date.getDay() + 6) % 7;
-        return makeCalendarSlot(makeCalendarDay(date, dayIndex), baseSlot.timeLabel);
-      }).filter((slot) => new Date(slot.startsAt) <= maxCalendarDate)
-    );
-  }
-
   async function requestBooking(parentNote = "") {
-    const slots = recurringSlots();
+    const slots = [selectedSlot];
     if (isRangeUnavailable(bookings, requestedCoach, selectedSlot, selectedDurationMinutes)) {
       setNotice(copy(language, "That coach is not available at the selected time.", "该教练这个时间不可预约。"));
       return;
@@ -481,7 +475,7 @@ export function ClubApp() {
             timeLabel: rangeLabel(slot, selectedDurationMinutes),
             startsAt: slot.startsAt,
             priceCents: lessonPriceCents(requestedCoach),
-            parentNote: recurring ? `${copy(language, "Weekly recurring request.", "每周重复预约。")} ${parentNote}` : parentNote
+            parentNote
           })
         )
       );
@@ -495,8 +489,8 @@ export function ClubApp() {
     }
   }
 
-  async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[]) {
-    const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, selectedDurationMinutes));
+  async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) {
+    const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
     if (unavailableSlot) {
       setNotice(copy(language, "That coach already has a class at the selected time.", "该教练这个时间已有课程。"));
       return;
@@ -515,7 +509,7 @@ export function ClubApp() {
             assignedCoach: coach,
             program: lessonProgram(coach),
             dateLabel: slot.dateLabel,
-            timeLabel: rangeLabel(slot, selectedDurationMinutes),
+            timeLabel: rangeLabel(slot, durationMinutes),
             startsAt: slot.startsAt,
             priceCents: lessonPriceCents(coach),
             parentNote: copy(language, "Added by club", "俱乐部添加")
@@ -531,30 +525,71 @@ export function ClubApp() {
     }
   }
 
-  async function blockCoachTime(coach: string, slot: CalendarSlot, durationMinutes: number) {
-    if (isRangeUnavailable(bookings, coach, slot, durationMinutes)) {
+  async function addClubTryoutClass(input: { studentName: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) {
+    const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
+    if (unavailableSlot) {
+      setNotice(copy(language, "That coach already has a class at the selected time.", "该教练这个时间已有课程。"));
+      return;
+    }
+    setSaving(true);
+    setNotice(copy(language, "Adding tryout class...", "正在添加体验课..."));
+    try {
+      await Promise.all(
+        slots.map((slot) =>
+          createBooking({
+            studentName: input.studentName,
+            familyName: input.studentName,
+            studentEmail: "",
+            phone: input.phone,
+            requestedCoach: coach,
+            assignedCoach: coach,
+            program: lessonProgram(coach),
+            dateLabel: slot.dateLabel,
+            timeLabel: rangeLabel(slot, durationMinutes),
+            startsAt: slot.startsAt,
+            priceCents: lessonPriceCents(coach),
+            parentNote: input.note ? `Tryout: ${input.note}` : "Tryout class"
+          }).then((booking) => updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach }))
+        )
+      );
+      await loadAll();
+      setNotice(copy(language, `Added ${slots.length} tryout class${slots.length === 1 ? "" : "es"}.`, `已添加 ${slots.length} 节体验课。`));
+    } catch {
+      setNotice(copy(language, "Could not add tryout class.", "无法添加体验课。"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function blockCoachTime(coach: string, slots: CalendarSlot[], durationMinutes: number) {
+    const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
+    if (unavailableSlot) {
       setNotice(copy(language, "That coach already has a class or blocked time there.", "该教练这个时间已有课程或不可用时间。"));
       return;
     }
     setSaving(true);
     setNotice(copy(language, "Blocking coach time...", "正在设置教练不可用时间..."));
     try {
-      await createBooking({
-        studentName: copy(language, "Coach unavailable", "教练不可用"),
-        familyName: "Club",
-        studentEmail: "",
-        phone: "",
-        requestedCoach: coach,
-        assignedCoach: coach,
-        program: "Unavailable",
-        dateLabel: slot.dateLabel,
-        timeLabel: rangeLabel(slot, durationMinutes),
-        startsAt: slot.startsAt,
-        priceCents: 0,
-        parentNote: copy(language, "Blocked by club manager", "俱乐部管理员设置不可用")
-      });
+      await Promise.all(
+        slots.map((slot) =>
+          createBooking({
+            studentName: copy(language, "Coach unavailable", "教练不可用"),
+            familyName: "Club",
+            studentEmail: "",
+            phone: "",
+            requestedCoach: coach,
+            assignedCoach: coach,
+            program: "Unavailable",
+            dateLabel: slot.dateLabel,
+            timeLabel: rangeLabel(slot, durationMinutes),
+            startsAt: slot.startsAt,
+            priceCents: 0,
+            parentNote: copy(language, "Blocked by club manager", "俱乐部管理员设置不可用")
+          })
+        )
+      );
       await loadAll();
-      setNotice(copy(language, "Coach time blocked.", "教练不可用时间已保存。"));
+      setNotice(copy(language, `Blocked ${slots.length} coach time${slots.length === 1 ? "" : "s"}.`, `已保存 ${slots.length} 个教练不可用时间。`));
     } catch {
       setNotice(copy(language, "Could not block coach time.", "无法保存教练不可用时间。"));
     } finally {
@@ -741,8 +776,6 @@ export function ClubApp() {
             weekLabel={weekLabel(calendarDays, language)}
             canGoPrevious={canGoPrevious}
             canGoNext={canGoNext}
-            recurring={recurring}
-            recurringWeeks={recurringWeeks}
             saving={saving}
             language={language}
             onStudentNameChange={(value) => {
@@ -760,8 +793,6 @@ export function ClubApp() {
               setVisibleWeekStart(initialWeekStart);
               replaceSelectedSlot(initialCalendarSlot);
             }}
-            onRecurringChange={setRecurring}
-            onRecurringWeeksChange={setRecurringWeeks}
             onRequestBooking={() => setShowRequestConfirm(true)}
             onChangeRequest={(booking) => {
               updateBooking(booking.id, "change_requested", requestedCoach, {
@@ -817,6 +848,7 @@ export function ClubApp() {
             onCancelClass={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
             onAddClass={addClubClass}
+            onAddTryoutClass={addClubTryoutClass}
             onBlockTime={blockCoachTime}
           />
         )}
@@ -828,8 +860,8 @@ export function ClubApp() {
             slot={selectedSlot}
             durationMinutes={selectedDurationMinutes}
             unavailable={isRangeUnavailable(bookings, requestedCoach, selectedSlot, selectedDurationMinutes)}
-            recurring={recurring}
-            recurringWeeks={recurringWeeks}
+            recurring={false}
+            recurringWeeks={1}
             saving={saving}
             onDurationChange={setSelectedDurationMinutes}
             onCancel={() => setShowRequestConfirm(false)}
@@ -1118,8 +1150,6 @@ function ParentApp({
   weekLabel,
   canGoPrevious,
   canGoNext,
-  recurring,
-  recurringWeeks,
   saving,
   language,
   onStudentNameChange,
@@ -1131,8 +1161,6 @@ function ParentApp({
   onPreviousWeek,
   onNextWeek,
   onToday,
-  onRecurringChange,
-  onRecurringWeeksChange,
   onRequestBooking,
   onChangeRequest,
   onCancel
@@ -1153,8 +1181,6 @@ function ParentApp({
   weekLabel: string;
   canGoPrevious: boolean;
   canGoNext: boolean;
-  recurring: boolean;
-  recurringWeeks: number;
   saving: boolean;
   language: Language;
   onStudentNameChange: (value: string) => void;
@@ -1166,8 +1192,6 @@ function ParentApp({
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
-  onRecurringChange: (value: boolean) => void;
-  onRecurringWeeksChange: (value: number) => void;
   onRequestBooking: () => void;
   onChangeRequest: (booking: Booking) => void;
   onCancel: (booking: Booking) => void;
@@ -1225,24 +1249,8 @@ function ParentApp({
               ? copy(language, "Time not available", "该时间不可预约")
               : saving
               ? copy(language, "Saving...", "保存中...")
-              : recurring
-                ? copy(language, `Request weekly ${rangeLabel(selectedSlot, selectedDurationMinutes)} for ${recurringWeeks} weeks`, `每周请求 ${rangeLabel(selectedSlot, selectedDurationMinutes)}，重复 ${recurringWeeks} 周`)
-                : copy(language, `Request ${rangeLabel(selectedSlot, selectedDurationMinutes)} for ${requestedCoach}`, `请求 ${requestedCoach} 的 ${rangeLabel(selectedSlot, selectedDurationMinutes)}`)}
+              : copy(language, `Request ${rangeLabel(selectedSlot, selectedDurationMinutes)} for ${requestedCoach}`, `请求 ${requestedCoach} 的 ${rangeLabel(selectedSlot, selectedDurationMinutes)}`)}
           </button>
-        </div>
-        <div className="recurring-row">
-          <label>
-            <input type="checkbox" checked={recurring} onChange={(event) => onRecurringChange(event.target.checked)} />
-            <span>{copy(language, "Weekly recurring", "每周重复预约")}</span>
-          </label>
-          <select value={recurringWeeks} onChange={(event) => onRecurringWeeksChange(Number(event.target.value))} disabled={!recurring}>
-            <option value={4}>{copy(language, "4 weeks", "4 周")}</option>
-            <option value={8}>{copy(language, "8 weeks", "8 周")}</option>
-            <option value={12}>{copy(language, "12 weeks", "12 周")}</option>
-          </select>
-          <span>
-            {copy(language, "Selected", "当前选择")}: {selectedSlot.dateLabel} {rangeLabel(selectedSlot, selectedDurationMinutes)}
-          </span>
         </div>
         <p className="system-note">{notice}</p>
       </section>
@@ -1461,7 +1469,7 @@ function ClubCalendar({
                   <span className="open-slot" aria-hidden="true" />
                 ) : (
                   slotBookings.map((booking) => (
-                    <span className={`calendar-booking ${booking.status}`} key={booking.id}>
+                    <span className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}`} key={booking.id}>
                       <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.assignedCoach}</strong>
                       <small>{isBlockedTime(booking) ? booking.timeLabel : booking.studentName}</small>
                       <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : statusText(booking.status, language)}</em>
@@ -1510,6 +1518,7 @@ function ClubAppView({
   onCancelClass,
   onCoachComplete,
   onAddClass,
+  onAddTryoutClass,
   onBlockTime
 }: {
   bookings: Booking[];
@@ -1537,8 +1546,9 @@ function ClubAppView({
   onApproveCancel: (booking: Booking) => void;
   onCancelClass: (booking: Booking) => void;
   onCoachComplete: (booking: Booking) => void;
-  onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[]) => Promise<void>;
-  onBlockTime: (coach: string, slot: CalendarSlot, durationMinutes: number) => Promise<void>;
+  onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
+  onAddTryoutClass: (input: { studentName: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
+  onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
 }) {
   const [exportPeriod, setExportPeriod] = useState<ExportPeriod>("weekly");
   const [studentQuery, setStudentQuery] = useState("");
@@ -1834,15 +1844,23 @@ function ClubAppView({
           onStudentQueryChange={setStudentQuery}
           onStudentSelect={setSelectedAddStudent}
           onCancel={() => setShowAddClassModal(false)}
-          onConfirm={async () => {
-            if (!selectedAddStudent) return;
-            await onAddClass(selectedAddStudent, addCoach, [selectedSlot]);
+          onConfirm={async (durationMinutes, recurring, weeks) => {
+            const slots = recurring ? repeatedCalendarSlots(selectedSlot, weeks) : [selectedSlot];
+            if (selectedAddStudent) {
+              await onAddClass(selectedAddStudent, addCoach, slots, durationMinutes);
+            }
             setShowAddClassModal(false);
             setSelectedAddStudent(null);
             setStudentQuery("");
           }}
-          onBlockTime={async (durationMinutes) => {
-            await onBlockTime(addCoach, selectedSlot, durationMinutes);
+          onTryoutConfirm={async (input, durationMinutes, recurring, weeks) => {
+            await onAddTryoutClass(input, addCoach, recurring ? repeatedCalendarSlots(selectedSlot, weeks) : [selectedSlot], durationMinutes);
+            setShowAddClassModal(false);
+            setSelectedAddStudent(null);
+            setStudentQuery("");
+          }}
+          onBlockTime={async (durationMinutes, recurring, weeks) => {
+            await onBlockTime(addCoach, recurring ? repeatedCalendarSlots(selectedSlot, weeks) : [selectedSlot], durationMinutes);
             setShowAddClassModal(false);
             setSelectedAddStudent(null);
             setStudentQuery("");
@@ -1888,6 +1906,7 @@ function ClubAddClassModal({
   onStudentSelect,
   onCancel,
   onConfirm,
+  onTryoutConfirm,
   onBlockTime
 }: {
   language: Language;
@@ -1904,10 +1923,18 @@ function ClubAddClassModal({
   onStudentQueryChange: (value: string) => void;
   onStudentSelect: (value: ParentAccount) => void;
   onCancel: () => void;
-  onConfirm: () => void;
-  onBlockTime: (durationMinutes: number) => void;
+  onConfirm: (durationMinutes: number, recurring: boolean, weeks: number) => void;
+  onTryoutConfirm: (input: { studentName: string; phone: string; note: string }, durationMinutes: number, recurring: boolean, weeks: number) => void;
+  onBlockTime: (durationMinutes: number, recurring: boolean, weeks: number) => void;
 }) {
   const [mode, setMode] = useState<"class" | "block">("class");
+  const [studentMode, setStudentMode] = useState<"enrolled" | "tryout">("enrolled");
+  const [tryoutName, setTryoutName] = useState("");
+  const [tryoutPhone, setTryoutPhone] = useState("");
+  const [tryoutNote, setTryoutNote] = useState("");
+  const [recurring, setRecurring] = useState(false);
+  const [weeks, setWeeks] = useState(4);
+  const canAddClass = studentMode === "enrolled" ? Boolean(selectedStudent) : tryoutName.trim().length > 0;
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-add-class-title">
@@ -1977,6 +2004,16 @@ function ClubAddClassModal({
         )}
         {mode === "class" ? (
           <div className="modal-student-search">
+            <div className="mode-switch modal-mode-switch" aria-label="Student type">
+              <button type="button" className={studentMode === "enrolled" ? "selected" : ""} onClick={() => setStudentMode("enrolled")}>
+                {copy(language, "Enrolled", "已注册")}
+              </button>
+              <button type="button" className={studentMode === "tryout" ? "selected" : ""} onClick={() => setStudentMode("tryout")}>
+                {copy(language, "Tryout", "体验课")}
+              </button>
+            </div>
+            {studentMode === "enrolled" ? (
+              <>
             <label>
               <span>{copy(language, "Student", "学生")}</span>
               <div className="input-shell">
@@ -2004,10 +2041,39 @@ function ClubAddClassModal({
                 ))
               )}
             </div>
+              </>
+            ) : (
+              <div className="tryout-fields">
+                <label>
+                  <span>{copy(language, "Student name", "学生姓名")}</span>
+                  <input value={tryoutName} onChange={(event) => setTryoutName(event.target.value)} />
+                </label>
+                <label>
+                  <span>{copy(language, "Phone", "电话")}</span>
+                  <input value={tryoutPhone} onChange={(event) => setTryoutPhone(event.target.value)} />
+                </label>
+                <label>
+                  <span>{copy(language, "Note", "备注")}</span>
+                  <textarea value={tryoutNote} onChange={(event) => setTryoutNote(event.target.value)} />
+                </label>
+              </div>
+            )}
           </div>
         ) : (
           <p className="modal-info">{copy(language, "Parents will not be able to book this coach during the selected time.", "家长不能预约该教练这个时间。")}</p>
         )}
+        <div className="recurring-row modal-recurring">
+          <label>
+            <input type="checkbox" checked={recurring} onChange={(event) => setRecurring(event.target.checked)} />
+            <span>{copy(language, "Weekly recurring", "每周重复")}</span>
+          </label>
+          <select value={weeks} onChange={(event) => setWeeks(Number(event.target.value))} disabled={!recurring}>
+            <option value={4}>{copy(language, "4 weeks", "4 周")}</option>
+            <option value={8}>{copy(language, "8 weeks", "8 周")}</option>
+            <option value={12}>{copy(language, "12 weeks", "12 周")}</option>
+            <option value={24}>{copy(language, "24 weeks", "24 周")}</option>
+          </select>
+        </div>
         {unavailable ? <p className="modal-warning">{copy(language, "This coach is not available for that duration.", "该教练这个时长不可预约。")}</p> : null}
         <div className="modal-actions">
           <button className="filter-button" onClick={onCancel} disabled={saving}>
@@ -2015,8 +2081,14 @@ function ClubAddClassModal({
           </button>
           <button
             className="primary-button"
-            onClick={() => (mode === "block" ? onBlockTime(durationMinutes) : onConfirm())}
-            disabled={saving || unavailable || (mode === "class" && !selectedStudent)}
+            onClick={() =>
+              mode === "block"
+                ? onBlockTime(durationMinutes, recurring, weeks)
+                : studentMode === "tryout"
+                  ? onTryoutConfirm({ studentName: tryoutName, phone: tryoutPhone, note: tryoutNote }, durationMinutes, recurring, weeks)
+                  : onConfirm(durationMinutes, recurring, weeks)
+            }
+            disabled={saving || unavailable || (mode === "class" && !canAddClass)}
           >
             <Plus size={18} />
             {saving
