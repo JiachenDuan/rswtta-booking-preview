@@ -751,7 +751,7 @@ export function ClubApp() {
       setMode("club");
     }
     loadAll();
-    const interval = window.setInterval(loadAll, 5000);
+    const interval = window.setInterval(loadAll, 30000);
     const clock = window.setInterval(() => setCurrentTime(new Date()), 60000);
     return () => {
       window.clearInterval(interval);

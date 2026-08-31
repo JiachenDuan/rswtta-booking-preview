@@ -783,17 +783,8 @@ function coachJordenRecurringBookingsThroughDec31() {
   return bookings;
 }
 
-async function seedCoachJordenRecurringBookings(rows: Array<ProjectRow<Booking>>, create: (values: Booking) => Promise<ProjectRow<Booking>> | ProjectRow<Booking>) {
-  const existingKeys = new Set(rows.map((row) => tianRecurringKey(row.values)));
-  const created: Array<ProjectRow<Booking>> = [];
-  for (const booking of coachJordenRecurringBookingsThroughDec31()) {
-    const key = tianRecurringKey(booking);
-    if (existingKeys.has(key)) continue;
-    const row = await create(booking);
-    created.push(row);
-    existingKeys.add(key);
-  }
-  return rows.concat(created);
+function seedCoachJordenRecurringBookings(rows: Array<ProjectRow<Booking>>) {
+  return appendMissingRecurringBookings(rows, coachJordenRecurringBookingsThroughDec31());
 }
 
 function tianYeRecurringBookingsThroughDec31() {
@@ -809,17 +800,30 @@ function tianYeRecurringBookingsThroughDec31() {
   return bookings;
 }
 
-async function seedTianYeRecurringBookings(rows: Array<ProjectRow<Booking>>, create: (values: Booking) => Promise<ProjectRow<Booking>> | ProjectRow<Booking>) {
+function virtualBookingRow(booking: Booking): ProjectRow<Booking> {
+  return {
+    id: `virtual-${booking.assignedCoach}-${booking.studentName}-${booking.startsAt}`.replace(/\s+/g, "-"),
+    project_table_id: "virtual",
+    values: booking,
+    created_at: booking.startsAt,
+    updated_at: booking.startsAt
+  };
+}
+
+function appendMissingRecurringBookings(rows: Array<ProjectRow<Booking>>, bookings: Booking[]) {
   const existingKeys = new Set(rows.map((row) => tianRecurringKey(row.values)));
-  const created: Array<ProjectRow<Booking>> = [];
-  for (const booking of tianYeRecurringBookingsThroughDec31()) {
+  const virtualRows: Array<ProjectRow<Booking>> = [];
+  for (const booking of bookings) {
     const key = tianRecurringKey(booking);
     if (existingKeys.has(key)) continue;
-    const row = await create(booking);
-    created.push(row);
+    virtualRows.push(virtualBookingRow(booking));
     existingKeys.add(key);
   }
-  return rows.concat(created);
+  return rows.concat(virtualRows);
+}
+
+function seedTianYeRecurringBookings(rows: Array<ProjectRow<Booking>>) {
+  return appendMissingRecurringBookings(rows, tianYeRecurringBookingsThroughDec31());
 }
 
 function uniqueBookingRows(rows: Array<ProjectRow<Booking>>) {
@@ -835,18 +839,8 @@ function uniqueBookingRows(rows: Array<ProjectRow<Booking>>) {
 }
 
 async function listBookingRowsWithSeeds() {
-  return withLocalFallback(
-    async () => {
-      const rows = await listRows<Booking>("bookings");
-      const withTian = await seedTianYeRecurringBookings(rows, (values) => createRow<Booking>("bookings", values));
-      return seedCoachJordenRecurringBookings(withTian, (values) => createRow<Booking>("bookings", values));
-    },
-    async () => {
-      const rows = localRows<Booking>("bookings");
-      const withTian = await seedTianYeRecurringBookings(rows, (values) => createLocalRow("bookings", values));
-      return seedCoachJordenRecurringBookings(withTian, (values) => createLocalRow("bookings", values));
-    }
-  );
+  const rows = await withLocalFallback(() => listRows<Booking>("bookings"), () => localRows<Booking>("bookings"));
+  return seedCoachJordenRecurringBookings(seedTianYeRecurringBookings(rows));
 }
 
 export async function listBookings() {
