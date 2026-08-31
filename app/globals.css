@@ -1,15 +1,16 @@
 :root {
-  --ink: #17201d;
-  --muted: #60716a;
-  --line: #dfe8e4;
-  --paper: #fbfcf8;
+  --ink: #18201f;
+  --muted: #66736f;
+  --line: #e4e9ed;
+  --paper: #f4f6f8;
   --panel: #ffffff;
-  --mint: #b9f6d4;
+  --mint: #a7f3d0;
   --coral: #ff9f87;
   --blue: #93c5fd;
   --gold: #f5d36b;
-  --green: #245a46;
-  --shadow: 0 18px 50px rgba(29, 48, 42, 0.12);
+  --green: #176b54;
+  --shadow: 0 18px 44px rgba(17, 24, 39, 0.09);
+  --shadow-soft: 0 8px 24px rgba(17, 24, 39, 0.06);
 }
 
 * {
@@ -24,7 +25,9 @@ body {
 }
 
 body {
-  background: var(--paper);
+  background:
+    linear-gradient(180deg, #f8fafc 0, var(--paper) 340px),
+    var(--paper);
   color: var(--ink);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -48,7 +51,7 @@ button {
 }
 
 .simple-shell {
-  background: #f7faf7;
+  background: transparent;
 }
 
 .sidebar {
@@ -56,8 +59,9 @@ button {
   top: 0;
   height: 100vh;
   padding: 24px 18px;
-  background: #0d1d18;
+  background: #101c18;
   color: #f4faf6;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.06);
 }
 
 .brand {
@@ -73,8 +77,9 @@ button {
   width: 44px;
   height: 44px;
   border-radius: 8px;
-  background: var(--mint);
-  color: #0d1d18;
+  background: linear-gradient(135deg, #c8ffe1, #88e7c3);
+  color: #102019;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
 }
 
 .brand strong,
@@ -140,7 +145,7 @@ button {
 
 .workspace {
   min-width: 0;
-  padding: 26px;
+  padding: 28px;
 }
 
 .topbar {
@@ -169,8 +174,9 @@ p {
 
 h1 {
   margin-bottom: 0;
-  font-size: clamp(1.7rem, 3vw, 2.65rem);
-  line-height: 1.05;
+  font-size: 2.25rem;
+  line-height: 1.04;
+  letter-spacing: 0;
 }
 
 .screen-subtitle,
@@ -214,9 +220,9 @@ p {
   grid-template-columns: 1fr 1fr;
   min-height: 42px;
   padding: 4px;
-  border: 1px solid var(--line);
+  border: 1px solid #dce4e8;
   border-radius: 8px;
-  background: #fff;
+  background: #f7faf9;
 }
 
 .mode-switch button {
@@ -229,8 +235,9 @@ p {
 }
 
 .mode-switch button.selected {
-  background: #0d1d18;
+  background: #102019;
   color: #fff;
+  box-shadow: var(--shadow-soft);
 }
 
 .language-switch button {
@@ -271,6 +278,20 @@ p {
   background: #fff;
   color: var(--ink);
   white-space: nowrap;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.icon-button:hover,
+.ghost-button:hover,
+.filter-button:hover {
+  border-color: #cfd9df;
+  background: #f8fbfa;
+  box-shadow: var(--shadow-soft);
 }
 
 .icon-button {
@@ -284,9 +305,15 @@ p {
 }
 
 .primary-button {
-  border-color: #1d5b46;
-  background: #1d5b46;
+  border-color: #176b54;
+  background: #176b54;
   color: #fff;
+  box-shadow: 0 10px 22px rgba(23, 107, 84, 0.18);
+}
+
+.primary-button:hover {
+  border-color: #105742;
+  background: #105742;
 }
 
 .primary-button.dark {
@@ -445,10 +472,10 @@ p {
 
 .stat-card,
 .section-block {
-  border: 1px solid var(--line);
+  border: 1px solid rgba(218, 226, 232, 0.95);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: 0 8px 28px rgba(29, 48, 42, 0.06);
+  box-shadow: var(--shadow-soft);
 }
 
 .stat-card {
@@ -596,7 +623,7 @@ p {
 }
 
 .section-block {
-  padding: 18px;
+  padding: 20px;
 }
 
 .section-head {
@@ -842,7 +869,7 @@ p {
 .auth-card {
   width: min(760px, 100%);
   padding: 22px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(218, 226, 232, 0.95);
   border-radius: 8px;
   background: #fff;
   box-shadow: var(--shadow);
@@ -869,7 +896,7 @@ p {
   min-height: 36px;
   border: 0;
   background: transparent;
-  color: #1d5b46;
+  color: #176b54;
   font-weight: 900;
 }
 
@@ -896,7 +923,7 @@ p {
 }
 
 .login-block {
-  background: linear-gradient(180deg, #ffffff, #f4fbf7);
+  background: linear-gradient(180deg, #ffffff, #f7fbfa);
 }
 
 .status-chip {
@@ -962,16 +989,18 @@ p {
 
 .coach-toggle button.selected,
 .calendar-slot.selected {
-  border-color: #1d5b46;
-  background: #1d5b46;
+  border-color: #176b54;
+  background: #176b54;
   color: #fff;
 }
 
 .calendar-board {
   overflow-x: auto;
   margin-bottom: 12px;
-  padding-bottom: 4px;
+  padding-bottom: 6px;
   border-radius: 8px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #e9eef2;
   scroll-snap-type: x proximity;
   -webkit-overflow-scrolling: touch;
 }
@@ -981,6 +1010,10 @@ p {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
+  padding: 4px;
+  border: 1px solid #e0e7eb;
+  border-radius: 8px;
+  background: #f8faf9;
 }
 
 .calendar-tabs button {
@@ -988,9 +1021,9 @@ p {
   min-height: 40px;
   padding: 0 10px;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: var(--muted);
   font-weight: 900;
   text-overflow: ellipsis;
@@ -998,9 +1031,10 @@ p {
 }
 
 .calendar-tabs button.selected {
-  border-color: #1d5b46;
-  background: #1d5b46;
+  border-color: #176b54;
+  background: #176b54;
   color: #fff;
+  box-shadow: var(--shadow-soft);
 }
 
 .week-calendar {
@@ -1009,7 +1043,7 @@ p {
   grid-template-columns: 58px repeat(7, minmax(132px, 1fr));
   min-width: 982px;
   overflow: hidden;
-  border: 1px solid #e9ecef;
+  border: 0;
   border-radius: 8px;
   background: linear-gradient(90deg, #fbfcfd 0 58px, #fff 58px);
 }
@@ -1017,7 +1051,7 @@ p {
 .calendar-corner,
 .calendar-day-head,
 .calendar-time {
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid #edf1f4;
   background: #fff;
 }
 
@@ -1027,9 +1061,9 @@ p {
   align-items: start;
   justify-items: end;
   padding: 9px 9px 0 6px;
-  color: #6b7075;
-  font-size: 0.78rem;
-  font-weight: 700;
+  color: #7a8580;
+  font-size: 0.76rem;
+  font-weight: 750;
   text-align: right;
 }
 
@@ -1044,7 +1078,7 @@ p {
   gap: 3px;
   min-height: 78px;
   padding: 9px 8px 10px;
-  border-left: 1px solid #eef1f3;
+  border-left: 1px solid #edf1f4;
   text-align: center;
   scroll-snap-align: start;
 }
@@ -1090,8 +1124,8 @@ p {
   min-height: var(--calendar-hour-height);
   padding: 5px 7px;
   border: 0;
-  border-left: 1px solid #eef1f3;
-  border-bottom: 1px solid #e1e5e8;
+  border-left: 1px solid #edf1f4;
+  border-bottom: 1px solid #e4e9ed;
   background: rgba(255, 255, 255, 0.78);
   color: var(--ink);
   text-align: left;
@@ -1099,8 +1133,8 @@ p {
 
 .calendar-cell:hover,
 .calendar-cell.selected {
-  background: #fff8df;
-  box-shadow: inset 0 0 0 2px #f3bf3d;
+  background: #fff9e8;
+  box-shadow: inset 0 0 0 2px #f1c84b;
 }
 
 .calendar-cell.has-event.selected {
@@ -1109,11 +1143,11 @@ p {
 }
 
 .calendar-cell.actionable {
-  background: #f6fbff;
+  background: #f7fbff;
 }
 
 .calendar-cell.actionable:hover {
-  box-shadow: inset 0 0 0 2px #1d4f91;
+  box-shadow: inset 0 0 0 2px #4f7fc5;
 }
 
 .calendar-cell.unavailable {
@@ -1256,11 +1290,11 @@ p {
 
 .calendar-booking {
   min-height: 100%;
-  padding: 8px 8px 8px 13px;
+  padding: 8px 8px 8px 12px;
   border: 0;
-  border-left: 5px solid #c020de;
-  background: #f7d8fb;
-  color: #62166e;
+  border-left: 4px solid #c020de;
+  background: #f5d5f8;
+  color: #5e1767;
 }
 
 .calendar-booking.unavailable-private {
@@ -1620,10 +1654,15 @@ button.student-result.selected {
   gap: 8px;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid var(--line);
+  border: 1px solid #dce4e8;
   border-radius: 8px;
-  background: #fff;
+  background: #fbfdfc;
   color: var(--muted);
+}
+
+.input-shell:focus-within {
+  border-color: #60a58f;
+  box-shadow: 0 0 0 3px rgba(23, 107, 84, 0.12);
 }
 
 .input-shell input {
