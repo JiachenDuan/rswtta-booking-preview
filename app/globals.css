@@ -1177,7 +1177,7 @@ p {
 
 .calendar-cell:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  box-shadow: none;
 }
 
 .calendar-cell.actionable {
@@ -1185,7 +1185,7 @@ p {
 }
 
 .calendar-cell.actionable:hover {
-  box-shadow: inset 0 0 0 2px rgba(244, 201, 93, 0.72);
+  box-shadow: none;
 }
 
 .calendar-cell.unavailable {
