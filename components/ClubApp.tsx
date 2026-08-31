@@ -1693,8 +1693,6 @@ function ClubAppView({
       string,
       {
         studentName: string;
-        email: string;
-        phone: string;
         bookings: Booking[];
       }
     >();
@@ -1705,8 +1703,6 @@ function ClubAppView({
         studentsByKey.get(key) ??
         {
           studentName: booking.studentName,
-          email: booking.studentEmail,
-          phone: booking.phone,
           bookings: []
         };
 
@@ -1715,7 +1711,7 @@ function ClubAppView({
     }
 
     const summaryRows = [
-      ["Student", "Email", "Phone", "Confirmed not completed", "Coach completed", "Total classes", "Completed amount"],
+      ["Student", "Confirmed not completed", "Coach completed", "Total classes", "Completed amount"],
       ...[...studentsByKey.values()]
         .sort((left, right) => left.studentName.localeCompare(right.studentName))
         .map((student) => {
@@ -1723,8 +1719,6 @@ function ClubAppView({
           const completed = student.bookings.filter((booking) => booking.status === "coach_confirmed");
           return [
             student.studentName,
-            student.email,
-            student.phone,
             confirmedCount,
             completed.length,
             student.bookings.length,
@@ -1739,9 +1733,9 @@ function ClubAppView({
         const completed = student.bookings.filter((booking) => booking.status === "coach_confirmed");
         const rows = [
           [],
-          ["Student", student.studentName],
-          ["Email", student.email],
-          ["Phone", student.phone],
+          ["========================================"],
+          [`STUDENT: ${student.studentName}`],
+          ["========================================"],
           ["Date", "Time", "Coach", "Status", "Price", "Parent note"],
           ...student.bookings
             .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
