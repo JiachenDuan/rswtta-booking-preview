@@ -339,6 +339,23 @@ function eventHeightStyle(hours: number) {
   return { height: `calc(${hours} * var(--calendar-hour-height) - 10px)` };
 }
 
+function calendarEventStyle(booking: Booking, visibleCoachTab: ClubCalendarTab) {
+  const baseStyle = eventHeightStyle(bookingDurationHours(booking));
+  if (visibleCoachTab !== "Combined") return baseStyle;
+
+  const coachIndex = Math.max(
+    0,
+    coaches.findIndex((coach) => bookingMatchesCoach(booking, coach))
+  );
+
+  return {
+    ...baseStyle,
+    left: `calc(4px + ${coachIndex} * ((100% - 8px) / ${coaches.length}))`,
+    right: "auto",
+    width: `calc((100% - 8px) / ${coaches.length} - 3px)`
+  };
+}
+
 function makeCalendarDay(date: Date, index: number): CalendarDay {
   const normalized = new Date(date);
   normalized.setHours(0, 0, 0, 0);
@@ -1509,11 +1526,22 @@ function ClubCalendar({
                 ) : slotBookings.length === 0 ? (
                   <span className="open-slot" aria-hidden="true" />
                 ) : (
-                  slotBookings.map((booking) => (
+                  [...slotBookings]
+                    .sort(
+                      (left, right) =>
+                        coaches.findIndex((coach) => bookingMatchesCoach(left, coach)) -
+                        coaches.findIndex((coach) => bookingMatchesCoach(right, coach))
+                    )
+                    .map((booking) => (
                     <span
-                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""} spanning-event`}
+                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${visibleCoachTab === "Combined" ? " coach-lane" : ""} spanning-event`}
                       key={booking.id}
-                      style={eventHeightStyle(bookingDurationHours(booking))}
+                      style={calendarEventStyle(booking, visibleCoachTab)}
+                      onClick={(event) => {
+                        if (!onBookingSelect) return;
+                        event.stopPropagation();
+                        onBookingSelect(booking);
+                      }}
                     >
                       <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.assignedCoach}</strong>
                       <small>{isBlockedTime(booking) ? compactTimeRange(booking.timeLabel) : booking.studentName}</small>

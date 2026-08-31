@@ -1324,6 +1324,20 @@ p {
   color: #ffd6d6;
 }
 
+.calendar-booking.coach-lane {
+  padding: 7px 4px 7px 6px;
+  border-left-width: 3px;
+  border-radius: 5px;
+}
+
+.calendar-booking.coach-lane strong,
+.calendar-booking.coach-lane small,
+.calendar-booking.coach-lane em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .calendar-booking.unavailable-private {
   border-left-color: var(--gold);
   background: rgba(244, 201, 93, 0.18);
@@ -1366,6 +1380,15 @@ p {
 .calendar-booking em {
   margin-top: 2px;
   font-style: normal;
+}
+
+.calendar-booking.coach-lane strong {
+  font-size: 0.68rem;
+}
+
+.calendar-booking.coach-lane small,
+.calendar-booking.coach-lane em {
+  font-size: 0.62rem;
 }
 
 .request-stack {
