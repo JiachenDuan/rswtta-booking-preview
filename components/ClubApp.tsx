@@ -349,8 +349,14 @@ function coachLaneIndex(booking: Booking) {
   return index >= 0 ? index : coaches.length;
 }
 
-function calendarEventStyle(booking: Booking, useCoachLane: boolean) {
-  const baseStyle = eventHeightStyle(bookingDurationHours(booking));
+function calendarEventStyle(booking: Booking, useCoachLane: boolean, cellStart?: Date) {
+  const startOffsetMinutes = cellStart
+    ? Math.max(0, Math.round((new Date(booking.startsAt).getTime() - cellStart.getTime()) / 60000))
+    : 0;
+  const baseStyle = {
+    ...eventHeightStyle(bookingDurationHours(booking)),
+    top: `calc(4px + (${startOffsetMinutes} / 60) * var(--calendar-hour-height))`
+  };
   if (!useCoachLane) return baseStyle;
 
   return {
@@ -407,7 +413,7 @@ function weekLabel(days: CalendarDay[], language: Language) {
 }
 
 const minCalendarDate = addMonths(today, -3);
-const maxCalendarDate = addMonths(today, 3);
+const maxCalendarDate = new Date(2026, 11, 31);
 const initialWeekStart = today;
 const initialCalendarDay = makeCalendarDay(today, (today.getDay() + 6) % 7);
 const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7 PM");
@@ -1525,7 +1531,7 @@ function CalendarControls({
       </button>
       <div>
         <strong>{weekLabel}</strong>
-        <span>{copy(language, "3 months back to 3 months forward", "前三个月 - 后三个月")}</span>
+        <span>{copy(language, "3 months back through Dec 31", "前三个月 - 到12月31日")}</span>
       </div>
       <button className="filter-button" onClick={onToday}>
         {copy(language, "Today", "今天")}
@@ -1596,7 +1602,8 @@ function ClubCalendar({
               if (booking.status === "cancelled") return false;
               const matchesCoach =
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
-              return booking.startsAt === startsAt && (matchesCoach || ownBookingIds.has(booking.id));
+              const bookingStart = new Date(booking.startsAt);
+              return bookingStart >= cellStart && bookingStart < cellEnd && (matchesCoach || ownBookingIds.has(booking.id));
             });
             const overlappingBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
@@ -1651,7 +1658,7 @@ function ClubCalendar({
                   </span>
                 ) : null}
                 {privacyMode && unavailableDisplayBooking ? (
-                  <span className="calendar-booking unavailable-private spanning-event" style={eventHeightStyle(bookingDurationHours(unavailableDisplayBooking))}>
+                  <span className="calendar-booking unavailable-private spanning-event" style={calendarEventStyle(unavailableDisplayBooking, false, cellStart)}>
                     <strong>{blockedUnavailable ? copy(language, "Not working", "不可用") : copy(language, "Not available", "不可预约")}</strong>
                     <small>{blockedUnavailable ? compactTimeRange(blockedUnavailable.timeLabel) : compactTimeRange(unavailableDisplayBooking.timeLabel)}</small>
                   </span>
@@ -1666,7 +1673,7 @@ function ClubCalendar({
                     <span
                       className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${useCoachLanes ? " coach-lane" : ""} spanning-event`}
                       key={booking.id}
-                      style={calendarEventStyle(booking, useCoachLanes)}
+                      style={calendarEventStyle(booking, useCoachLanes, cellStart)}
                       onClick={(event) => {
                         if (!onBookingSelect) return;
                         event.stopPropagation();
