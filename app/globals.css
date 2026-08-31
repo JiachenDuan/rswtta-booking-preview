@@ -527,10 +527,11 @@ p {
   gap: 10px;
   align-items: center;
   margin-bottom: 12px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f7fbf8;
+  padding: 8px;
+  border: 1px solid #edf1f3;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 28, 22, 0.08);
 }
 
 .calendar-controls strong,
@@ -1004,43 +1005,45 @@ p {
 
 .week-calendar {
   display: grid;
-  grid-template-columns: 32px repeat(7, minmax(128px, 1fr));
-  min-width: 928px;
+  grid-template-columns: 58px repeat(7, minmax(132px, 1fr));
+  min-width: 982px;
   overflow: hidden;
-  border: 1px solid var(--line);
+  border: 1px solid #e9ecef;
   border-radius: 8px;
-  background: #fff;
+  background: linear-gradient(90deg, #fbfcfd 0 58px, #fff 58px);
 }
 
 .calendar-corner,
 .calendar-day-head,
 .calendar-time {
-  border-bottom: 1px solid var(--line);
-  background: #f4fbf7;
+  border-bottom: 1px solid #e9ecef;
+  background: #fff;
 }
 
 .calendar-corner,
 .calendar-time {
   display: grid;
-  place-items: center;
-  padding: 10px 8px;
-  color: var(--muted);
+  align-items: start;
+  justify-items: end;
+  padding: 9px 9px 0 6px;
+  color: #6b7075;
   font-size: 0.78rem;
-  font-weight: 900;
-  text-align: center;
+  font-weight: 700;
+  text-align: right;
 }
 
 .calendar-time strong {
-  display: none;
+  display: block;
+  font-weight: 700;
 }
 
 .calendar-day-head {
   display: grid;
   justify-items: center;
   gap: 3px;
-  min-height: 84px;
-  padding: 9px 8px;
-  border-left: 1px solid var(--line);
+  min-height: 78px;
+  padding: 9px 8px 10px;
+  border-left: 1px solid #eef1f3;
   text-align: center;
   scroll-snap-align: start;
 }
@@ -1053,12 +1056,13 @@ p {
 .calendar-day-head strong {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: #fff;
   color: var(--ink);
-  font-size: 1.05rem;
+  font-size: 1.15rem;
+  font-weight: 900;
 }
 
 .calendar-day-head span {
@@ -1073,28 +1077,29 @@ p {
 }
 
 .calendar-day-head.today strong {
-  background: #1d5b46;
+  background: #f23d55;
   color: #fff;
 }
 
 .calendar-cell {
+  position: relative;
   display: grid;
-  align-content: start;
+  align-content: stretch;
   gap: 6px;
-  min-height: 116px;
-  padding: 8px;
+  min-height: 76px;
+  padding: 5px 7px;
   border: 0;
-  border-left: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  background: #fff;
+  border-left: 1px solid #eef1f3;
+  border-bottom: 1px solid #e1e5e8;
+  background: rgba(255, 255, 255, 0.78);
   color: var(--ink);
   text-align: left;
 }
 
 .calendar-cell:hover,
 .calendar-cell.selected {
-  background: #effbf4;
-  box-shadow: inset 0 0 0 2px #1d5b46;
+  background: #fff8df;
+  box-shadow: inset 0 0 0 2px #f3bf3d;
 }
 
 .calendar-cell.actionable {
@@ -1117,7 +1122,7 @@ p {
 .open-slot {
   display: grid;
   gap: 2px;
-  min-height: 28px;
+  min-height: 100%;
   padding: 0;
   border: 1px dashed transparent;
   color: var(--muted);
@@ -1140,18 +1145,23 @@ p {
 }
 
 .selected-label {
-  margin-top: auto;
-  padding: 6px;
-  background: #1d5b46;
-  color: #fff;
+  min-height: 100%;
+  padding: 8px 8px 8px 12px;
+  border-left: 5px solid #f3bf3d;
+  background: #fff2c2;
+  color: #5f4100;
   font-size: 0.72rem;
   font-weight: 900;
-  text-align: center;
+  text-align: left;
 }
 
 .calendar-booking {
-  padding: 7px;
-  border: 1px solid transparent;
+  min-height: 100%;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid rgba(189, 42, 202, 0.14);
+  border-left: 5px solid #c029d9;
+  background: #f8d8fb;
+  color: #62166e;
 }
 
 .calendar-booking strong,
@@ -1170,7 +1180,7 @@ p {
 }
 
 .calendar-booking small {
-  color: var(--ink);
+  color: #62166e;
 }
 
 .calendar-booking em {
@@ -1744,8 +1754,8 @@ p {
   }
 
   .week-calendar {
-    grid-template-columns: 30px repeat(7, 112px);
-    min-width: 814px;
+    grid-template-columns: 46px repeat(7, 108px);
+    min-width: 802px;
   }
 
   .calendar-corner,
@@ -1777,8 +1787,8 @@ p {
   }
 
   .calendar-cell {
-    min-height: 108px;
-    padding: 6px;
+    min-height: 70px;
+    padding: 5px;
   }
 
   .calendar-booking {

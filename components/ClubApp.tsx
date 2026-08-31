@@ -40,14 +40,20 @@ import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/
 
 const coaches = ["Coach A", "Coach B", "Coach Tian Ye", "Coach Jorden"] as const;
 const clubCalendarTabs = ["Combined", ...coaches] as const;
-const calendarTimes = ["4:30 PM", "5:15 PM", "6:00 PM", "7:00 PM"];
+const calendarTimes = ["1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
 const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const dayNamesZh = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const timeParts: Record<string, [number, number]> = {
-  "4:30 PM": [16, 30],
-  "5:15 PM": [17, 15],
-  "6:00 PM": [18, 0],
-  "7:00 PM": [19, 0]
+  "1 PM": [13, 0],
+  "2 PM": [14, 0],
+  "3 PM": [15, 0],
+  "4 PM": [16, 0],
+  "5 PM": [17, 0],
+  "6 PM": [18, 0],
+  "7 PM": [19, 0],
+  "8 PM": [20, 0],
+  "9 PM": [21, 0],
+  "10 PM": [22, 0]
 };
 const today = new Date();
 today.setHours(0, 0, 0, 0);
@@ -244,7 +250,7 @@ const minCalendarDate = addMonths(today, -3);
 const maxCalendarDate = addMonths(today, 3);
 const initialWeekStart = startOfWeek(addDays(today, 1));
 const initialCalendarDay = makeCalendarDay(addDays(initialWeekStart, 2), 2);
-const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7:00 PM");
+const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7 PM");
 
 export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
@@ -1191,7 +1197,7 @@ function ClubCalendar({
 }) {
   return (
     <div className="week-calendar" aria-label="Club calendar view">
-      <div className="calendar-corner">{copy(language, "Day", "日期")}</div>
+      <div className="calendar-corner" aria-hidden="true" />
       {calendarDays.map((day) => (
         <div className={day.isToday ? "calendar-day-head today" : "calendar-day-head"} key={day.dateLabel}>
           <span className="day-zh">{copy(language, day.day, day.dayZh)}</span>
