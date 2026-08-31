@@ -2417,3 +2417,38 @@ button.student-result.selected {
 .calendar-cell.privacy-unavailable:hover {
   background: rgba(17, 17, 23, 0.72);
 }
+
+/* Parent privacy unavailable blocks must render as one solid, class-sized piece. */
+.calendar-booking.unavailable-private.spanning-event {
+  min-height: 0 !important;
+  background: #6b5a1d !important;
+  background-color: #6b5a1d !important;
+  color: #fff0a8 !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+  isolation: isolate;
+}
+
+.calendar-booking.unavailable-private.spanning-event small,
+.calendar-booking.unavailable-private.spanning-event strong,
+.calendar-booking.unavailable-private.spanning-event em {
+  background: transparent !important;
+}
+
+/* Paint unavailable privacy cards as one uninterrupted block, including adjacent vertical cards. */
+.calendar-booking.unavailable-private.spanning-event {
+  position: absolute;
+  overflow: hidden;
+  border-left-color: #f4c95d !important;
+  background: #6b5a1d !important;
+  background-image: linear-gradient(#6b5a1d, #6b5a1d) !important;
+}
+
+.calendar-booking.unavailable-private.spanning-event::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: #6b5a1d;
+}
