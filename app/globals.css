@@ -1170,15 +1170,14 @@ p {
   text-align: left;
 }
 
-.calendar-cell:hover,
-.calendar-cell.selected {
-  background: rgba(201, 154, 46, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(201, 154, 46, 0.74);
-}
-
-.calendar-cell.has-event.selected {
+.calendar-cell:hover {
   background: rgba(17, 17, 23, 0.78);
   box-shadow: none;
+}
+
+.calendar-cell:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 .calendar-cell.actionable {
