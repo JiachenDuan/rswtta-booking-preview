@@ -339,18 +339,18 @@ function eventHeightStyle(hours: number) {
   return { height: `calc(${hours} * var(--calendar-hour-height) - 10px)` };
 }
 
-function calendarEventStyle(booking: Booking, visibleCoachTab: ClubCalendarTab) {
-  const baseStyle = eventHeightStyle(bookingDurationHours(booking));
-  if (visibleCoachTab !== "Combined") return baseStyle;
+function coachLaneIndex(booking: Booking) {
+  const index = coaches.findIndex((coach) => bookingMatchesCoach(booking, coach));
+  return index >= 0 ? index : coaches.length;
+}
 
-  const coachIndex = Math.max(
-    0,
-    coaches.findIndex((coach) => bookingMatchesCoach(booking, coach))
-  );
+function calendarEventStyle(booking: Booking, useCoachLane: boolean) {
+  const baseStyle = eventHeightStyle(bookingDurationHours(booking));
+  if (!useCoachLane) return baseStyle;
 
   return {
     ...baseStyle,
-    left: `calc(4px + ${coachIndex} * ((100% - 8px) / ${coaches.length}))`,
+    left: `calc(4px + ${coachLaneIndex(booking)} * ((100% - 8px) / ${coaches.length}))`,
     right: "auto",
     width: `calc((100% - 8px) / ${coaches.length} - 3px)`
   };
@@ -1487,7 +1487,8 @@ function ClubCalendar({
             const unavailableDisplayBooking = unavailableBookings.find((booking) => booking.startsAt === startsAt);
             const blockedUnavailable = unavailableDisplayBooking && isBlockedTime(unavailableDisplayBooking) ? unavailableDisplayBooking : undefined;
             const unavailable = blockUnavailable && unavailableBookings.length > 0;
-            const actionable = Boolean(onBookingSelect && selectableBooking);
+            const useCoachLanes = visibleCoachTab === "Combined" && slotBookings.length > 1;
+            const actionable = Boolean(onBookingSelect && selectableBooking && !useCoachLanes);
             const startTotal = startHour * 60 + startMinute;
             const endTotal = nextHour * 60 + nextMinute;
             const currentTotal = currentTime.getHours() * 60 + currentTime.getMinutes();
@@ -1506,6 +1507,7 @@ function ClubCalendar({
                 disabled={unavailable && !actionable}
                 onClick={() => {
                   if (unavailable && !actionable) return;
+                  if (useCoachLanes) return;
                   if (onBookingSelect && selectableBooking) {
                     onBookingSelect(selectableBooking);
                     return;
@@ -1528,15 +1530,13 @@ function ClubCalendar({
                 ) : (
                   [...slotBookings]
                     .sort(
-                      (left, right) =>
-                        coaches.findIndex((coach) => bookingMatchesCoach(left, coach)) -
-                        coaches.findIndex((coach) => bookingMatchesCoach(right, coach))
+                      (left, right) => coachLaneIndex(left) - coachLaneIndex(right)
                     )
                     .map((booking) => (
                     <span
-                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${visibleCoachTab === "Combined" ? " coach-lane" : ""} spanning-event`}
+                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${useCoachLanes ? " coach-lane" : ""} spanning-event`}
                       key={booking.id}
-                      style={calendarEventStyle(booking, visibleCoachTab)}
+                      style={calendarEventStyle(booking, useCoachLanes)}
                       onClick={(event) => {
                         if (!onBookingSelect) return;
                         event.stopPropagation();
