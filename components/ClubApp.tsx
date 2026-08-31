@@ -11,7 +11,6 @@ import {
   Eye,
   EyeOff,
   KeyRound,
-  LayoutDashboard,
   LogIn,
   LogOut,
   Mail,
@@ -22,7 +21,6 @@ import {
   UserRound,
   X
 } from "lucide-react";
-import Link from "next/link";
 import {
   createBillNotification,
   createBooking,
@@ -70,7 +68,6 @@ type CalendarSlot = CalendarDay & {
 type ClubCalendarTab = (typeof clubCalendarTabs)[number];
 type ExportPeriod = "weekly" | "monthly";
 type AuthMode = "login" | "register" | "forgot" | "updatePassword";
-type AppMode = "parent" | "club";
 
 const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
@@ -241,8 +238,8 @@ const initialWeekStart = startOfWeek(addDays(today, 1));
 const initialCalendarDay = makeCalendarDay(addDays(initialWeekStart, 2), 2);
 const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7:00 PM");
 
-export function ClubApp({ appMode }: { appMode: AppMode }) {
-  const mode = appMode;
+export function ClubApp() {
+  const [mode, setMode] = useState<"parent" | "club">("parent");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
   const [notice, setNotice] = useState("");
@@ -284,6 +281,7 @@ export function ClubApp({ appMode }: { appMode: AppMode }) {
   async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
     const result = await registerParentAccount(input);
     applyParentSession(result.account);
+    setMode("parent");
   }
 
   async function loginParent(identifier: string, password: string) {
@@ -305,6 +303,16 @@ export function ClubApp({ appMode }: { appMode: AppMode }) {
     }
     setClubAuthenticated(true);
     window.localStorage.setItem(clubSessionKey, "true");
+    setMode("club");
+  }
+
+  async function loginUnified(identifier: string, password: string) {
+    if (identifier.trim().toLowerCase() === clubEmail) {
+      await loginClub(identifier, password);
+      return;
+    }
+    await loginParent(identifier, password);
+    setMode("parent");
   }
 
   async function loadAll() {
@@ -423,10 +431,15 @@ export function ClubApp({ appMode }: { appMode: AppMode }) {
 
   useEffect(() => {
     const storedParent = window.localStorage.getItem(parentSessionKey);
+    const storedClub = window.localStorage.getItem(clubSessionKey) === "true";
     if (storedParent) {
       applyParentSession(JSON.parse(storedParent) as ParentAccount);
+      setMode("parent");
     }
-    setClubAuthenticated(window.localStorage.getItem(clubSessionKey) === "true");
+    if (storedClub) {
+      setClubAuthenticated(true);
+      setMode("club");
+    }
     loadAll();
     const interval = window.setInterval(loadAll, 5000);
     return () => window.clearInterval(interval);
@@ -445,16 +458,10 @@ export function ClubApp({ appMode }: { appMode: AppMode }) {
           </div>
         </div>
 
-        <nav className="nav-list">
-          <Link className={mode === "parent" ? "nav-item active" : "nav-item"} href="/parent">
-            <Phone size={18} />
-            <span>家长 Parent</span>
-          </Link>
-          <Link className={mode === "club" ? "nav-item active" : "nav-item"} href="/club">
-            <LayoutDashboard size={18} />
-            <span>俱乐部 Club</span>
-          </Link>
-        </nav>
+        <div className="sidebar-note">
+          <span>一个入口 / One entrance</span>
+          <strong>{mode === "club" ? "Club App" : "Parent App"}</strong>
+        </div>
       </aside>
 
       <section className="workspace">
@@ -474,6 +481,7 @@ export function ClubApp({ appMode }: { appMode: AppMode }) {
                 onClick={() => {
                   setParentSession(null);
                   window.localStorage.removeItem(parentSessionKey);
+                  setMode("parent");
                 }}
               >
                 <LogOut size={17} />
@@ -486,6 +494,7 @@ export function ClubApp({ appMode }: { appMode: AppMode }) {
                 onClick={() => {
                   setClubAuthenticated(false);
                   window.localStorage.removeItem(clubSessionKey);
+                  setMode("parent");
                 }}
               >
                 <LogOut size={17} />
@@ -495,12 +504,12 @@ export function ClubApp({ appMode }: { appMode: AppMode }) {
           </div>
         </header>
 
-        {mode === "parent" && !parentSession ? (
+        {!parentSession && !clubAuthenticated ? (
           <UnifiedAuth
             initialAuthMode="register"
             intent="parent"
             onRegister={registerParent}
-            onLogin={loginParent}
+            onLogin={loginUnified}
             onRequestPasswordReset={requestPasswordReset}
             onUpdatePassword={updatePassword}
           />
@@ -562,15 +571,6 @@ export function ClubApp({ appMode }: { appMode: AppMode }) {
               updateBooking(booking.id, "cancelled");
             }}
           />
-        ) : mode === "club" && !clubAuthenticated ? (
-          <UnifiedAuth
-            initialAuthMode="login"
-            intent="club"
-            onRegister={registerParent}
-            onLogin={loginClub}
-            onRequestPasswordReset={requestPasswordReset}
-            onUpdatePassword={updatePassword}
-          />
         ) : (
           <ClubAppView
             bookings={bookings}
@@ -625,7 +625,7 @@ function UnifiedAuth({
   const [notice, setNotice] = useState(
     intent === "club"
       ? "俱乐部登录会直接进入管理界面 / Club login opens the dashboard."
-      : "家长注册或登录后进入预约界面 / Parent login opens the booking app."
+      : "家长注册或登录；俱乐部用管理邮箱登录 / Parents register or login; club uses the manager email."
   );
   const [busy, setBusy] = useState(false);
 
@@ -707,11 +707,11 @@ function UnifiedAuth({
         <div className="section-head">
           <div>
             <p className="eyebrow">{intent === "club" ? "Club App" : "Parent App"}</p>
-            <h2>{intent === "club" ? "俱乐部登录入口" : "家长登录入口"}</h2>
+            <h2>{intent === "club" ? "俱乐部登录入口" : "登录入口"}</h2>
             <p className="section-subtitle">
               {intent === "club"
                 ? "俱乐部输入管理邮箱后自动进入 Club 界面 / Club manager login opens the club app."
-                : "家长登录后进入预约课程界面 / Parent login opens the booking app."}
+                : "家长进入预约；club preset email/password 会进入 club view。"}
             </p>
           </div>
         </div>
@@ -786,7 +786,7 @@ function UnifiedAuth({
             <p className="helper-line">
               {intent === "club"
                 ? "登录后进入 Club App。"
-                : "登录后进入 Parent App。"}
+                : "家长账号进入 Parent App；club preset email/password 进入 Club App。"}
             </p>
           </div>
         ) : null}

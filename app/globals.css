@@ -118,85 +118,29 @@ button {
   color: #ffffff;
 }
 
+.sidebar-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 34px;
+  padding: 12px;
+  border: 1px solid #294139;
+  border-radius: 8px;
+  background: #13251f;
+}
+
+.sidebar-note span {
+  color: #a9bab2;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.sidebar-note strong {
+  color: #ffffff;
+}
+
 .workspace {
   min-width: 0;
   padding: 26px;
-}
-
-.portal-shell {
-  min-height: 100vh;
-  padding: 24px;
-  background:
-    linear-gradient(90deg, rgba(13, 29, 24, 0.86), rgba(13, 29, 24, 0.3)),
-    url("https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=1800&q=80");
-  background-position: center;
-  background-size: cover;
-  color: #fff;
-}
-
-.portal-hero {
-  display: grid;
-  align-content: space-between;
-  gap: 32px;
-  min-height: calc(100vh - 48px);
-  max-width: 980px;
-}
-
-.portal-brand {
-  color: #fff;
-}
-
-.portal-brand span {
-  color: #d4e5dd;
-}
-
-.portal-copy {
-  max-width: 760px;
-}
-
-.portal-copy .eyebrow,
-.portal-copy .screen-subtitle {
-  color: #d8f7e5;
-}
-
-.portal-copy h1 {
-  font-size: clamp(2.8rem, 7vw, 6.4rem);
-}
-
-.portal-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(240px, 360px));
-  gap: 12px;
-}
-
-.portal-link {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 96px;
-  padding: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #0d1d18;
-  text-decoration: none;
-  box-shadow: var(--shadow);
-}
-
-.portal-link.club {
-  background: rgba(185, 246, 212, 0.94);
-}
-
-.portal-link strong,
-.portal-link small {
-  display: block;
-}
-
-.portal-link small {
-  margin-top: 4px;
-  color: #476058;
-  font-size: 0.86rem;
-  font-weight: 700;
 }
 
 .topbar {
@@ -1551,26 +1495,6 @@ p {
 }
 
 @media (max-width: 760px) {
-  .portal-shell {
-    padding: 14px;
-  }
-
-  .portal-hero {
-    min-height: calc(100vh - 28px);
-  }
-
-  .portal-copy h1 {
-    font-size: 2.6rem;
-  }
-
-  .portal-actions {
-    grid-template-columns: 1fr;
-  }
-
-  .portal-link {
-    min-height: 88px;
-  }
-
   .shell {
     display: block;
   }
