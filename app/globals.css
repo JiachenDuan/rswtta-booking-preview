@@ -1216,7 +1216,7 @@ p {
 }
 
 .calendar-booking.spanning-event {
-  z-index: 3;
+  z-index: 6;
   min-height: 0;
 }
 
@@ -1332,7 +1332,7 @@ p {
   padding: 8px 8px 8px 12px;
   border: 0;
   border-left: 4px solid var(--red);
-  background: rgba(220, 38, 38, 0.18);
+  background: #641a1d;
   color: #ffd6d6;
 }
 
@@ -1352,13 +1352,13 @@ p {
 
 .calendar-booking.unavailable-private {
   border-left-color: var(--gold);
-  background: rgba(244, 201, 93, 0.18);
+  background: #4d3f18;
   color: #ffe6a3;
 }
 
 .calendar-booking.blocked-time {
   border-left-color: var(--gold);
-  background: rgba(244, 201, 93, 0.18);
+  background: #4d3f18;
   color: #ffe6a3;
 }
 
@@ -2415,5 +2415,5 @@ button.student-result.selected {
 }
 
 .calendar-cell.privacy-unavailable:hover {
-  background: rgba(17, 17, 23, 0.78);
+  background: rgba(17, 17, 23, 0.72);
 }
