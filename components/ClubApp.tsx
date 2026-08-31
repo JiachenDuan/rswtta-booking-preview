@@ -236,7 +236,10 @@ function makeCalendarSlot(day: CalendarDay, timeLabel: string): CalendarSlot {
 }
 
 function weekDays(weekStart: Date) {
-  return dayNames.map((_, index) => makeCalendarDay(addDays(weekStart, index), index));
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = addDays(weekStart, index);
+    return makeCalendarDay(date, (date.getDay() + 6) % 7);
+  });
 }
 
 function weekLabel(days: CalendarDay[], language: Language) {
@@ -248,8 +251,8 @@ function weekLabel(days: CalendarDay[], language: Language) {
 
 const minCalendarDate = addMonths(today, -3);
 const maxCalendarDate = addMonths(today, 3);
-const initialWeekStart = startOfWeek(addDays(today, 1));
-const initialCalendarDay = makeCalendarDay(addDays(initialWeekStart, 2), 2);
+const initialWeekStart = today;
+const initialCalendarDay = makeCalendarDay(today, (today.getDay() + 6) % 7);
 const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7 PM");
 
 export function ClubApp() {
@@ -270,6 +273,7 @@ export function ClubApp() {
   const [visibleWeekStart, setVisibleWeekStart] = useState(initialWeekStart);
   const [selectedSlot, setSelectedSlot] = useState<CalendarSlot>(initialCalendarSlot);
   const [selectedSlots, setSelectedSlots] = useState<CalendarSlot[]>([initialCalendarSlot]);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const [recurring, setRecurring] = useState(false);
   const [recurringWeeks, setRecurringWeeks] = useState(4);
   const [saving, setSaving] = useState(false);
@@ -510,7 +514,11 @@ export function ClubApp() {
     }
     loadAll();
     const interval = window.setInterval(loadAll, 5000);
-    return () => window.clearInterval(interval);
+    const clock = window.setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearInterval(clock);
+    };
   }, []);
 
   return (
@@ -607,6 +615,7 @@ export function ClubApp() {
             selectedSlot={selectedSlot}
             selectedSlots={selectedSlots}
             calendarDays={calendarDays}
+            currentTime={currentTime}
             weekLabel={weekLabel(calendarDays, language)}
             canGoPrevious={canGoPrevious}
             canGoNext={canGoNext}
@@ -661,6 +670,7 @@ export function ClubApp() {
             selectedSlot={selectedSlot}
             selectedSlots={selectedSlots}
             calendarDays={calendarDays}
+            currentTime={currentTime}
             weekLabel={weekLabel(calendarDays, language)}
             canGoPrevious={canGoPrevious}
             canGoNext={canGoNext}
@@ -957,6 +967,7 @@ function ParentApp({
   selectedSlot,
   selectedSlots,
   calendarDays,
+  currentTime,
   weekLabel,
   canGoPrevious,
   canGoNext,
@@ -989,6 +1000,7 @@ function ParentApp({
   selectedSlot: CalendarSlot;
   selectedSlots: CalendarSlot[];
   calendarDays: CalendarDay[];
+  currentTime: Date;
   weekLabel: string;
   canGoPrevious: boolean;
   canGoNext: boolean;
@@ -1037,6 +1049,7 @@ function ParentApp({
             selectedSlots={selectedSlots}
             requestedCoach={requestedCoach}
             calendarDays={calendarDays}
+            currentTime={currentTime}
             language={language}
             onSlotChange={onSlotChange}
           />
@@ -1181,6 +1194,7 @@ function ClubCalendar({
   requestedCoach,
   visibleCoachTab = "Combined",
   calendarDays,
+  currentTime,
   language,
   onSlotChange,
   onCoachComplete
@@ -1191,6 +1205,7 @@ function ClubCalendar({
   requestedCoach: string;
   visibleCoachTab?: ClubCalendarTab;
   calendarDays: CalendarDay[];
+  currentTime: Date;
   language: Language;
   onSlotChange: (value: CalendarSlot) => void;
   onCoachComplete?: (booking: Booking) => void;
@@ -1223,6 +1238,14 @@ function ClubCalendar({
             const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlots.some((item) => item.startsAt === startsAt);
             const actionable = Boolean(onCoachComplete && completeTarget);
+            const [startHour, startMinute] = timeParts[timeLabel];
+            const nextTime = calendarTimes[calendarTimes.indexOf(timeLabel) + 1];
+            const [nextHour, nextMinute] = nextTime ? timeParts[nextTime] : [startHour + 1, startMinute];
+            const startTotal = startHour * 60 + startMinute;
+            const endTotal = nextHour * 60 + nextMinute;
+            const currentTotal = currentTime.getHours() * 60 + currentTime.getMinutes();
+            const showCurrentTime = day.isToday && currentTotal >= startTotal && currentTotal < endTotal;
+            const currentTimeTop = `${((currentTotal - startTotal) / (endTotal - startTotal)) * 100}%`;
             return (
               <button
                 className={[
@@ -1239,6 +1262,11 @@ function ClubCalendar({
                   onSlotChange(slot);
                 }}
               >
+                {showCurrentTime ? (
+                  <span className="current-time-line" style={{ top: currentTimeTop }}>
+                    <span>{new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(currentTime)}</span>
+                  </span>
+                ) : null}
                 {slotBookings.length === 0 ? (
                   <span className="open-slot" aria-hidden="true" />
                 ) : (
@@ -1267,6 +1295,7 @@ function ClubAppView({
   selectedSlot,
   selectedSlots,
   calendarDays,
+  currentTime,
   weekLabel,
   canGoPrevious,
   canGoNext,
@@ -1290,6 +1319,7 @@ function ClubAppView({
   selectedSlot: CalendarSlot;
   selectedSlots: CalendarSlot[];
   calendarDays: CalendarDay[];
+  currentTime: Date;
   weekLabel: string;
   canGoPrevious: boolean;
   canGoNext: boolean;
@@ -1469,6 +1499,7 @@ function ClubAppView({
             requestedCoach={requestedCoach}
             visibleCoachTab={activeCalendarTab}
             calendarDays={calendarDays}
+            currentTime={currentTime}
             language={language}
             onSlotChange={onSlotChange}
             onCoachComplete={onCoachComplete}
