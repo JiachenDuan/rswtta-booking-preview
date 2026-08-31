@@ -515,45 +515,10 @@ p {
 
 .booking-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 330px) minmax(220px, 280px) minmax(280px, auto);
+  grid-template-columns: minmax(260px, 360px) minmax(280px, auto);
   gap: 12px;
   align-items: center;
   margin-bottom: 12px;
-}
-
-.time-range-control {
-  display: grid;
-  gap: 5px;
-  min-height: 58px;
-  padding: 9px 11px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
-.time-range-control span {
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 900;
-  text-transform: uppercase;
-}
-
-.time-range-control strong {
-  overflow: hidden;
-  font-size: 0.9rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.time-range-control select {
-  min-height: 34px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 800;
 }
 
 .calendar-controls {
@@ -1216,6 +1181,8 @@ p {
 }
 
 .selected-label {
+  display: grid;
+  gap: 8px;
   min-height: 100%;
   padding: 8px 8px 8px 12px;
   border-left: 5px solid #f3bf3d;
@@ -1224,6 +1191,41 @@ p {
   font-size: 0.72rem;
   font-weight: 900;
   text-align: left;
+}
+
+.selected-label strong {
+  display: block;
+  color: inherit;
+  font-size: 0.76rem;
+}
+
+.duration-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.duration-picker span {
+  display: grid;
+  min-height: 28px;
+  place-items: center;
+  border: 1px solid rgba(95, 65, 0, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #5f4100;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.duration-picker span::after {
+  content: "m";
+}
+
+.duration-picker span.selected {
+  border-color: #5f4100;
+  background: #5f4100;
+  color: #fff;
 }
 
 .calendar-booking {

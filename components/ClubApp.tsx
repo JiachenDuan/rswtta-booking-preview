@@ -1133,9 +1133,11 @@ function ParentApp({
             calendarDays={calendarDays}
             currentTime={currentTime}
             language={language}
+            ownBookings={bookings}
             blockUnavailable
             privacyMode
             onSlotChange={onSlotChange}
+            onDurationChange={onDurationChange}
           />
         </div>
         <div className="booking-toolbar">
@@ -1145,17 +1147,6 @@ function ParentApp({
                 {coach}
               </button>
             ))}
-          </div>
-          <div className="time-range-control">
-            <span>{copy(language, "Time", "时间")}</span>
-            <strong>{rangeLabel(selectedSlot, selectedDurationMinutes)}</strong>
-            <select value={selectedDurationMinutes} onChange={(event) => onDurationChange(Number(event.target.value))}>
-              {durationOptions.map((minutes) => (
-                <option key={minutes} value={minutes}>
-                  {copy(language, `${minutes} min`, `${minutes} 分钟`)}
-                </option>
-              ))}
-            </select>
           </div>
           <button className="primary-button wide-button" disabled={saving || selectedUnavailable} onClick={onRequestBooking}>
             <CalendarDays size={18} />
@@ -1294,9 +1285,11 @@ function ClubCalendar({
   calendarDays,
   currentTime,
   language,
+  ownBookings = [],
   blockUnavailable = false,
   privacyMode = false,
   onSlotChange,
+  onDurationChange,
   onCoachComplete
 }: {
   bookings: Booking[];
@@ -1308,11 +1301,14 @@ function ClubCalendar({
   calendarDays: CalendarDay[];
   currentTime: Date;
   language: Language;
+  ownBookings?: Booking[];
   blockUnavailable?: boolean;
   privacyMode?: boolean;
   onSlotChange: (value: CalendarSlot) => void;
+  onDurationChange?: (value: number) => void;
   onCoachComplete?: (booking: Booking) => void;
 }) {
+  const ownBookingIds = new Set(ownBookings.map((booking) => booking.id));
   return (
     <div className="week-calendar" aria-label="Club calendar view">
       <div className="calendar-corner" aria-hidden="true" />
@@ -1335,14 +1331,12 @@ function ClubCalendar({
               const matchesSlot = booking.startsAt === startsAt && booking.status !== "cancelled";
               const matchesCoach =
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
-              return matchesSlot && matchesCoach;
+              return matchesSlot && (matchesCoach || ownBookingIds.has(booking.id));
             });
             const overlappingBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
-              const matchesCoach =
-                visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
               return (
-                matchesCoach &&
+                bookingMatchesCoach(booking, requestedCoach) &&
                 rangesOverlap(
                   new Date(startsAt),
                   addMinutes(new Date(startsAt), selectionDurationMinutes),
@@ -1354,7 +1348,8 @@ function ClubCalendar({
             const completeTarget = slotBookings.find((booking) => booking.status === "club_confirmed");
             const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlots.some((item) => item.startsAt === startsAt);
-            const unavailable = blockUnavailable && overlappingBookings.length > 0;
+            const unavailableBookings = overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
+            const unavailable = blockUnavailable && unavailableBookings.length > 0;
             const actionable = Boolean(onCoachComplete && completeTarget);
             const [startHour, startMinute] = parseClockLabel(timeLabel);
             const nextTime = calendarTimes[calendarTimes.indexOf(timeLabel) + 1];
@@ -1388,7 +1383,7 @@ function ClubCalendar({
                     <span>{new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(currentTime)}</span>
                   </span>
                 ) : null}
-                {privacyMode && overlappingBookings.length > 0 ? (
+                {privacyMode && unavailableBookings.length > 0 ? (
                   <span className="calendar-booking unavailable-private">
                     <strong>{copy(language, "Not available", "不可预约")}</strong>
                     <small>{copy(language, "Already booked or pending", "已有课程或待确认")}</small>
@@ -1405,7 +1400,35 @@ function ClubCalendar({
                     </span>
                   ))
                 )}
-                {selected ? <span className="selected-label">{rangeLabel(slot, selectionDurationMinutes)}</span> : null}
+                {selected ? (
+                  <span className="selected-label">
+                    <strong>{rangeLabel(slot, selectionDurationMinutes)}</strong>
+                    {onDurationChange ? (
+                      <span className="duration-picker" aria-label="Duration">
+                        {durationOptions.map((minutes) => (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            className={selectionDurationMinutes === minutes ? "selected" : ""}
+                            key={minutes}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDurationChange(minutes);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onDurationChange(minutes);
+                            }}
+                          >
+                            {minutes}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                  </span>
+                ) : null}
               </button>
             );
           })}
@@ -1633,6 +1656,7 @@ function ClubAppView({
             currentTime={currentTime}
             language={language}
             onSlotChange={onSlotChange}
+            onDurationChange={onDurationChange}
             onCoachComplete={onCoachComplete}
           />
         </div>
@@ -1680,16 +1704,6 @@ function ClubAppView({
                 {coaches.map((coach) => (
                   <option key={coach} value={coach}>
                     {coach}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>{copy(language, "Duration", "时长")}</span>
-              <select value={selectedDurationMinutes} onChange={(event) => onDurationChange(Number(event.target.value))}>
-                {durationOptions.map((minutes) => (
-                  <option key={minutes} value={minutes}>
-                    {copy(language, `${minutes} min`, `${minutes} 分钟`)}
                   </option>
                 ))}
               </select>
