@@ -585,7 +585,7 @@ export function ClubApp() {
             startsAt: slot.startsAt,
             priceCents: 0,
             parentNote: copy(language, "Blocked by club manager", "俱乐部管理员设置不可用")
-          })
+          }).then((booking) => updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach }))
         )
       );
       await loadAll();
@@ -1404,11 +1404,20 @@ function ClubCalendar({
           </div>
           {calendarDays.map((day) => {
             const startsAt = makeStartsAt(day.date, timeLabel);
+            const [startHour, startMinute] = parseClockLabel(timeLabel);
+            const nextTime = calendarTimes[calendarTimes.indexOf(timeLabel) + 1];
+            const [nextHour, nextMinute] = nextTime ? parseClockLabel(nextTime) : [startHour + 1, startMinute];
+            const cellStart = new Date(startsAt);
+            const cellEnd = addMinutes(cellStart, (nextHour * 60 + nextMinute) - (startHour * 60 + startMinute));
             const slotBookings = bookings.filter((booking) => {
-              const matchesSlot = booking.startsAt === startsAt && booking.status !== "cancelled";
+              if (booking.status === "cancelled") return false;
+              const matchesSlot =
+                booking.startsAt === startsAt ||
+                (isBlockedTime(booking) && rangesOverlap(cellStart, cellEnd, new Date(booking.startsAt), bookingEndDate(booking)));
               const matchesCoach =
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
-              return matchesSlot && (matchesCoach || ownBookingIds.has(booking.id));
+              if (isBlockedTime(booking)) return matchesSlot && matchesCoach;
+              return booking.startsAt === startsAt && (matchesCoach || ownBookingIds.has(booking.id));
             });
             const overlappingBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
@@ -1426,11 +1435,9 @@ function ClubCalendar({
             const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlots.some((item) => item.startsAt === startsAt);
             const unavailableBookings = overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
+            const blockedUnavailable = unavailableBookings.find(isBlockedTime);
             const unavailable = blockUnavailable && unavailableBookings.length > 0;
             const actionable = Boolean(onBookingSelect && selectableBooking);
-            const [startHour, startMinute] = parseClockLabel(timeLabel);
-            const nextTime = calendarTimes[calendarTimes.indexOf(timeLabel) + 1];
-            const [nextHour, nextMinute] = nextTime ? parseClockLabel(nextTime) : [startHour + 1, startMinute];
             const startTotal = startHour * 60 + startMinute;
             const endTotal = nextHour * 60 + nextMinute;
             const currentTotal = currentTime.getHours() * 60 + currentTime.getMinutes();
@@ -1462,8 +1469,8 @@ function ClubCalendar({
                 ) : null}
                 {privacyMode && unavailableBookings.length > 0 ? (
                   <span className="calendar-booking unavailable-private">
-                    <strong>{copy(language, "Not available", "不可预约")}</strong>
-                    <small>{copy(language, "Already booked or pending", "已有课程或待确认")}</small>
+                    <strong>{blockedUnavailable ? copy(language, "Not working", "不可用") : copy(language, "Not available", "不可预约")}</strong>
+                    <small>{blockedUnavailable ? blockedUnavailable.timeLabel : copy(language, "Already booked or pending", "已有课程或待确认")}</small>
                   </span>
                 ) : slotBookings.length === 0 ? (
                   <span className="open-slot" aria-hidden="true" />
@@ -1557,7 +1564,7 @@ function ClubAppView({
   const [selectedAddStudent, setSelectedAddStudent] = useState<ParentAccount | null>(null);
   const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
   const visibleBookings = bookings.filter((booking) => activeCalendarTab === "Combined" || bookingMatchesCoach(booking, activeCalendarTab));
-  const requested = visibleBookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
+  const requested = visibleBookings.filter((booking) => !isBlockedTime(booking) && (booking.status === "requested" || booking.status === "change_requested"));
   const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed" && !isBlockedTime(booking));
   const studentDirectory = useMemo(() => {
     const byKey = new Map<string, ParentAccount>();
