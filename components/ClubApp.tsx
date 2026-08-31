@@ -1680,9 +1680,9 @@ function ClubCalendar({
                         onBookingSelect(booking);
                       }}
                     >
-                      <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.assignedCoach}</strong>
-                      <small>{isBlockedTime(booking) ? compactTimeRange(booking.timeLabel) : booking.studentName}</small>
-                      <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : `${compactTimeRange(booking.timeLabel)} · ${statusText(booking.status, language)}`}</em>
+                      <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.studentName}</strong>
+                      <small>{isBlockedTime(booking) ? compactTimeRange(booking.timeLabel) : compactTimeRange(booking.timeLabel)}</small>
+                      <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : `${booking.assignedCoach} · ${statusText(booking.status, language)}`}</em>
                     </span>
                   ))
                 )}
@@ -2415,26 +2415,28 @@ function ClubBookingActionModal({
                 ? copy(language, "That coach already has something at the new time.", "该教练新时间已有安排。")
                 : `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`}
             </p>
-            <button className="primary-button wide-button" disabled={unavailable} onClick={() => onUpdateTime(editSlot, durationMinutes)}>
-              <Check size={18} />
-              {copy(language, "Update class time", "更新课程时间")}
-            </button>
           </div>
         ) : null}
         <div className="modal-actions class-actions">
-          <button className="filter-button" onClick={onClose}>
-            {copy(language, "Close", "关闭")}
-          </button>
-          <button className="decline" onClick={onCancel}>
-            <X size={17} />
-            {copy(language, isBlockedTime(booking) ? "Remove block" : "Cancel class", isBlockedTime(booking) ? "移除不可用" : "取消课程")}
-          </button>
           {onComplete && !isBlockedTime(booking) ? (
             <button className="primary-button" onClick={onComplete}>
               <Check size={18} />
               {copy(language, "Complete", "完成")}
             </button>
           ) : null}
+          {isFutureClass ? (
+            <button className="primary-button" disabled={unavailable} onClick={() => onUpdateTime(editSlot, durationMinutes)}>
+              <Check size={18} />
+              {copy(language, "Update", "更新")}
+            </button>
+          ) : null}
+          <button className="decline" onClick={onCancel}>
+            <X size={17} />
+            {copy(language, isBlockedTime(booking) ? "Remove block" : "Cancel", isBlockedTime(booking) ? "移除不可用" : "取消")}
+          </button>
+          <button className="filter-button" onClick={onClose}>
+            {copy(language, "Close", "关闭")}
+          </button>
         </div>
       </section>
     </div>

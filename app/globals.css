@@ -2269,3 +2269,40 @@ button.student-result.selected {
   padding: 12px 14px;
   font-weight: 800;
 }
+
+@media (max-width: 760px) {
+  .calendar-booking {
+    padding: 5px 4px 5px 6px;
+    border-left-width: 3px;
+  }
+
+  .calendar-booking strong,
+  .calendar-booking small,
+  .calendar-booking em {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .calendar-booking strong {
+    font-size: 0.62rem;
+    line-height: 1.05;
+  }
+
+  .calendar-booking small {
+    font-size: 0.56rem;
+    line-height: 1.05;
+  }
+
+  .calendar-booking em {
+    display: none;
+  }
+
+  .calendar-booking.coach-lane strong {
+    font-size: 0.58rem;
+  }
+
+  .calendar-booking.coach-lane small {
+    font-size: 0.52rem;
+  }
+}
