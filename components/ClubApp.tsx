@@ -297,6 +297,15 @@ function isRangeUnavailable(bookings: Booking[], coach: string, slot: CalendarSl
   });
 }
 
+function bookingDurationHours(booking: Booking) {
+  const durationMinutes = Math.max(30, Math.round((bookingEndDate(booking).getTime() - new Date(booking.startsAt).getTime()) / 60000));
+  return durationMinutes / 60;
+}
+
+function eventHeightStyle(hours: number) {
+  return { height: `calc(${hours} * var(--calendar-hour-height) - 10px)` };
+}
+
 function makeCalendarDay(date: Date, index: number): CalendarDay {
   const normalized = new Date(date);
   normalized.setHours(0, 0, 0, 0);
@@ -1398,10 +1407,9 @@ function ClubCalendar({
             const cellEnd = addMinutes(cellStart, (nextHour * 60 + nextMinute) - (startHour * 60 + startMinute));
             const slotBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
-              const overlapsCell = rangesOverlap(cellStart, cellEnd, new Date(booking.startsAt), bookingEndDate(booking));
               const matchesCoach =
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
-              return overlapsCell && (matchesCoach || ownBookingIds.has(booking.id));
+              return booking.startsAt === startsAt && (matchesCoach || ownBookingIds.has(booking.id));
             });
             const overlappingBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
@@ -1419,7 +1427,8 @@ function ClubCalendar({
             const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlots.some((item) => item.startsAt === startsAt);
             const unavailableBookings = overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
-            const blockedUnavailable = unavailableBookings.find(isBlockedTime);
+            const unavailableDisplayBooking = unavailableBookings.find((booking) => booking.startsAt === startsAt);
+            const blockedUnavailable = unavailableDisplayBooking && isBlockedTime(unavailableDisplayBooking) ? unavailableDisplayBooking : undefined;
             const unavailable = blockUnavailable && unavailableBookings.length > 0;
             const actionable = Boolean(onBookingSelect && selectableBooking);
             const startTotal = startHour * 60 + startMinute;
@@ -1451,16 +1460,20 @@ function ClubCalendar({
                     <span>{new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(currentTime)}</span>
                   </span>
                 ) : null}
-                {privacyMode && unavailableBookings.length > 0 ? (
-                  <span className="calendar-booking unavailable-private">
+                {privacyMode && unavailableDisplayBooking ? (
+                  <span className="calendar-booking unavailable-private spanning-event" style={eventHeightStyle(bookingDurationHours(unavailableDisplayBooking))}>
                     <strong>{blockedUnavailable ? copy(language, "Not working", "不可用") : copy(language, "Not available", "不可预约")}</strong>
-                    <small>{blockedUnavailable ? blockedUnavailable.timeLabel : copy(language, "Already booked or pending", "已有课程或待确认")}</small>
+                    <small>{blockedUnavailable ? blockedUnavailable.timeLabel : unavailableDisplayBooking.timeLabel}</small>
                   </span>
                 ) : slotBookings.length === 0 ? (
                   <span className="open-slot" aria-hidden="true" />
                 ) : (
                   slotBookings.map((booking) => (
-                    <span className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}`} key={booking.id}>
+                    <span
+                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""} spanning-event`}
+                      key={booking.id}
+                      style={eventHeightStyle(bookingDurationHours(booking))}
+                    >
                       <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.assignedCoach}</strong>
                       <small>{isBlockedTime(booking) ? booking.timeLabel : booking.studentName}</small>
                       <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : statusText(booking.status, language)}</em>
@@ -1469,7 +1482,7 @@ function ClubCalendar({
                   ))
                 )}
                 {selected ? (
-                  <span className="selected-label">
+                  <span className="selected-label spanning-event" style={eventHeightStyle(selectionDurationMinutes / 60)}>
                     <strong>{rangeLabel(slot, selectionDurationMinutes)}</strong>
                   </span>
                 ) : null}

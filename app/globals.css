@@ -1004,6 +1004,7 @@ p {
 }
 
 .week-calendar {
+  --calendar-hour-height: 76px;
   display: grid;
   grid-template-columns: 58px repeat(7, minmax(132px, 1fr));
   min-width: 982px;
@@ -1086,7 +1087,7 @@ p {
   display: grid;
   align-content: stretch;
   gap: 6px;
-  min-height: 76px;
+  min-height: var(--calendar-hour-height);
   padding: 5px 7px;
   border: 0;
   border-left: 1px solid #eef1f3;
@@ -1117,6 +1118,16 @@ p {
 
 .calendar-cell:disabled {
   color: var(--ink);
+}
+
+.spanning-event {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  left: 7px;
+  z-index: 2;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .current-time-line {
@@ -2025,6 +2036,7 @@ button.student-result.selected {
   }
 
   .week-calendar {
+    --calendar-hour-height: 70px;
     grid-template-columns: 46px repeat(7, 108px);
     min-width: 802px;
   }
@@ -2058,7 +2070,6 @@ button.student-result.selected {
   }
 
   .calendar-cell {
-    min-height: 70px;
     padding: 5px;
   }
 
