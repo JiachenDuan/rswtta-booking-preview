@@ -1664,7 +1664,8 @@ function ClubCalendar({
             });
             const selectableBooking = slotBookings.find((booking) => booking.status !== "cancelled");
             const slot = makeCalendarSlot(day, timeLabel);
-            const selected = selectedSlots.some((item) => item.startsAt === startsAt);
+            const hasVisibleBooking = slotBookings.length > 0;
+            const selected = !hasVisibleBooking && selectedSlots.some((item) => item.startsAt === startsAt);
             const unavailableBookings = overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
             const unavailableDisplayBooking = unavailableBookings.find((booking) => booking.startsAt === startsAt);
             const blockedUnavailable = unavailableDisplayBooking && isBlockedTime(unavailableDisplayBooking) ? unavailableDisplayBooking : undefined;
