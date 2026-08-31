@@ -1218,6 +1218,7 @@ p {
 
 .calendar-booking.spanning-event {
   z-index: 3;
+  min-height: 0;
 }
 
 .current-time-line {
@@ -2316,4 +2317,13 @@ button.student-result.selected {
   .calendar-booking.spanning-event em {
     display: none;
   }
+}
+
+
+.calendar-booking.spanning-event {
+  min-height: 0;
+}
+
+.calendar-booking.spanning-event[style] {
+  overflow: hidden;
 }
