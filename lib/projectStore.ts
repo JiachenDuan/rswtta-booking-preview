@@ -338,7 +338,9 @@ export async function registerParentAccount(input: { studentName: string; email:
           }
         }
       });
-      if (authResult.error && !authResult.error.message.toLowerCase().includes("already")) throw authResult.error;
+      if (authResult.error && !authResult.error.message.toLowerCase().includes("already")) {
+        console.warn("Supabase Auth sign-up unavailable; storing preview account row only.", authResult.error.message);
+      }
 
       const rows = await listRows<AccountValues>("parent_accounts");
       const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
@@ -401,12 +403,13 @@ export async function loginParentAccount(identifier: string, password: string) {
     async () => {
       const normalizedIdentifier = identifier.toLowerCase();
       const isEmail = normalizedIdentifier.includes("@");
+      let authError: Error | null = null;
       if (isEmail) {
         const authResult = await supabase.auth.signInWithPassword({
           email: normalizedIdentifier,
           password
         });
-        if (authResult.error) throw authResult.error;
+        if (authResult.error) authError = authResult.error;
       }
 
       const rows = await listRows<AccountValues>("parent_accounts");
@@ -414,8 +417,8 @@ export async function loginParentAccount(identifier: string, password: string) {
         (item) =>
           String(item.values.email ?? "").toLowerCase() === normalizedIdentifier || String(item.values.phone ?? "") === identifier
       );
-      if (!row) throw new Error("Invalid login");
-      if (!isEmail) {
+      if (!row) throw authError ?? new Error("Invalid login");
+      if (!isEmail || authError) {
         const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
         if (!ok) throw new Error("Invalid login");
       }
@@ -441,6 +444,11 @@ export async function loginParentAccount(identifier: string, password: string) {
       return accountFromRow(row);
     }
   );
+}
+
+export async function listParentAccounts() {
+  const rows = await withLocalFallback(() => listRows<AccountValues>("parent_accounts"), () => localRows<AccountValues>("parent_accounts"));
+  return rows.map(accountFromRow).sort((left, right) => left.studentName.localeCompare(right.studentName));
 }
 
 export async function resetPasswordForEmail(email: string) {

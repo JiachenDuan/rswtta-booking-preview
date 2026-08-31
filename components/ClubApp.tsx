@@ -15,7 +15,9 @@ import {
   LogOut,
   Mail,
   Phone,
+  Plus,
   RefreshCcw,
+  Search,
   Table2,
   UserPlus,
   UserRound,
@@ -26,6 +28,7 @@ import {
   createBooking,
   listBillNotifications,
   listBookings,
+  listParentAccounts,
   loginParentAccount,
   registerParentAccount,
   resetPasswordForEmail,
@@ -68,11 +71,16 @@ type CalendarSlot = CalendarDay & {
 type ClubCalendarTab = (typeof clubCalendarTabs)[number];
 type ExportPeriod = "weekly" | "monthly";
 type AuthMode = "login" | "register" | "forgot" | "updatePassword";
+type Language = "en" | "zh";
 
 const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
 const clubEmail = "rswtta@gmail.com";
 const clubPassword = "rswtta888";
+
+function copy(language: Language, english: string, chinese: string) {
+  return language === "zh" ? chinese : english;
+}
 
 function dollars(cents: number) {
   return new Intl.NumberFormat("en-US", {
@@ -82,15 +90,15 @@ function dollars(cents: number) {
   }).format(cents / 100);
 }
 
-function statusText(status: BookingStatus) {
-  const labels: Record<BookingStatus, string> = {
-    requested: "已请求 / Requested",
-    club_confirmed: "已确认 / Club confirmed",
-    change_requested: "改期/取消请求 / Change/cancel requested",
-    cancelled: "已取消 / Cancelled",
-    coach_confirmed: "教练确认完成 / Coach completed"
+function statusText(status: BookingStatus, language: Language = "en") {
+  const labels: Record<BookingStatus, { en: string; zh: string }> = {
+    requested: { en: "Requested", zh: "已请求" },
+    club_confirmed: { en: "Club confirmed", zh: "已确认" },
+    change_requested: { en: "Change/cancel requested", zh: "改期/取消请求" },
+    cancelled: { en: "Cancelled", zh: "已取消" },
+    coach_confirmed: { en: "Coach completed", zh: "教练确认完成" }
   };
-  return labels[status];
+  return labels[status][language];
 }
 
 function isMoreThan12HoursBeforeClass(booking: Booking) {
@@ -115,8 +123,8 @@ function lessonPriceCents(coach: string) {
   return coach === "Coach A" || coach === "Coach Tian Ye" ? 15000 : 7500;
 }
 
-function coachTabText(tab: ClubCalendarTab) {
-  return tab === "Combined" ? "全部 / Combined" : tab.replace("Coach ", "");
+function coachTabText(tab: ClubCalendarTab, language: Language) {
+  return tab === "Combined" ? copy(language, "Combined", "全部") : tab.replace("Coach ", "");
 }
 
 function csvValue(value: string | number) {
@@ -225,11 +233,11 @@ function weekDays(weekStart: Date) {
   return dayNames.map((_, index) => makeCalendarDay(addDays(weekStart, index), index));
 }
 
-function weekLabel(days: CalendarDay[]) {
+function weekLabel(days: CalendarDay[], language: Language) {
   const first = days[0];
   const last = days[days.length - 1];
   const year = first.date.getFullYear() === last.date.getFullYear() ? first.date.getFullYear() : `${first.date.getFullYear()}-${last.date.getFullYear()}`;
-  return `${year}年 ${first.dateZh} - ${last.dateZh} / ${first.monthLabel} - ${last.monthLabel}, ${year}`;
+  return copy(language, `${first.monthLabel} - ${last.monthLabel}, ${year}`, `${year}年 ${first.dateZh} - ${last.dateZh}`);
 }
 
 const minCalendarDate = addMonths(today, -3);
@@ -242,6 +250,8 @@ export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
+  const [students, setStudents] = useState<ParentAccount[]>([]);
+  const [language, setLanguage] = useState<Language>("en");
   const [notice, setNotice] = useState("");
   const [parentSession, setParentSession] = useState<ParentAccount | null>(null);
   const [clubAuthenticated, setClubAuthenticated] = useState(false);
@@ -253,6 +263,7 @@ export function ClubApp() {
   const [clubCalendarTab, setClubCalendarTab] = useState<ClubCalendarTab>("Combined");
   const [visibleWeekStart, setVisibleWeekStart] = useState(initialWeekStart);
   const [selectedSlot, setSelectedSlot] = useState<CalendarSlot>(initialCalendarSlot);
+  const [selectedSlots, setSelectedSlots] = useState<CalendarSlot[]>([initialCalendarSlot]);
   const [recurring, setRecurring] = useState(false);
   const [recurringWeeks, setRecurringWeeks] = useState(4);
   const [saving, setSaving] = useState(false);
@@ -268,6 +279,23 @@ export function ClubApp() {
   const completedTotal = parentBookings
     .filter((booking) => booking.status === "coach_confirmed")
     .reduce((sum, booking) => sum + booking.priceCents, 0);
+
+  function replaceSelectedSlot(slot: CalendarSlot) {
+    setSelectedSlot(slot);
+    setSelectedSlots([slot]);
+  }
+
+  function toggleSelectedSlot(slot: CalendarSlot) {
+    setSelectedSlot(slot);
+    setSelectedSlots((current) => {
+      const exists = current.some((item) => item.startsAt === slot.startsAt);
+      if (exists) {
+        const next = current.filter((item) => item.startsAt !== slot.startsAt);
+        return next.length > 0 ? next : [slot];
+      }
+      return [...current, slot].sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
+    });
+  }
 
   function applyParentSession(account: ParentAccount) {
     setParentSession(account);
@@ -317,29 +345,32 @@ export function ClubApp() {
 
   async function loadAll() {
     try {
-      const [nextBookings, nextBills] = await Promise.all([listBookings(), listBillNotifications()]);
+      const [nextBookings, nextBills, nextStudents] = await Promise.all([listBookings(), listBillNotifications(), listParentAccounts()]);
       setBookings(nextBookings);
       setBills(nextBills);
-      setNotice("Supabase 已连接 / Supabase backend connected.");
+      setStudents(nextStudents);
+      setNotice(copy(language, "Supabase backend connected.", "Supabase 已连接。"));
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "数据库暂时不可用 / Database is not ready.");
+      setNotice(error instanceof Error ? error.message : copy(language, "Database is not ready.", "数据库暂时不可用。"));
     }
   }
 
   function recurringSlots() {
-    if (!recurring) return [selectedSlot];
+    if (!recurring) return selectedSlots;
 
-    return Array.from({ length: recurringWeeks }, (_, index) => {
-      const date = addDays(selectedSlot.date, index * 7);
-      const dayIndex = (date.getDay() + 6) % 7;
-      return makeCalendarSlot(makeCalendarDay(date, dayIndex), selectedSlot.timeLabel);
-    }).filter((slot) => new Date(slot.startsAt) <= maxCalendarDate);
+    return selectedSlots.flatMap((baseSlot) =>
+      Array.from({ length: recurringWeeks }, (_, index) => {
+        const date = addDays(baseSlot.date, index * 7);
+        const dayIndex = (date.getDay() + 6) % 7;
+        return makeCalendarSlot(makeCalendarDay(date, dayIndex), baseSlot.timeLabel);
+      }).filter((slot) => new Date(slot.startsAt) <= maxCalendarDate)
+    );
   }
 
   async function requestBooking(parentNote = "") {
     const slots = recurringSlots();
     setSaving(true);
-    setNotice("正在保存家长请求 / Saving parent request...");
+    setNotice(copy(language, "Saving parent request...", "正在保存家长请求..."));
     try {
       await Promise.all(
         slots.map((slot) =>
@@ -355,15 +386,46 @@ export function ClubApp() {
             timeLabel: slot.timeLabel,
             startsAt: slot.startsAt,
             priceCents: lessonPriceCents(requestedCoach),
-            parentNote: recurring ? `每周重复预约 / Weekly recurring request. ${parentNote}` : parentNote
+            parentNote: recurring ? `${copy(language, "Weekly recurring request.", "每周重复预约。")} ${parentNote}` : parentNote
           })
         )
       );
 
       await loadAll();
-      setNotice(`已保存 ${slots.length} 个请求 / Saved ${slots.length} request${slots.length === 1 ? "" : "s"}.`);
+      setNotice(copy(language, `Saved ${slots.length} request${slots.length === 1 ? "" : "s"}.`, `已保存 ${slots.length} 个请求。`));
     } catch {
-      setNotice("无法保存预约请求 / Could not save booking request.");
+      setNotice(copy(language, "Could not save booking request.", "无法保存预约请求。"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[]) {
+    setSaving(true);
+    setNotice(copy(language, "Adding class...", "正在添加课程..."));
+    try {
+      await Promise.all(
+        slots.map((slot) =>
+          createBooking({
+            studentName: student.studentName,
+            familyName: student.studentName,
+            studentEmail: student.email,
+            phone: student.phone,
+            requestedCoach: coach,
+            assignedCoach: coach,
+            program: lessonProgram(coach),
+            dateLabel: slot.dateLabel,
+            timeLabel: slot.timeLabel,
+            startsAt: slot.startsAt,
+            priceCents: lessonPriceCents(coach),
+            parentNote: copy(language, "Added by club", "俱乐部添加")
+          }).then((booking) => updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach }))
+        )
+      );
+      await loadAll();
+      setNotice(copy(language, `Added ${slots.length} class${slots.length === 1 ? "" : "es"}.`, `已添加 ${slots.length} 节课。`));
+    } catch {
+      setNotice(copy(language, "Could not add class.", "无法添加课程。"));
     } finally {
       setSaving(false);
     }
@@ -375,13 +437,13 @@ export function ClubApp() {
     assignedCoach?: string,
     schedule?: { dateLabel: string; timeLabel: string; startsAt: string; parentNote?: string }
   ) {
-    setNotice(`Updating status to ${statusText(status)}...`);
+    setNotice(`${copy(language, "Updating status to", "正在更新状态为")} ${statusText(status, language)}...`);
     try {
       await updateStoredBooking(id, { status, assignedCoach, ...schedule });
       await loadAll();
-      setNotice(`Saved: ${statusText(status)}.`);
+      setNotice(`${copy(language, "Saved", "已保存")}: ${statusText(status, language)}.`);
     } catch {
-      setNotice("无法更新课程 / Could not update booking.");
+      setNotice(copy(language, "Could not update booking.", "无法更新课程。"));
     }
   }
 
@@ -423,9 +485,9 @@ export function ClubApp() {
         )
       );
       await loadAll();
-      setNotice("账单提醒已生成 / Bill notifications generated from coach-completed classes.");
+      setNotice(copy(language, "Bill notifications generated from coach-completed classes.", "账单提醒已生成。"));
     } catch {
-      setNotice("无法生成账单 / Could not generate bills.");
+      setNotice(copy(language, "Could not generate bills.", "无法生成账单。"));
     }
   }
 
@@ -458,20 +520,32 @@ export function ClubApp() {
           </div>
         </div>
 
-        <div className="sidebar-note">
-          <span>一个入口 / One entrance</span>
-          <strong>{mode === "club" ? "Club App" : "Parent App"}</strong>
-        </div>
       </aside>
 
       <section className="workspace">
         <header className="topbar">
           <div>
             <p className="eyebrow">Rising Stars World</p>
-            <h1>{mode === "parent" ? "家长预约课程" : "俱乐部确认课程"}</h1>
-            <p className="screen-subtitle">{mode === "parent" ? "家长预约 / Parent booking" : "俱乐部管理 / Club dashboard"}</p>
+            <h1>
+              {mode === "parent"
+                ? copy(language, "Parent booking", "家长预约课程")
+                : copy(language, "Club dashboard", "俱乐部确认课程")}
+            </h1>
+            <p className="screen-subtitle">
+              {mode === "parent"
+                ? copy(language, "Request classes and manage your schedule.", "预约课程并管理时间。")
+                : copy(language, "Confirm requests and manage classes.", "确认请求并管理课程。")}
+            </p>
           </div>
           <div className="top-actions">
+            <div className="mode-switch language-switch" aria-label="Language">
+              <button className={language === "en" ? "selected" : ""} onClick={() => setLanguage("en")}>
+                Eng
+              </button>
+              <button className={language === "zh" ? "selected" : ""} onClick={() => setLanguage("zh")}>
+                中文
+              </button>
+            </div>
             <button className="icon-button" aria-label="Notifications">
               <Bell size={19} />
             </button>
@@ -485,7 +559,7 @@ export function ClubApp() {
                 }}
               >
                 <LogOut size={17} />
-                退出 / Logout
+                {copy(language, "Logout", "退出")}
               </button>
             ) : null}
             {mode === "club" && clubAuthenticated ? (
@@ -498,7 +572,7 @@ export function ClubApp() {
                 }}
               >
                 <LogOut size={17} />
-                退出 / Logout
+                {copy(language, "Logout", "退出")}
               </button>
             ) : null}
           </div>
@@ -508,6 +582,7 @@ export function ClubApp() {
           <UnifiedAuth
             initialAuthMode="register"
             intent="parent"
+            language={language}
             onRegister={registerParent}
             onLogin={loginUnified}
             onRequestPasswordReset={requestPasswordReset}
@@ -524,13 +599,15 @@ export function ClubApp() {
             phone={phone}
             requestedCoach={requestedCoach}
             selectedSlot={selectedSlot}
+            selectedSlots={selectedSlots}
             calendarDays={calendarDays}
-            weekLabel={weekLabel(calendarDays)}
+            weekLabel={weekLabel(calendarDays, language)}
             canGoPrevious={canGoPrevious}
             canGoNext={canGoNext}
             recurring={recurring}
             recurringWeeks={recurringWeeks}
             saving={saving}
+            language={language}
             onStudentNameChange={(value) => {
               setStudentName(value);
               setFamilyName(value);
@@ -538,12 +615,12 @@ export function ClubApp() {
             onStudentEmailChange={setStudentEmail}
             onPhoneChange={setPhone}
             onCoachChange={setRequestedCoach}
-            onSlotChange={setSelectedSlot}
+            onSlotChange={toggleSelectedSlot}
             onPreviousWeek={() => setVisibleWeekStart((week) => addDays(week, -7))}
             onNextWeek={() => setVisibleWeekStart((week) => addDays(week, 7))}
             onToday={() => {
               setVisibleWeekStart(initialWeekStart);
-              setSelectedSlot(initialCalendarSlot);
+              replaceSelectedSlot(initialCalendarSlot);
             }}
             onRecurringChange={setRecurring}
             onRecurringWeeksChange={setRecurringWeeks}
@@ -554,8 +631,8 @@ export function ClubApp() {
                 timeLabel: selectedSlot.timeLabel,
                 startsAt: selectedSlot.startsAt,
                 parentNote: isMoreThan12HoursBeforeClass(booking)
-                  ? `家长申请改期 / Parent requested change from ${booking.dateLabel} ${booking.timeLabel}`
-                  : `12小时内改期请求 / Late change request from ${booking.dateLabel} ${booking.timeLabel}`
+                  ? `${copy(language, "Parent requested change from", "家长申请改期，原时间")} ${booking.dateLabel} ${booking.timeLabel}`
+                  : `${copy(language, "Late change request from", "12小时内改期请求，原时间")} ${booking.dateLabel} ${booking.timeLabel}`
               });
             }}
             onCancel={(booking) => {
@@ -564,7 +641,7 @@ export function ClubApp() {
                   dateLabel: booking.dateLabel,
                   timeLabel: booking.timeLabel,
                   startsAt: booking.startsAt,
-                  parentNote: `12小时内取消请求 / Late cancellation request for ${booking.dateLabel} ${booking.timeLabel}`
+                  parentNote: `${copy(language, "Late cancellation request for", "12小时内取消请求")} ${booking.dateLabel} ${booking.timeLabel}`
                 });
                 return;
               }
@@ -574,25 +651,30 @@ export function ClubApp() {
         ) : (
           <ClubAppView
             bookings={bookings}
+            students={students}
             selectedSlot={selectedSlot}
+            selectedSlots={selectedSlots}
             calendarDays={calendarDays}
-            weekLabel={weekLabel(calendarDays)}
+            weekLabel={weekLabel(calendarDays, language)}
             canGoPrevious={canGoPrevious}
             canGoNext={canGoNext}
             notice={notice}
             requestedCoach={requestedCoach}
             activeCalendarTab={clubCalendarTab}
-            onSlotChange={setSelectedSlot}
+            saving={saving}
+            language={language}
+            onSlotChange={toggleSelectedSlot}
             onCalendarTabChange={setClubCalendarTab}
             onPreviousWeek={() => setVisibleWeekStart((week) => addDays(week, -7))}
             onNextWeek={() => setVisibleWeekStart((week) => addDays(week, 7))}
             onToday={() => {
               setVisibleWeekStart(initialWeekStart);
-              setSelectedSlot(initialCalendarSlot);
+              replaceSelectedSlot(initialCalendarSlot);
             }}
             onConfirm={(booking, coach) => updateBooking(booking.id, "club_confirmed", coach)}
             onApproveCancel={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
+            onAddClass={addClubClass}
           />
         )}
       </section>
@@ -603,6 +685,7 @@ export function ClubApp() {
 function UnifiedAuth({
   initialAuthMode,
   intent,
+  language,
   onRegister,
   onLogin,
   onRequestPasswordReset,
@@ -610,6 +693,7 @@ function UnifiedAuth({
 }: {
   initialAuthMode: "login" | "register";
   intent: "parent" | "club";
+  language: Language;
   onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogin: (identifier: string, password: string) => Promise<void>;
   onRequestPasswordReset: (email: string) => Promise<void>;
@@ -624,8 +708,8 @@ function UnifiedAuth({
   const [identifier, setIdentifier] = useState(intent === "club" ? clubEmail : "parent@example.com");
   const [notice, setNotice] = useState(
     intent === "club"
-      ? "俱乐部登录会直接进入管理界面 / Club login opens the dashboard."
-      : "家长注册或登录；俱乐部用管理邮箱登录 / Parents register or login; club uses the manager email."
+      ? copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。")
+      : copy(language, "Parents register or login; club uses the manager email.", "家长注册或登录；俱乐部用管理邮箱登录。")
   );
   const [busy, setBusy] = useState(false);
 
@@ -636,7 +720,7 @@ function UnifiedAuth({
     if (intent === "club") {
       setIdentifier(clubEmail);
       setPassword(clubPassword);
-      setNotice("俱乐部登录会直接进入管理界面 / Club login opens the dashboard.");
+      setNotice(copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。"));
     }
   }, [initialAuthMode, intent]);
 
@@ -644,7 +728,7 @@ function UnifiedAuth({
     const { data } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY" && intent === "parent") {
         setAuthMode("updatePassword");
-        setNotice("请输入新密码 / Enter a new password.");
+        setNotice(copy(language, "Enter a new password.", "请输入新密码。"));
       }
     });
     return () => data.subscription.unsubscribe();
@@ -654,9 +738,9 @@ function UnifiedAuth({
     setBusy(true);
     try {
       await onRegister({ studentName, email, phone, password });
-      setNotice("注册完成 / Registration complete.");
+      setNotice(copy(language, "Registration complete.", "注册完成。"));
     } catch {
-      setNotice("注册失败 / Registration failed.");
+      setNotice(copy(language, "Registration failed.", "注册失败。"));
     } finally {
       setBusy(false);
     }
@@ -666,9 +750,9 @@ function UnifiedAuth({
     setBusy(true);
     try {
       await onLogin(identifier, password);
-      setNotice("登录成功 / Login successful.");
+      setNotice(copy(language, "Login successful.", "登录成功。"));
     } catch {
-      setNotice("登录失败 / Login failed.");
+      setNotice(copy(language, "Login failed.", "登录失败。"));
     } finally {
       setBusy(false);
     }
@@ -678,9 +762,9 @@ function UnifiedAuth({
     setBusy(true);
     try {
       await onRequestPasswordReset(email);
-      setNotice("重置邮件已发送 / Password reset email sent. Check the Supabase email.");
+      setNotice(copy(language, "Password reset email sent. Check the Supabase email.", "重置邮件已发送。请查看 Supabase 邮件。"));
     } catch {
-      setNotice("无法发送重置邮件 / Could not send password reset email.");
+      setNotice(copy(language, "Could not send password reset email.", "无法发送重置邮件。"));
     } finally {
       setBusy(false);
     }
@@ -692,10 +776,10 @@ function UnifiedAuth({
       await onUpdatePassword(newPassword);
       setNewPassword("");
       setAuthMode("login");
-      setNotice("密码已更新 / Password updated. You can log in with the new password.");
+      setNotice(copy(language, "Password updated. You can log in with the new password.", "密码已更新。请用新密码登录。"));
       window.history.replaceState({}, document.title, window.location.pathname);
     } catch {
-      setNotice("无法更新密码 / Could not update password. Open the latest reset link and try again.");
+      setNotice(copy(language, "Could not update password. Open the latest reset link and try again.", "无法更新密码。请打开最新重置链接再试。"));
     } finally {
       setBusy(false);
     }
@@ -707,11 +791,11 @@ function UnifiedAuth({
         <div className="section-head">
           <div>
             <p className="eyebrow">{intent === "club" ? "Club App" : "Parent App"}</p>
-            <h2>{intent === "club" ? "俱乐部登录入口" : "登录入口"}</h2>
+            <h2>{intent === "club" ? copy(language, "Club login", "俱乐部登录") : copy(language, "Login", "登录")}</h2>
             <p className="section-subtitle">
               {intent === "club"
-                ? "俱乐部输入管理邮箱后自动进入 Club 界面 / Club manager login opens the club app."
-                : "家长进入预约；club preset email/password 会进入 club view。"}
+                ? copy(language, "Club manager login opens the club app.", "俱乐部输入管理邮箱后进入 Club 界面。")
+                : copy(language, "Parents book classes. Club preset email/password opens the club view.", "家长预约课程。Club 预设邮箱和密码进入俱乐部界面。")}
             </p>
           </div>
         </div>
@@ -719,10 +803,10 @@ function UnifiedAuth({
         {intent === "parent" ? (
           <div className="mode-switch auth-switch">
             <button type="button" className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
-              注册 Register
+              {copy(language, "Register", "注册")}
             </button>
             <button type="button" className={authMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
-              登录 Login
+              {copy(language, "Login", "登录")}
             </button>
           </div>
         ) : null}
@@ -730,33 +814,33 @@ function UnifiedAuth({
         {authMode === "register" && intent === "parent" ? (
           <div className="simple-form auth-form">
             <label>
-              <span>学生名字 / Student name</span>
+              <span>{copy(language, "Student name", "学生名字")}</span>
               <div className="input-shell">
                 <UserRound size={18} />
                 <input value={studentName} onChange={(event) => setStudentName(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>邮箱 / Email</span>
+              <span>{copy(language, "Email", "邮箱")}</span>
               <div className="input-shell">
                 <Mail size={18} />
                 <input value={email} onChange={(event) => setEmail(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>电话 / Phone</span>
+              <span>{copy(language, "Phone", "电话")}</span>
               <div className="input-shell">
                 <Phone size={18} />
                 <input value={phone} onChange={(event) => setPhone(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>密码 / Password</span>
+              <span>{copy(language, "Password", "密码")}</span>
               <PasswordField value={password} onChange={setPassword} />
             </label>
             <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleRegister}>
               <UserPlus size={18} />
-              注册 / Register
+              {copy(language, "Register", "注册")}
             </button>
           </div>
         ) : null}
@@ -764,29 +848,29 @@ function UnifiedAuth({
         {authMode === "login" ? (
           <div className="simple-form auth-form">
             <label>
-              <span>{intent === "club" ? "俱乐部邮箱 / Club email" : "邮箱或电话 / Email or phone"}</span>
+              <span>{intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "Email or phone", "邮箱或电话")}</span>
               <div className="input-shell">
                 <Mail size={18} />
                 <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>密码 / Password</span>
+              <span>{copy(language, "Password", "密码")}</span>
               <PasswordField value={password} onChange={setPassword} />
             </label>
             <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
               <LogIn size={18} />
-              登录 / Login
+              {copy(language, "Login", "登录")}
             </button>
             {intent === "parent" ? (
               <button type="button" className="text-button auth-submit" disabled={busy} onClick={() => setAuthMode("forgot")}>
-                忘记密码？/ Forgot password?
+                {copy(language, "Forgot password?", "忘记密码？")}
               </button>
             ) : null}
             <p className="helper-line">
               {intent === "club"
-                ? "登录后进入 Club App。"
-                : "家长账号进入 Parent App；club preset email/password 进入 Club App。"}
+                ? copy(language, "Login opens Club App.", "登录后进入 Club App。")
+                : copy(language, "Parent accounts open Parent App; club preset email/password opens Club App.", "家长账号进入 Parent App；Club 预设邮箱和密码进入 Club App。")}
             </p>
           </div>
         ) : null}
@@ -794,7 +878,7 @@ function UnifiedAuth({
         {authMode === "forgot" && intent === "parent" ? (
           <div className="simple-form auth-form">
             <label>
-              <span>邮箱 / Email</span>
+              <span>{copy(language, "Email", "邮箱")}</span>
               <div className="input-shell">
                 <Mail size={18} />
                 <input value={email} onChange={(event) => setEmail(event.target.value)} />
@@ -802,26 +886,26 @@ function UnifiedAuth({
             </label>
             <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleResetRequest}>
               <Mail size={18} />
-              发送重置邮件 / Send reset email
+              {copy(language, "Send reset email", "发送重置邮件")}
             </button>
             <button type="button" className="text-button auth-submit" disabled={busy} onClick={() => setAuthMode("login")}>
-              返回登录 / Back to login
+              {copy(language, "Back to login", "返回登录")}
             </button>
-            <p className="helper-line">MVP 可以使用 Supabase 默认邮件；生产环境需要在 Supabase Auth 配置 custom SMTP。</p>
+            <p className="helper-line">{copy(language, "MVP can use the default Supabase email. Production needs custom SMTP in Supabase Auth.", "MVP 可以使用 Supabase 默认邮件；生产环境需要在 Supabase Auth 配置 custom SMTP。")}</p>
           </div>
         ) : null}
 
         {authMode === "updatePassword" && intent === "parent" ? (
           <div className="simple-form auth-form">
             <label>
-              <span>新密码 / New password</span>
+              <span>{copy(language, "New password", "新密码")}</span>
               <PasswordField value={newPassword} onChange={setNewPassword} />
             </label>
             <button type="button" className="primary-button auth-submit" disabled={busy || newPassword.length < 6} onClick={handleUpdatePassword}>
               <KeyRound size={18} />
-              更新密码 / Update password
+              {copy(language, "Update password", "更新密码")}
             </button>
-            <p className="helper-line">请从最新的 Supabase 重置邮件打开这个页面 / Open this page from the latest Supabase reset email.</p>
+            <p className="helper-line">{copy(language, "Open this page from the latest Supabase reset email.", "请从最新的 Supabase 重置邮件打开这个页面。")}</p>
           </div>
         ) : null}
 
@@ -865,6 +949,7 @@ function ParentApp({
   phone,
   requestedCoach,
   selectedSlot,
+  selectedSlots,
   calendarDays,
   weekLabel,
   canGoPrevious,
@@ -872,6 +957,7 @@ function ParentApp({
   recurring,
   recurringWeeks,
   saving,
+  language,
   onStudentNameChange,
   onStudentEmailChange,
   onPhoneChange,
@@ -895,6 +981,7 @@ function ParentApp({
   phone: string;
   requestedCoach: string;
   selectedSlot: CalendarSlot;
+  selectedSlots: CalendarSlot[];
   calendarDays: CalendarDay[];
   weekLabel: string;
   canGoPrevious: boolean;
@@ -902,6 +989,7 @@ function ParentApp({
   recurring: boolean;
   recurringWeeks: number;
   saving: boolean;
+  language: Language;
   onStudentNameChange: (value: string) => void;
   onStudentEmailChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
@@ -921,16 +1009,17 @@ function ParentApp({
       <section className="section-block calendar-core">
         <div className="section-head">
           <div>
-            <p className="eyebrow">俱乐部日历 / Club calendar</p>
-            <h2>查看教练课表并请求上课</h2>
-            <p className="section-subtitle">家长端 / Parent App: 可查看前三个月和后三个月，选择时间请求上课。</p>
+            <p className="eyebrow">{copy(language, "Club calendar", "俱乐部日历")}</p>
+            <h2>{copy(language, "Select time blocks and request classes", "选择时间段并请求上课")}</h2>
+            <p className="section-subtitle">{copy(language, "Pick one or more blocks for the selected coach.", "为所选教练选择一个或多个时间段。")}</p>
           </div>
-          <span className="status-chip good">{bookings.length} 课程 / classes</span>
+          <span className="status-chip good">{bookings.length} {copy(language, "classes", "课程")}</span>
         </div>
         <CalendarControls
           weekLabel={weekLabel}
           canGoPrevious={canGoPrevious}
           canGoNext={canGoNext}
+          language={language}
           onPreviousWeek={onPreviousWeek}
           onNextWeek={onNextWeek}
           onToday={onToday}
@@ -939,8 +1028,10 @@ function ParentApp({
           <ClubCalendar
             bookings={allBookings}
             selectedSlot={selectedSlot}
+            selectedSlots={selectedSlots}
             requestedCoach={requestedCoach}
             calendarDays={calendarDays}
+            language={language}
             onSlotChange={onSlotChange}
           />
         </div>
@@ -955,24 +1046,24 @@ function ParentApp({
           <button className="primary-button wide-button" disabled={saving} onClick={onRequestBooking}>
             <CalendarDays size={18} />
             {saving
-              ? "保存中 / Saving..."
+              ? copy(language, "Saving...", "保存中...")
               : recurring
-                ? `重复预约 / Weekly ${recurringWeeks} weeks ${selectedSlot.dayZh} ${selectedSlot.timeLabel}`
-                : `请求预约 / Request ${requestedCoach} ${selectedSlot.dateLabel} ${selectedSlot.timeLabel}`}
+                ? copy(language, `Request ${selectedSlots.length} weekly blocks for ${recurringWeeks} weeks`, `请求 ${selectedSlots.length} 个时间段，每周重复 ${recurringWeeks} 周`)
+                : copy(language, `Request ${selectedSlots.length} block${selectedSlots.length === 1 ? "" : "s"} for ${requestedCoach}`, `请求 ${requestedCoach} 的 ${selectedSlots.length} 个时间段`)}
           </button>
         </div>
         <div className="recurring-row">
           <label>
             <input type="checkbox" checked={recurring} onChange={(event) => onRecurringChange(event.target.checked)} />
-            <span>每周重复预约 / Weekly recurring</span>
+            <span>{copy(language, "Weekly recurring", "每周重复预约")}</span>
           </label>
           <select value={recurringWeeks} onChange={(event) => onRecurringWeeksChange(Number(event.target.value))} disabled={!recurring}>
-            <option value={4}>4 周 / 4 weeks</option>
-            <option value={8}>8 周 / 8 weeks</option>
-            <option value={12}>12 周 / 12 weeks</option>
+            <option value={4}>{copy(language, "4 weeks", "4 周")}</option>
+            <option value={8}>{copy(language, "8 weeks", "8 周")}</option>
+            <option value={12}>{copy(language, "12 weeks", "12 周")}</option>
           </select>
           <span>
-            当前选择 / Selected: {selectedSlot.dayZh} {selectedSlot.timeLabel} - 8:00 PM
+            {copy(language, "Selected", "当前选择")}: {selectedSlots.length} {copy(language, "blocks", "个时间段")}
           </span>
         </div>
         <p className="system-note">{notice}</p>
@@ -982,28 +1073,28 @@ function ParentApp({
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">学生资料 / Student info</p>
-              <h2>基础登录信息</h2>
-              <p className="section-subtitle">Basic email and phone / 基本邮箱和电话</p>
+              <p className="eyebrow">{copy(language, "Student info", "学生资料")}</p>
+              <h2>{copy(language, "Basic login info", "基础登录信息")}</h2>
+              <p className="section-subtitle">{copy(language, "Email and phone", "邮箱和电话")}</p>
             </div>
           </div>
           <div className="simple-form">
             <label>
-              <span>学生 / Student</span>
+              <span>{copy(language, "Student", "学生")}</span>
               <div className="input-shell">
                 <UserRound size={18} />
                 <input value={studentName} onChange={(event) => onStudentNameChange(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>邮箱 / Email</span>
+              <span>{copy(language, "Email", "邮箱")}</span>
               <div className="input-shell">
                 <Mail size={18} />
                 <input value={studentEmail} onChange={(event) => onStudentEmailChange(event.target.value)} />
               </div>
             </label>
             <label>
-              <span>电话 / Phone</span>
+              <span>{copy(language, "Phone", "电话")}</span>
               <div className="input-shell">
                 <Phone size={18} />
                 <input value={phone} onChange={(event) => onPhoneChange(event.target.value)} />
@@ -1015,26 +1106,26 @@ function ParentApp({
         <section className="section-block">
           <div className="section-head compact">
             <div>
-              <p className="eyebrow">我的课程 / My classes</p>
-              <h2>请求、确认、完成</h2>
-              <p className="section-subtitle">超过12小时可取消；12小时内会发送请求给club确认 / Inside 12 hours sends a club approval request.</p>
+              <p className="eyebrow">{copy(language, "My classes", "我的课程")}</p>
+              <h2>{copy(language, "Requested, confirmed, completed", "请求、确认、完成")}</h2>
+              <p className="section-subtitle">{copy(language, "Cancel more than 12 hours before class. Inside 12 hours sends a club approval request.", "超过 12 小时可取消；12 小时内会发送请求给 club 确认。")}</p>
             </div>
           </div>
           <div className="mini-ledger">
             <div>
-              <span>已请求 / Requested</span>
+              <span>{copy(language, "Requested", "已请求")}</span>
               <strong>{bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested").length}</strong>
             </div>
             <div>
-              <span>已确认 / Confirmed</span>
+              <span>{copy(language, "Confirmed", "已确认")}</span>
               <strong>{bookings.filter((booking) => booking.status === "club_confirmed").length}</strong>
             </div>
             <div>
-              <span>已计费 / Bill</span>
+              <span>{copy(language, "Bill", "已计费")}</span>
               <strong>{dollars(completedTotal)}</strong>
             </div>
           </div>
-          <BookingList bookings={bookings} parentActions onChangeRequest={onChangeRequest} onCancel={onCancel} />
+          <BookingList bookings={bookings} parentActions language={language} onChangeRequest={onChangeRequest} onCancel={onCancel} />
         </section>
       </section>
     </section>
@@ -1045,6 +1136,7 @@ function CalendarControls({
   weekLabel,
   canGoPrevious,
   canGoNext,
+  language,
   onPreviousWeek,
   onNextWeek,
   onToday
@@ -1052,6 +1144,7 @@ function CalendarControls({
   weekLabel: string;
   canGoPrevious: boolean;
   canGoNext: boolean;
+  language: Language;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
@@ -1063,10 +1156,10 @@ function CalendarControls({
       </button>
       <div>
         <strong>{weekLabel}</strong>
-        <span>前三个月 - 后三个月 / 3 months back to 3 months forward</span>
+        <span>{copy(language, "3 months back to 3 months forward", "前三个月 - 后三个月")}</span>
       </div>
       <button className="filter-button" onClick={onToday}>
-        今天 / Today
+        {copy(language, "Today", "今天")}
       </button>
       <button className="icon-button" disabled={!canGoNext} onClick={onNextWeek} aria-label="Next week">
         <ChevronRight size={18} />
@@ -1078,28 +1171,32 @@ function CalendarControls({
 function ClubCalendar({
   bookings,
   selectedSlot,
+  selectedSlots,
   requestedCoach,
   visibleCoachTab = "Combined",
   calendarDays,
+  language,
   onSlotChange,
   onCoachComplete
 }: {
   bookings: Booking[];
   selectedSlot: CalendarSlot;
+  selectedSlots: CalendarSlot[];
   requestedCoach: string;
   visibleCoachTab?: ClubCalendarTab;
   calendarDays: CalendarDay[];
+  language: Language;
   onSlotChange: (value: CalendarSlot) => void;
   onCoachComplete?: (booking: Booking) => void;
 }) {
   return (
     <div className="week-calendar" aria-label="Club calendar view">
-      <div className="calendar-corner">Time<br />时间</div>
+      <div className="calendar-corner">{copy(language, "Day", "日期")}</div>
       {calendarDays.map((day) => (
         <div className={day.isToday ? "calendar-day-head today" : "calendar-day-head"} key={day.dateLabel}>
-          <span className="day-zh">{day.dayZh}</span>
+          <span className="day-zh">{copy(language, day.day, day.dayZh)}</span>
           <strong>{day.dateNumber}</strong>
-          <span>{day.day} · {day.monthLabel}</span>
+          <span>{copy(language, day.monthLabel, day.dateZh)}</span>
         </div>
       ))}
 
@@ -1118,7 +1215,7 @@ function ClubCalendar({
             });
             const completeTarget = slotBookings.find((booking) => booking.status === "club_confirmed");
             const slot = makeCalendarSlot(day, timeLabel);
-            const selected = selectedSlot.startsAt === startsAt;
+            const selected = selectedSlots.some((item) => item.startsAt === startsAt);
             const actionable = Boolean(onCoachComplete && completeTarget);
             return (
               <button
@@ -1137,21 +1234,18 @@ function ClubCalendar({
                 }}
               >
                 {slotBookings.length === 0 ? (
-                  <span className="open-slot">
-                    <strong>{timeLabel}</strong>
-                    <small>可预约 / Available</small>
-                  </span>
+                  <span className="open-slot" aria-hidden="true" />
                 ) : (
                   slotBookings.map((booking) => (
                     <span className={`calendar-booking ${booking.status}`} key={booking.id}>
                       <strong>{booking.assignedCoach}</strong>
                       <small>{booking.studentName}</small>
-                      <em>{statusText(booking.status)}</em>
-                      {onCoachComplete && booking.status === "club_confirmed" ? <b>点击完成 / Click complete</b> : null}
+                      <em>{statusText(booking.status, language)}</em>
+                      {onCoachComplete && booking.status === "club_confirmed" ? <b>{copy(language, "Click complete", "点击完成")}</b> : null}
                     </span>
                   ))
                 )}
-                {selected ? <span className="selected-label">已选择 / {requestedCoach} selected</span> : null}
+                {selected ? <span className="selected-label">{copy(language, `${requestedCoach} selected`, `已选择 ${requestedCoach}`)}</span> : null}
               </button>
             );
           })}
@@ -1163,7 +1257,9 @@ function ClubCalendar({
 
 function ClubAppView({
   bookings,
+  students,
   selectedSlot,
+  selectedSlots,
   calendarDays,
   weekLabel,
   canGoPrevious,
@@ -1171,6 +1267,8 @@ function ClubAppView({
   notice,
   requestedCoach,
   activeCalendarTab,
+  saving,
+  language,
   onSlotChange,
   onCalendarTabChange,
   onPreviousWeek,
@@ -1178,10 +1276,13 @@ function ClubAppView({
   onToday,
   onConfirm,
   onApproveCancel,
-  onCoachComplete
+  onCoachComplete,
+  onAddClass
 }: {
   bookings: Booking[];
+  students: ParentAccount[];
   selectedSlot: CalendarSlot;
+  selectedSlots: CalendarSlot[];
   calendarDays: CalendarDay[];
   weekLabel: string;
   canGoPrevious: boolean;
@@ -1189,6 +1290,8 @@ function ClubAppView({
   notice: string;
   requestedCoach: string;
   activeCalendarTab: ClubCalendarTab;
+  saving: boolean;
+  language: Language;
   onSlotChange: (value: CalendarSlot) => void;
   onCalendarTabChange: (value: ClubCalendarTab) => void;
   onPreviousWeek: () => void;
@@ -1197,10 +1300,41 @@ function ClubAppView({
   onConfirm: (booking: Booking, coach: string) => void;
   onApproveCancel: (booking: Booking) => void;
   onCoachComplete: (booking: Booking) => void;
+  onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[]) => Promise<void>;
 }) {
   const [exportPeriod, setExportPeriod] = useState<ExportPeriod>("weekly");
+  const [studentQuery, setStudentQuery] = useState("");
+  const [addCoach, setAddCoach] = useState<string>(activeCalendarTab === "Combined" ? coaches[0] : activeCalendarTab);
   const requested = bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
   const confirmed = bookings.filter((booking) => booking.status === "club_confirmed");
+  const studentDirectory = useMemo(() => {
+    const byKey = new Map<string, ParentAccount>();
+    for (const student of students) {
+      byKey.set(student.email || student.phone || student.id, student);
+    }
+    for (const booking of bookings) {
+      const key = booking.studentEmail || booking.phone || booking.studentName;
+      if (byKey.has(key)) continue;
+      byKey.set(key, {
+        id: key,
+        studentName: booking.studentName,
+        email: booking.studentEmail,
+        phone: booking.phone,
+        confirmed: true,
+        createdAt: booking.createdAt
+      });
+    }
+    return [...byKey.values()].sort((left, right) => left.studentName.localeCompare(right.studentName));
+  }, [bookings, students]);
+  const filteredStudents = studentDirectory.filter((student) => {
+    const query = studentQuery.trim().toLowerCase();
+    if (!query) return true;
+    return (
+      student.studentName.toLowerCase().includes(query) ||
+      student.email.toLowerCase().includes(query) ||
+      student.phone.toLowerCase().includes(query)
+    );
+  });
 
   function exportCompletedClassReport() {
     const anchorDate = selectedSlot.date;
@@ -1299,16 +1433,17 @@ function ClubAppView({
       <section className="section-block calendar-core">
         <div className="section-head">
           <div>
-            <p className="eyebrow">俱乐部日历 / Club calendar</p>
-            <h2>确认请求并完成课程</h2>
-            <p className="section-subtitle">俱乐部端 / Club App: 点击已确认课程即可标记完成。</p>
+            <p className="eyebrow">{copy(language, "Club calendar", "俱乐部日历")}</p>
+            <h2>{copy(language, "Confirm requests and manage classes", "确认请求并管理课程")}</h2>
+            <p className="section-subtitle">{copy(language, "Click one or more blocks, then add a student or confirm requests.", "点击一个或多个时间段，然后添加学生或确认请求。")}</p>
           </div>
-          <span className="status-chip">{requested.length} 待确认 / pending</span>
+          <span className="status-chip">{requested.length} {copy(language, "pending", "待确认")}</span>
         </div>
         <CalendarControls
           weekLabel={weekLabel}
           canGoPrevious={canGoPrevious}
           canGoNext={canGoNext}
+          language={language}
           onPreviousWeek={onPreviousWeek}
           onNextWeek={onNextWeek}
           onToday={onToday}
@@ -1316,7 +1451,7 @@ function ClubAppView({
         <div className="calendar-tabs" aria-label="Coach calendar views">
           {clubCalendarTabs.map((tab) => (
             <button className={activeCalendarTab === tab ? "selected" : ""} key={tab} onClick={() => onCalendarTabChange(tab)}>
-              {coachTabText(tab)}
+              {coachTabText(tab, language)}
             </button>
           ))}
         </div>
@@ -1324,9 +1459,11 @@ function ClubAppView({
           <ClubCalendar
             bookings={bookings}
             selectedSlot={selectedSlot}
+            selectedSlots={selectedSlots}
             requestedCoach={requestedCoach}
             visibleCoachTab={activeCalendarTab}
             calendarDays={calendarDays}
+            language={language}
             onSlotChange={onSlotChange}
             onCoachComplete={onCoachComplete}
           />
@@ -1338,23 +1475,23 @@ function ClubAppView({
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">下载表格 / Export</p>
-              <h2>下载 completed class 汇总</h2>
-              <p className="section-subtitle">Weekly or monthly CSV for Excel / 按学生统计完成课和未最终确认课</p>
+              <p className="eyebrow">{copy(language, "Export", "下载表格")}</p>
+              <h2>{copy(language, "Download completed class summary", "下载 completed class 汇总")}</h2>
+              <p className="section-subtitle">{copy(language, "Weekly or monthly CSV for Excel", "按周或按月下载 CSV")}</p>
             </div>
           </div>
           <div className="export-panel">
             <div className="export-toggle" aria-label="Report period">
               <button className={exportPeriod === "weekly" ? "selected" : ""} onClick={() => setExportPeriod("weekly")}>
-                每周 / Weekly
+                {copy(language, "Weekly", "每周")}
               </button>
               <button className={exportPeriod === "monthly" ? "selected" : ""} onClick={() => setExportPeriod("monthly")}>
-                每月 / Monthly
+                {copy(language, "Monthly", "每月")}
               </button>
             </div>
             <button className="primary-button wide-button" onClick={exportCompletedClassReport}>
               <Download size={18} />
-              下载 Excel CSV / Download
+              {copy(language, "Download CSV", "下载 CSV")}
             </button>
           </div>
         </section>
@@ -1362,26 +1499,78 @@ function ClubAppView({
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">待确认 / Requests</p>
-              <h2>确认时间和教练</h2>
-              <p className="section-subtitle">Confirm class time and coach / 确认上课时间和教练</p>
+              <p className="eyebrow">{copy(language, "Add class", "添加课程")}</p>
+              <h2>{copy(language, "Add selected blocks for a student", "给学生添加已选时间段")}</h2>
+              <p className="section-subtitle">{copy(language, "Search registered students from the database.", "从数据库搜索已注册学生。")}</p>
+            </div>
+            <span className="status-chip good">{selectedSlots.length} {copy(language, "selected", "已选")}</span>
+          </div>
+          <div className="add-class-panel">
+            <label>
+              <span>{copy(language, "Coach", "教练")}</span>
+              <select value={addCoach} onChange={(event) => setAddCoach(event.target.value)}>
+                {coaches.map((coach) => (
+                  <option key={coach} value={coach}>
+                    {coach}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{copy(language, "Search student", "搜索学生")}</span>
+              <div className="input-shell">
+                <Search size={18} />
+                <input value={studentQuery} onChange={(event) => setStudentQuery(event.target.value)} />
+              </div>
+            </label>
+            <div className="student-results">
+              {filteredStudents.length === 0 ? (
+                <p className="empty-state">{copy(language, "No students found.", "未找到学生。")}</p>
+              ) : (
+                filteredStudents.slice(0, 6).map((student) => (
+                  <article className="student-result" key={student.id}>
+                    <div>
+                      <strong>{student.studentName}</strong>
+                      <span>{student.email || student.phone}</span>
+                    </div>
+                    <button
+                      className="primary-button"
+                      disabled={saving}
+                      onClick={() => onAddClass(student, addCoach, selectedSlots.length > 0 ? selectedSlots : [selectedSlot])}
+                    >
+                      <Plus size={17} />
+                      {copy(language, "Add", "添加")}
+                    </button>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="section-block">
+          <div className="section-head">
+            <div>
+              <p className="eyebrow">{copy(language, "Requests", "待确认")}</p>
+              <h2>{copy(language, "Confirm time and coach", "确认时间和教练")}</h2>
+              <p className="section-subtitle">{copy(language, "Confirm class time and coach", "确认上课时间和教练")}</p>
             </div>
           </div>
           <div className="request-stack">
             {requested.map((booking) => (
               <article className="flow-card" key={booking.id}>
                 <div>
-                  <span className={`status-chip ${booking.status}`}>{statusText(booking.status)}</span>
+                  <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
                   <h3>{booking.studentName}</h3>
                   <p>
-                    请求 / Wants {booking.requestedCoach}: {booking.dateLabel} {booking.timeLabel}
+                    {copy(language, "Wants", "请求")} {booking.requestedCoach}: {booking.dateLabel} {booking.timeLabel}
                   </p>
                   {booking.parentNote ? <p>{booking.parentNote}</p> : null}
                 </div>
                 {isCancellationRequest(booking) ? (
                   <button className="decline" onClick={() => onApproveCancel(booking)}>
                     <X size={17} />
-                    批准取消 / Approve cancel
+                    {copy(language, "Approve cancel", "批准取消")}
                   </button>
                 ) : (
                   <div className="confirm-actions">
@@ -1401,11 +1590,11 @@ function ClubAppView({
         <section className="section-block">
           <div className="section-head">
             <div>
-              <p className="eyebrow">教练完成 / Coach complete</p>
-              <h2>从日历点击完成</h2>
-              <p className="section-subtitle">Confirmed classes can be completed directly from the calendar / 已确认课程可直接在日历完成</p>
+              <p className="eyebrow">{copy(language, "Coach complete", "教练完成")}</p>
+              <h2>{copy(language, "Complete from calendar", "从日历点击完成")}</h2>
+              <p className="section-subtitle">{copy(language, "Confirmed classes can be completed directly from the calendar.", "已确认课程可直接在日历完成。")}</p>
             </div>
-            <span className="status-chip good">{confirmed.length} ready</span>
+            <span className="status-chip good">{confirmed.length} {copy(language, "ready", "可完成")}</span>
           </div>
           <div className="request-stack">
             {confirmed.map((booking) => (
@@ -1418,7 +1607,7 @@ function ClubAppView({
                 </div>
                 <button className="primary-button" onClick={() => onCoachComplete(booking)}>
                   <Check size={18} />
-                  完成 / Complete
+                  {copy(language, "Complete", "完成")}
                 </button>
               </article>
             ))}
@@ -1432,16 +1621,18 @@ function ClubAppView({
 function BookingList({
   bookings,
   parentActions,
+  language,
   onChangeRequest,
   onCancel
 }: {
   bookings: Booking[];
   parentActions?: boolean;
+  language: Language;
   onChangeRequest?: (booking: Booking) => void;
   onCancel?: (booking: Booking) => void;
 }) {
   if (bookings.length === 0) {
-    return <p className="empty-state">No classes yet.</p>;
+    return <p className="empty-state">{copy(language, "No classes yet.", "还没有课程。")}</p>;
   }
 
   return (
@@ -1457,7 +1648,7 @@ function BookingList({
               {booking.dateLabel} {booking.timeLabel} with {booking.assignedCoach}
             </p>
           </div>
-          <strong className={booking.status}>{statusText(booking.status)}</strong>
+          <strong className={booking.status}>{statusText(booking.status, language)}</strong>
           {parentActions ? (
             <div className="row-actions parent-actions">
               <button disabled={!canParentRequestChange(booking)} onClick={() => onChangeRequest?.(booking)}>

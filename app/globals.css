@@ -233,6 +233,10 @@ p {
   color: #fff;
 }
 
+.language-switch button {
+  min-width: 58px;
+}
+
 .search {
   display: flex;
   align-items: center;
@@ -1000,8 +1004,8 @@ p {
 
 .week-calendar {
   display: grid;
-  grid-template-columns: 74px repeat(7, minmax(128px, 1fr));
-  min-width: 970px;
+  grid-template-columns: 32px repeat(7, minmax(128px, 1fr));
+  min-width: 928px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1024,6 +1028,10 @@ p {
   font-size: 0.78rem;
   font-weight: 900;
   text-align: center;
+}
+
+.calendar-time strong {
+  display: none;
 }
 
 .calendar-day-head {
@@ -1109,8 +1117,9 @@ p {
 .open-slot {
   display: grid;
   gap: 2px;
-  padding: 8px 7px;
-  border: 1px dashed #bdd4ca;
+  min-height: 28px;
+  padding: 0;
+  border: 1px dashed transparent;
   color: var(--muted);
   font-weight: 900;
   text-align: center;
@@ -1189,6 +1198,60 @@ p {
 .export-panel {
   display: grid;
   gap: 10px;
+}
+
+.add-class-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.add-class-panel label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.add-class-panel select {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+}
+
+.student-results {
+  display: grid;
+  gap: 8px;
+}
+
+.student-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.student-result strong,
+.student-result span {
+  display: block;
+}
+
+.student-result span {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .export-toggle {
@@ -1589,7 +1652,7 @@ p {
   }
 
   .top-actions .icon-button,
-  .top-actions .mode-switch {
+  .top-actions .mode-switch:not(.language-switch) {
     display: none;
   }
 
@@ -1681,8 +1744,8 @@ p {
   }
 
   .week-calendar {
-    grid-template-columns: 58px repeat(7, 112px);
-    min-width: 842px;
+    grid-template-columns: 30px repeat(7, 112px);
+    min-width: 814px;
   }
 
   .calendar-corner,
