@@ -758,9 +758,11 @@ export function ClubApp() {
             coach={requestedCoach}
             slot={selectedSlot}
             durationMinutes={selectedDurationMinutes}
+            unavailable={isRangeUnavailable(bookings, requestedCoach, selectedSlot, selectedDurationMinutes)}
             recurring={recurring}
             recurringWeeks={recurringWeeks}
             saving={saving}
+            onDurationChange={setSelectedDurationMinutes}
             onCancel={() => setShowRequestConfirm(false)}
             onConfirm={async () => {
               await requestBooking();
@@ -1145,7 +1147,6 @@ function ParentApp({
             blockUnavailable
             privacyMode
             onSlotChange={onSlotChange}
-            onDurationChange={onDurationChange}
           />
         </div>
         <div className="booking-toolbar">
@@ -1290,7 +1291,6 @@ function ClubCalendar({
   blockUnavailable = false,
   privacyMode = false,
   onSlotChange,
-  onDurationChange,
   onBookingSelect
 }: {
   bookings: Booking[];
@@ -1306,7 +1306,6 @@ function ClubCalendar({
   blockUnavailable?: boolean;
   privacyMode?: boolean;
   onSlotChange: (value: CalendarSlot) => void;
-  onDurationChange?: (value: number) => void;
   onBookingSelect?: (booking: Booking) => void;
 }) {
   const ownBookingIds = new Set(ownBookings.map((booking) => booking.id));
@@ -1404,30 +1403,6 @@ function ClubCalendar({
                 {selected ? (
                   <span className="selected-label">
                     <strong>{rangeLabel(slot, selectionDurationMinutes)}</strong>
-                    {onDurationChange ? (
-                      <span className="duration-picker" aria-label="Duration">
-                        {durationOptions.map((minutes) => (
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            className={selectionDurationMinutes === minutes ? "selected" : ""}
-                            key={minutes}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onDurationChange(minutes);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter" && event.key !== " ") return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              onDurationChange(minutes);
-                            }}
-                          >
-                            {minutes}
-                          </span>
-                        ))}
-                      </span>
-                    ) : null}
                   </span>
                 ) : null}
               </button>
@@ -1497,7 +1472,8 @@ function ClubAppView({
   const [exportPeriod, setExportPeriod] = useState<ExportPeriod>("weekly");
   const [studentQuery, setStudentQuery] = useState("");
   const [addCoach, setAddCoach] = useState<string>(activeCalendarTab === "Combined" ? coaches[0] : activeCalendarTab);
-  const [pendingAddStudent, setPendingAddStudent] = useState<ParentAccount | null>(null);
+  const [showAddClassModal, setShowAddClassModal] = useState(false);
+  const [selectedAddStudent, setSelectedAddStudent] = useState<ParentAccount | null>(null);
   const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
   const visibleBookings = bookings.filter((booking) => activeCalendarTab === "Combined" || bookingMatchesCoach(booking, activeCalendarTab));
   const requested = visibleBookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
@@ -1667,8 +1643,13 @@ function ClubAppView({
             calendarDays={calendarDays}
             currentTime={currentTime}
             language={language}
-            onSlotChange={onSlotChange}
-            onDurationChange={onDurationChange}
+            onSlotChange={(slot) => {
+              onSlotChange(slot);
+              if (activeCalendarTab !== "Combined") {
+                setAddCoach(activeCalendarTab);
+              }
+              setShowAddClassModal(true);
+            }}
             onBookingSelect={setSelectedClubBooking}
           />
         </div>
@@ -1697,58 +1678,6 @@ function ClubAppView({
               <Download size={18} />
               {copy(language, "Download CSV", "下载 CSV")}
             </button>
-          </div>
-        </section>
-
-        <section className="section-block">
-          <div className="section-head">
-            <div>
-              <p className="eyebrow">{copy(language, "Add class", "添加课程")}</p>
-              <h2>{copy(language, "Add selected time for a student", "给学生添加已选时间")}</h2>
-              <p className="section-subtitle">{copy(language, "Search registered students from the database.", "从数据库搜索已注册学生。")}</p>
-            </div>
-            <span className="status-chip good">{rangeLabel(selectedSlot, selectedDurationMinutes)}</span>
-          </div>
-          <div className="add-class-panel">
-            <label>
-              <span>{copy(language, "Coach", "教练")}</span>
-              <select value={addCoach} onChange={(event) => setAddCoach(event.target.value)}>
-                {coaches.map((coach) => (
-                  <option key={coach} value={coach}>
-                    {coach}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>{copy(language, "Search student", "搜索学生")}</span>
-              <div className="input-shell">
-                <Search size={18} />
-                <input value={studentQuery} onChange={(event) => setStudentQuery(event.target.value)} />
-              </div>
-            </label>
-            <div className="student-results">
-              {filteredStudents.length === 0 ? (
-                <p className="empty-state">{copy(language, "No students found.", "未找到学生。")}</p>
-              ) : (
-                filteredStudents.slice(0, 6).map((student) => (
-                  <article className="student-result" key={student.id}>
-                    <div>
-                      <strong>{student.studentName}</strong>
-                      <span>{student.email || student.phone}</span>
-                    </div>
-                    <button
-                      className="primary-button"
-                      disabled={saving}
-                      onClick={() => setPendingAddStudent(student)}
-                    >
-                      <Plus size={17} />
-                      {copy(language, "Add", "添加")}
-                    </button>
-                  </article>
-                ))
-              )}
-            </div>
           </div>
         </section>
 
@@ -1818,21 +1747,28 @@ function ClubAppView({
           </div>
         </section>
       </section>
-      {pendingAddStudent ? (
-        <ConfirmRequestModal
-          action="add"
+      {showAddClassModal ? (
+        <ClubAddClassModal
           language={language}
-          studentName={pendingAddStudent.studentName}
+          students={filteredStudents}
+          studentQuery={studentQuery}
+          selectedStudent={selectedAddStudent}
           coach={addCoach}
           slot={selectedSlot}
           durationMinutes={selectedDurationMinutes}
-          recurring={false}
-          recurringWeeks={1}
+          unavailable={isRangeUnavailable(bookings, addCoach, selectedSlot, selectedDurationMinutes)}
           saving={saving}
-          onCancel={() => setPendingAddStudent(null)}
+          onCoachChange={setAddCoach}
+          onDurationChange={onDurationChange}
+          onStudentQueryChange={setStudentQuery}
+          onStudentSelect={setSelectedAddStudent}
+          onCancel={() => setShowAddClassModal(false)}
           onConfirm={async () => {
-            await onAddClass(pendingAddStudent, addCoach, [selectedSlot]);
-            setPendingAddStudent(null);
+            if (!selectedAddStudent) return;
+            await onAddClass(selectedAddStudent, addCoach, [selectedSlot]);
+            setShowAddClassModal(false);
+            setSelectedAddStudent(null);
+            setStudentQuery("");
           }}
         />
       ) : null}
@@ -1856,6 +1792,129 @@ function ClubAppView({
         />
       ) : null}
     </section>
+  );
+}
+
+function ClubAddClassModal({
+  language,
+  students,
+  studentQuery,
+  selectedStudent,
+  coach,
+  slot,
+  durationMinutes,
+  unavailable,
+  saving,
+  onCoachChange,
+  onDurationChange,
+  onStudentQueryChange,
+  onStudentSelect,
+  onCancel,
+  onConfirm
+}: {
+  language: Language;
+  students: ParentAccount[];
+  studentQuery: string;
+  selectedStudent: ParentAccount | null;
+  coach: string;
+  slot: CalendarSlot;
+  durationMinutes: number;
+  unavailable: boolean;
+  saving: boolean;
+  onCoachChange: (value: string) => void;
+  onDurationChange: (value: number) => void;
+  onStudentQueryChange: (value: string) => void;
+  onStudentSelect: (value: ParentAccount) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-add-class-title">
+        <div className="section-head compact">
+          <div>
+            <p className="eyebrow">{copy(language, "Add class", "添加课程")}</p>
+            <h2 id="club-add-class-title">{copy(language, "Add class for student", "给学生添加课程")}</h2>
+          </div>
+        </div>
+        <dl className="confirm-summary">
+          <div>
+            <dt>{copy(language, "Coach", "教练")}</dt>
+            <dd>
+              <select className="modal-select" value={coach} onChange={(event) => onCoachChange(event.target.value)}>
+                {coaches.map((coachOption) => (
+                  <option key={coachOption} value={coachOption}>
+                    {coachOption}
+                  </option>
+                ))}
+              </select>
+            </dd>
+          </div>
+          <div>
+            <dt>{copy(language, "Date", "日期")}</dt>
+            <dd>{slot.dateLabel}</dd>
+          </div>
+          <div>
+            <dt>{copy(language, "Time", "时间")}</dt>
+            <dd>{rangeLabel(slot, durationMinutes)}</dd>
+          </div>
+        </dl>
+        <div className="modal-duration-picker">
+          <span>{copy(language, "Duration", "时长")}</span>
+          <div className="duration-picker" aria-label="Duration">
+            {durationOptions.map((minutes) => (
+              <button
+                type="button"
+                className={durationMinutes === minutes ? "selected" : ""}
+                key={minutes}
+                onClick={() => onDurationChange(minutes)}
+              >
+                {minutes} {copy(language, "min", "分钟")}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="modal-student-search">
+          <label>
+            <span>{copy(language, "Student", "学生")}</span>
+            <div className="input-shell">
+              <Search size={18} />
+              <input value={studentQuery} onChange={(event) => onStudentQueryChange(event.target.value)} />
+            </div>
+          </label>
+          <div className="student-results modal-results">
+            {students.length === 0 ? (
+              <p className="empty-state">{copy(language, "No enrolled students found.", "未找到已注册学生。")}</p>
+            ) : (
+              students.slice(0, 6).map((student) => (
+                <button
+                  type="button"
+                  className={selectedStudent?.id === student.id ? "student-result selected" : "student-result"}
+                  key={student.id}
+                  onClick={() => onStudentSelect(student)}
+                >
+                  <span>
+                    <strong>{student.studentName}</strong>
+                    <em>{student.email || student.phone}</em>
+                  </span>
+                  <Check size={17} />
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+        {unavailable ? <p className="modal-warning">{copy(language, "This coach is not available for that duration.", "该教练这个时长不可预约。")}</p> : null}
+        <div className="modal-actions">
+          <button className="filter-button" onClick={onCancel} disabled={saving}>
+            {copy(language, "Cancel", "取消")}
+          </button>
+          <button className="primary-button" onClick={onConfirm} disabled={saving || unavailable || !selectedStudent}>
+            <Plus size={18} />
+            {saving ? copy(language, "Adding...", "添加中...") : copy(language, "Add class", "添加课程")}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1923,9 +1982,11 @@ function ConfirmRequestModal({
   coach,
   slot,
   durationMinutes,
+  unavailable = false,
   recurring,
   recurringWeeks,
   saving,
+  onDurationChange,
   onCancel,
   onConfirm
 }: {
@@ -1935,9 +1996,11 @@ function ConfirmRequestModal({
   coach: string;
   slot: CalendarSlot;
   durationMinutes: number;
+  unavailable?: boolean;
   recurring: boolean;
   recurringWeeks: number;
   saving: boolean;
+  onDurationChange?: (value: number) => void;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -1976,11 +2039,29 @@ function ConfirmRequestModal({
             </div>
           ) : null}
         </dl>
+        {onDurationChange ? (
+          <div className="modal-duration-picker">
+            <span>{copy(language, "Duration", "时长")}</span>
+            <div className="duration-picker" aria-label="Duration">
+              {durationOptions.map((minutes) => (
+                <button
+                  type="button"
+                  className={durationMinutes === minutes ? "selected" : ""}
+                  key={minutes}
+                  onClick={() => onDurationChange(minutes)}
+                >
+                  {minutes} {copy(language, "min", "分钟")}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {unavailable ? <p className="modal-warning">{copy(language, "This time is not available.", "这个时间不可预约。")}</p> : null}
         <div className="modal-actions">
           <button className="filter-button" onClick={onCancel} disabled={saving}>
             {copy(language, "Cancel", "取消")}
           </button>
-          <button className="primary-button" onClick={onConfirm} disabled={saving}>
+          <button className="primary-button" onClick={onConfirm} disabled={saving || unavailable}>
             <Check size={18} />
             {saving
               ? copy(language, action === "add" ? "Adding..." : "Sending...", action === "add" ? "添加中..." : "发送中...")
