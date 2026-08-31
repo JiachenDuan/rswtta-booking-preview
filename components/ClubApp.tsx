@@ -1682,7 +1682,7 @@ function ClubCalendar({
                     >
                       <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.studentName}</strong>
                       <small>{isBlockedTime(booking) ? compactTimeRange(booking.timeLabel) : compactTimeRange(booking.timeLabel)}</small>
-                      <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : `${booking.assignedCoach} · ${statusText(booking.status, language)}`}</em>
+                      <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : statusText(booking.status, language)}</em>
                     </span>
                   ))
                 )}

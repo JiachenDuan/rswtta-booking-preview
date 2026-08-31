@@ -2270,39 +2270,50 @@ button.student-result.selected {
   font-weight: 800;
 }
 
+
+.modal-actions.class-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.modal-actions.class-actions button {
+  min-width: 0;
+  white-space: normal;
+}
+
 @media (max-width: 760px) {
-  .calendar-booking {
+  .modal-actions.class-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .calendar-booking.spanning-event {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
     padding: 5px 4px 5px 6px;
     border-left-width: 3px;
   }
 
-  .calendar-booking strong,
-  .calendar-booking small,
-  .calendar-booking em {
+  .calendar-booking.spanning-event strong,
+  .calendar-booking.spanning-event small,
+  .calendar-booking.spanning-event em {
     overflow: hidden;
+    max-width: 100%;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .calendar-booking strong {
+  .calendar-booking.spanning-event strong {
     font-size: 0.62rem;
     line-height: 1.05;
   }
 
-  .calendar-booking small {
+  .calendar-booking.spanning-event small {
     font-size: 0.56rem;
     line-height: 1.05;
   }
 
-  .calendar-booking em {
+  .calendar-booking.spanning-event em {
     display: none;
-  }
-
-  .calendar-booking.coach-lane strong {
-    font-size: 0.58rem;
-  }
-
-  .calendar-booking.coach-lane small {
-    font-size: 0.52rem;
   }
 }
