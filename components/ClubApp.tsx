@@ -1687,7 +1687,8 @@ function ClubCalendar({
                 className={[
                   "calendar-cell",
                   selected || slotBookings.length > 0 || unavailableDisplayBooking ? "has-event" : "",
-                  unavailable ? "unavailable" : "",
+                  unavailable && !privacyMode ? "unavailable" : "",
+                  unavailable && privacyMode ? "privacy-unavailable" : "",
                   actionable ? "actionable" : ""
                 ].filter(Boolean).join(" ")}
                 key={startsAt}
