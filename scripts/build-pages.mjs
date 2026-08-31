@@ -1,4 +1,4 @@
-import { existsSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const apiPath = "app/api";
@@ -31,6 +31,13 @@ try {
     process.exitCode = result.status ?? 1;
   } else {
     writeFileSync("out/.nojekyll", "");
+    for (const route of ["parent", "club"]) {
+      const htmlPath = `out/${route}.html`;
+      if (existsSync(htmlPath)) {
+        mkdirSync(`out/${route}`, { recursive: true });
+        copyFileSync(htmlPath, `out/${route}/index.html`);
+      }
+    }
   }
 } finally {
   restoreApi();
