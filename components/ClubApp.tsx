@@ -242,6 +242,20 @@ function makeStartsAt(date: Date, timeLabel: string) {
   return starts.toISOString();
 }
 
+function dateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function makeSlotFromInput(dateValue: string, timeValue: string): CalendarSlot {
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  const dayIndex = (date.getDay() + 6) % 7;
+  return makeCalendarSlot(makeCalendarDay(date, dayIndex), timeValue);
+}
+
 function rangeEndLabel(slot: CalendarSlot, durationMinutes: number) {
   return timeLabel(addMinutes(new Date(slot.startsAt), durationMinutes));
 }
@@ -310,6 +324,10 @@ function isRangeUnavailable(bookings: Booking[], coach: string, slot: CalendarSl
     if (booking.status === "cancelled" || !bookingMatchesCoach(booking, coach)) return false;
     return rangesOverlap(starts, ends, new Date(booking.startsAt), bookingEndDate(booking));
   });
+}
+
+function isRangeUnavailableExceptBooking(bookings: Booking[], coach: string, slot: CalendarSlot, durationMinutes: number, bookingId: string) {
+  return isRangeUnavailable(bookings.filter((booking) => booking.id !== bookingId), coach, slot, durationMinutes);
 }
 
 function bookingDurationHours(booking: Booking) {
@@ -872,6 +890,13 @@ export function ClubApp() {
             onApproveCancel={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCancelClass={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
+            onUpdateClassTime={(booking, slot, durationMinutes) =>
+              updateBooking(booking.id, "club_confirmed", booking.assignedCoach, {
+                dateLabel: slot.dateLabel,
+                timeLabel: rangeLabel(slot, durationMinutes),
+                startsAt: slot.startsAt
+              })
+            }
             onAddClass={addClubClass}
             onAddTryoutClass={addClubTryoutClass}
             onBlockTime={blockCoachTime}
@@ -1536,6 +1561,7 @@ function ClubAppView({
   onApproveCancel,
   onCancelClass,
   onCoachComplete,
+  onUpdateClassTime,
   onAddClass,
   onAddTryoutClass,
   onBlockTime
@@ -1565,6 +1591,7 @@ function ClubAppView({
   onApproveCancel: (booking: Booking) => void;
   onCancelClass: (booking: Booking) => void;
   onCoachComplete: (booking: Booking) => void;
+  onUpdateClassTime: (booking: Booking, slot: CalendarSlot, durationMinutes: number) => void;
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onAddTryoutClass: (input: { studentName: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
@@ -1889,6 +1916,7 @@ function ClubAppView({
       {selectedClubBooking ? (
         <ClubBookingActionModal
           booking={selectedClubBooking}
+          bookings={bookings}
           language={language}
           onClose={() => setSelectedClubBooking(null)}
           onCancel={() => {
@@ -1903,6 +1931,10 @@ function ClubAppView({
                 }
               : undefined
           }
+          onUpdateTime={(slot, durationMinutes) => {
+            onUpdateClassTime(selectedClubBooking, slot, durationMinutes);
+            setSelectedClubBooking(null);
+          }}
         />
       ) : null}
     </section>
@@ -2122,17 +2154,30 @@ function ClubAddClassModal({
 
 function ClubBookingActionModal({
   booking,
+  bookings,
   language,
   onClose,
   onCancel,
-  onComplete
+  onComplete,
+  onUpdateTime
 }: {
   booking: Booking;
+  bookings: Booking[];
   language: Language;
   onClose: () => void;
   onCancel: () => void;
   onComplete?: () => void;
+  onUpdateTime: (slot: CalendarSlot, durationMinutes: number) => void;
 }) {
+  const bookingStart = new Date(booking.startsAt);
+  const [initialStartTime] = booking.timeLabel.split(" - ");
+  const initialDurationMinutes = Math.max(30, Math.round((bookingEndDate(booking).getTime() - bookingStart.getTime()) / 60000));
+  const [dateValue, setDateValue] = useState(dateInputValue(bookingStart));
+  const [startTime, setStartTime] = useState(initialStartTime || timeLabel(bookingStart));
+  const [durationMinutes, setDurationMinutes] = useState(durationOptions.includes(initialDurationMinutes) ? initialDurationMinutes : 60);
+  const editSlot = makeSlotFromInput(dateValue, startTime);
+  const isFutureClass = !isBlockedTime(booking) && booking.status !== "cancelled" && booking.status !== "coach_confirmed" && bookingStart.getTime() > Date.now();
+  const unavailable = isRangeUnavailableExceptBooking(bookings, booking.assignedCoach, editSlot, durationMinutes, booking.id);
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-booking-actions-title">
@@ -2159,6 +2204,50 @@ function ClubBookingActionModal({
             <dd>{booking.timeLabel}</dd>
           </div>
         </dl>
+        {isFutureClass ? (
+          <div className="modal-edit-time">
+            <div className="modal-field-grid">
+              <label>
+                <span>{copy(language, "New date", "新日期")}</span>
+                <input className="modal-input" type="date" value={dateValue} onChange={(event) => setDateValue(event.target.value)} />
+              </label>
+              <label>
+                <span>{copy(language, "Start time", "开始时间")}</span>
+                <select className="modal-select" value={startTime} onChange={(event) => setStartTime(event.target.value)}>
+                  {calendarTimes.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="modal-duration-picker">
+              <span>{copy(language, "New length", "新时长")}</span>
+              <div className="duration-picker" aria-label="New class length">
+                {durationOptions.map((minutes) => (
+                  <button
+                    type="button"
+                    className={durationMinutes === minutes ? "selected" : ""}
+                    key={minutes}
+                    onClick={() => setDurationMinutes(minutes)}
+                  >
+                    {minutes}m
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className={unavailable ? "modal-warning" : "modal-info"}>
+              {unavailable
+                ? copy(language, "That coach already has something at the new time.", "该教练新时间已有安排。")
+                : `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`}
+            </p>
+            <button className="primary-button wide-button" disabled={unavailable} onClick={() => onUpdateTime(editSlot, durationMinutes)}>
+              <Check size={18} />
+              {copy(language, "Update class time", "更新课程时间")}
+            </button>
+          </div>
+        ) : null}
         <div className="modal-actions class-actions">
           <button className="filter-button" onClick={onClose}>
             {copy(language, "Close", "关闭")}

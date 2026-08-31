@@ -1499,13 +1499,15 @@ button.student-result.selected {
 }
 
 .modal-duration-picker,
-.modal-student-search {
+.modal-student-search,
+.modal-edit-time {
   display: grid;
   gap: 9px;
 }
 
 .modal-duration-picker > span,
-.modal-student-search label > span {
+.modal-student-search label > span,
+.modal-field-grid label > span {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 900;
@@ -1517,6 +1519,18 @@ button.student-result.selected {
   gap: 7px;
 }
 
+.modal-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.modal-field-grid label {
+  display: grid;
+  gap: 7px;
+}
+
+.modal-input,
 .modal-select {
   width: 100%;
   min-height: 38px;
