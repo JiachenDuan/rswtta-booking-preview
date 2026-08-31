@@ -3,7 +3,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Bell,
-  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -785,7 +784,10 @@ export function ClubApp() {
             onStudentEmailChange={setStudentEmail}
             onPhoneChange={setPhone}
             onCoachChange={setRequestedCoach}
-            onSlotChange={selectSingleSlot}
+            onSlotChange={(slot) => {
+              selectSingleSlot(slot);
+              setShowRequestConfirm(true);
+            }}
             onDurationChange={setSelectedDurationMinutes}
             onPreviousWeek={() => setVisibleWeekStart((week) => addDays(week, -7))}
             onNextWeek={() => setVisibleWeekStart((week) => addDays(week, 7))}
@@ -793,7 +795,6 @@ export function ClubApp() {
               setVisibleWeekStart(initialWeekStart);
               replaceSelectedSlot(initialCalendarSlot);
             }}
-            onRequestBooking={() => setShowRequestConfirm(true)}
             onChangeRequest={(booking) => {
               updateBooking(booking.id, "change_requested", requestedCoach, {
                 dateLabel: selectedSlot.dateLabel,
@@ -1161,7 +1162,6 @@ function ParentApp({
   onPreviousWeek,
   onNextWeek,
   onToday,
-  onRequestBooking,
   onChangeRequest,
   onCancel
 }: {
@@ -1192,12 +1192,9 @@ function ParentApp({
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
-  onRequestBooking: () => void;
   onChangeRequest: (booking: Booking) => void;
   onCancel: (booking: Booking) => void;
 }) {
-  const selectedUnavailable = isRangeUnavailable(allBookings, requestedCoach, selectedSlot, selectedDurationMinutes);
-
   return (
     <section className="calendar-first">
       <section className="section-block calendar-core">
@@ -1241,16 +1238,6 @@ function ParentApp({
             privacyMode
             onSlotChange={onSlotChange}
           />
-        </div>
-        <div className="booking-toolbar">
-          <button className="primary-button wide-button" disabled={saving || selectedUnavailable} onClick={onRequestBooking}>
-            <CalendarDays size={18} />
-            {selectedUnavailable
-              ? copy(language, "Time not available", "该时间不可预约")
-              : saving
-              ? copy(language, "Saving...", "保存中...")
-              : copy(language, `Request ${rangeLabel(selectedSlot, selectedDurationMinutes)} for ${requestedCoach}`, `请求 ${requestedCoach} 的 ${rangeLabel(selectedSlot, selectedDurationMinutes)}`)}
-          </button>
         </div>
         <p className="system-note">{notice}</p>
       </section>
