@@ -564,6 +564,18 @@ p {
   align-items: start;
 }
 
+.support-requests {
+  order: 1;
+}
+
+.support-complete {
+  order: 2;
+}
+
+.support-export {
+  order: 3;
+}
+
 .booking-toolbar {
   display: grid;
   grid-template-columns: 1fr;
@@ -1399,6 +1411,21 @@ p {
 .export-panel {
   display: grid;
   gap: 10px;
+}
+
+.export-date-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.export-date-grid label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .add-class-panel {

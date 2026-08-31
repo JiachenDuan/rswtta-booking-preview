@@ -80,7 +80,6 @@ type CalendarSlot = CalendarDay & {
 };
 
 type ClubCalendarTab = (typeof clubCalendarTabs)[number];
-type ExportPeriod = "weekly" | "monthly";
 type AuthMode = "login" | "register" | "forgot" | "updatePassword";
 type Language = "en" | "zh";
 
@@ -249,9 +248,13 @@ function dateInputValue(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function dateFromInputValue(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function makeSlotFromInput(dateValue: string, timeValue: string): CalendarSlot {
-  const [year, month, day] = dateValue.split("-").map(Number);
-  const date = new Date(year, month - 1, day);
+  const date = dateFromInputValue(dateValue);
   const dayIndex = (date.getDay() + 6) % 7;
   return makeCalendarSlot(makeCalendarDay(date, dayIndex), timeValue);
 }
@@ -1624,7 +1627,10 @@ function ClubAppView({
   onAddTryoutClass: (input: { studentName: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
 }) {
-  const [exportPeriod, setExportPeriod] = useState<ExportPeriod>("weekly");
+  const defaultExportStart = dateInputValue(startOfWeek(selectedSlot.date));
+  const defaultExportEnd = dateInputValue(addDays(startOfWeek(selectedSlot.date), 6));
+  const [exportStartDate, setExportStartDate] = useState(defaultExportStart);
+  const [exportEndDate, setExportEndDate] = useState(defaultExportEnd);
   const [studentQuery, setStudentQuery] = useState("");
   const [addCoach, setAddCoach] = useState<string>(activeCalendarTab === "Combined" ? coaches[0] : activeCalendarTab);
   const [showAddClassModal, setShowAddClassModal] = useState(false);
@@ -1668,14 +1674,10 @@ function ClubAppView({
     }
   }, [activeCalendarTab]);
 
-  function exportCompletedClassReport() {
-    const anchorDate = selectedSlot.date;
-    const periodStart = exportPeriod === "weekly" ? startOfWeek(anchorDate) : startOfMonth(anchorDate);
-    const periodEnd = exportPeriod === "weekly" ? endOfDay(addDays(periodStart, 6)) : endOfMonth(anchorDate);
-    const periodTitle =
-      exportPeriod === "weekly"
-        ? `${dateLabel(periodStart)} - ${dateLabel(periodEnd)}`
-        : new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" }).format(anchorDate);
+  function exportClassReport() {
+    const periodStart = dateFromInputValue(exportStartDate);
+    const periodEnd = endOfDay(dateFromInputValue(exportEndDate));
+    const periodTitle = `${dateLabel(periodStart)} - ${dateLabel(periodEnd)}`;
 
     const inPeriod = bookings.filter((booking) => {
       const startsAt = new Date(booking.startsAt);
@@ -1685,46 +1687,60 @@ function ClubAppView({
     const grouped = new Map<
       string,
       {
+        coach: string;
         studentName: string;
         email: string;
         phone: string;
+        requestedCount: number;
+        confirmedCount: number;
         completedCount: number;
-        notCoachConfirmedCount: number;
+        totalCount: number;
         completedAmountCents: number;
       }
     >();
 
     for (const booking of inPeriod) {
-      const key = `${booking.studentName}|${booking.studentEmail}|${booking.phone}`;
+      const key = `${booking.assignedCoach}|${booking.studentName}|${booking.studentEmail}|${booking.phone}`;
       const existing =
         grouped.get(key) ??
         {
+          coach: booking.assignedCoach,
           studentName: booking.studentName,
           email: booking.studentEmail,
           phone: booking.phone,
+          requestedCount: 0,
+          confirmedCount: 0,
           completedCount: 0,
-          notCoachConfirmedCount: 0,
+          totalCount: 0,
           completedAmountCents: 0
         };
 
+      existing.totalCount += 1;
       if (booking.status === "coach_confirmed") {
         existing.completedCount += 1;
         existing.completedAmountCents += booking.priceCents;
+      } else if (booking.status === "club_confirmed") {
+        existing.confirmedCount += 1;
       } else {
-        existing.notCoachConfirmedCount += 1;
+        existing.requestedCount += 1;
       }
 
       grouped.set(key, existing);
     }
 
     const summaryRows = [
-      ["Student", "Email", "Phone", "Completed classes", "Not coach final confirmed", "Completed bill amount"],
-      ...[...grouped.values()].map((row) => [
+      ["Coach", "Student", "Email", "Phone", "Requested/change", "Confirmed not completed", "Completed", "Total active", "Completed amount"],
+      ...[...grouped.values()]
+        .sort((left, right) => `${left.coach}|${left.studentName}`.localeCompare(`${right.coach}|${right.studentName}`))
+        .map((row) => [
+        row.coach,
         row.studentName,
         row.email,
         row.phone,
+        row.requestedCount,
+        row.confirmedCount,
         row.completedCount,
-        row.notCoachConfirmedCount,
+        row.totalCount,
         dollars(row.completedAmountCents)
       ])
     ];
@@ -1732,7 +1748,7 @@ function ClubAppView({
     const detailRows = [
       ["Date", "Time", "Student", "Coach", "Status", "Price", "Parent note"],
       ...inPeriod
-        .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
+        .sort((left, right) => `${left.assignedCoach}|${left.studentName}|${left.startsAt}`.localeCompare(`${right.assignedCoach}|${right.studentName}|${right.startsAt}`))
         .map((booking) => [
           booking.dateLabel,
           booking.timeLabel,
@@ -1746,9 +1762,9 @@ function ClubAppView({
 
     const csv = [
       ["RSWTTA class report", periodTitle],
-      ["Report type", exportPeriod],
+      ["Date range", `${exportStartDate} to ${exportEndDate}`],
       [],
-      ["Summary by student"],
+      ["Summary by coach and student"],
       ...summaryRows,
       [],
       ["Class details"],
@@ -1757,7 +1773,7 @@ function ClubAppView({
       .map((row) => row.map((cell) => csvValue(cell)).join(","))
       .join("\n");
 
-    downloadTextFile(`rswtta-${exportPeriod}-classes-${periodStart.toISOString().slice(0, 10)}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
+    downloadTextFile(`rswtta-classes-${exportStartDate}-to-${exportEndDate}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
   }
 
   return (
@@ -1812,31 +1828,33 @@ function ClubAppView({
       </section>
 
       <section className="support-grid">
-        <section className="section-block">
+        <section className="section-block support-export">
           <div className="section-head">
             <div>
               <p className="eyebrow">{copy(language, "Export", "下载表格")}</p>
               <h2>{copy(language, "Download completed class summary", "下载 completed class 汇总")}</h2>
-              <p className="section-subtitle">{copy(language, "Weekly or monthly CSV for Excel", "按周或按月下载 CSV")}</p>
+              <p className="section-subtitle">{copy(language, "Choose dates and export grouped coach/student classes.", "选择日期，按教练和学生导出课程。")}</p>
             </div>
           </div>
           <div className="export-panel">
-            <div className="export-toggle" aria-label="Report period">
-              <button className={exportPeriod === "weekly" ? "selected" : ""} onClick={() => setExportPeriod("weekly")}>
-                {copy(language, "Weekly", "每周")}
-              </button>
-              <button className={exportPeriod === "monthly" ? "selected" : ""} onClick={() => setExportPeriod("monthly")}>
-                {copy(language, "Monthly", "每月")}
-              </button>
+            <div className="export-date-grid">
+              <label>
+                <span>{copy(language, "Start", "开始")}</span>
+                <input className="modal-input" type="date" value={exportStartDate} onChange={(event) => setExportStartDate(event.target.value)} />
+              </label>
+              <label>
+                <span>{copy(language, "End", "结束")}</span>
+                <input className="modal-input" type="date" value={exportEndDate} onChange={(event) => setExportEndDate(event.target.value)} />
+              </label>
             </div>
-            <button className="primary-button wide-button" onClick={exportCompletedClassReport}>
+            <button className="primary-button wide-button" onClick={exportClassReport}>
               <Download size={18} />
               {copy(language, "Download CSV", "下载 CSV")}
             </button>
           </div>
         </section>
 
-        <section className="section-block">
+        <section className="section-block support-requests">
           <div className="section-head">
             <div>
               <p className="eyebrow">{copy(language, "Requests", "待确认")}</p>
@@ -1875,7 +1893,7 @@ function ClubAppView({
           </div>
         </section>
 
-        <section className="section-block">
+        <section className="section-block support-complete">
           <div className="section-head">
             <div>
               <p className="eyebrow">{copy(language, "Coach complete", "教练完成")}</p>
