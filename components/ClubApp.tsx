@@ -41,20 +41,9 @@ import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/
 const coaches = ["Coach A", "Coach B", "Coach Tian Ye", "Coach Jorden"] as const;
 const clubCalendarTabs = ["Combined", ...coaches] as const;
 const calendarTimes = ["1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
+const durationOptions = [30, 60, 90, 120];
 const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const dayNamesZh = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-const timeParts: Record<string, [number, number]> = {
-  "1 PM": [13, 0],
-  "2 PM": [14, 0],
-  "3 PM": [15, 0],
-  "4 PM": [16, 0],
-  "5 PM": [17, 0],
-  "6 PM": [18, 0],
-  "7 PM": [19, 0],
-  "8 PM": [20, 0],
-  "9 PM": [21, 0],
-  "10 PM": [22, 0]
-};
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 
@@ -185,6 +174,12 @@ function endOfMonth(date: Date) {
   return endOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0));
 }
 
+function addMinutes(date: Date, minutes: number) {
+  const next = new Date(date);
+  next.setMinutes(next.getMinutes() + minutes);
+  return next;
+}
+
 function dateLabel(date: Date) {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
@@ -192,6 +187,25 @@ function dateLabel(date: Date) {
     day: "numeric",
     year: "numeric"
   }).format(date);
+}
+
+function timeLabel(date: Date) {
+  const text = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
+  return text.replace(":00", "");
+}
+
+function parseClockLabel(label: string) {
+  const match = label.match(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)/i);
+  if (!match) return [13, 0] as const;
+  let hours = Number(match[1]);
+  const minutes = Number(match[2] ?? "0");
+  const meridiem = match[3].toUpperCase();
+  if (meridiem === "PM" && hours !== 12) hours += 12;
+  if (meridiem === "AM" && hours === 12) hours = 0;
+  return [hours, minutes] as const;
 }
 
 function dateZh(date: Date) {
@@ -206,10 +220,45 @@ function monthLabel(date: Date) {
 }
 
 function makeStartsAt(date: Date, timeLabel: string) {
-  const [hours, minutes] = timeParts[timeLabel];
+  const [hours, minutes] = parseClockLabel(timeLabel);
   const starts = new Date(date);
   starts.setHours(hours, minutes, 0, 0);
   return starts.toISOString();
+}
+
+function rangeEndLabel(slot: CalendarSlot, durationMinutes: number) {
+  return timeLabel(addMinutes(new Date(slot.startsAt), durationMinutes));
+}
+
+function rangeLabel(slot: CalendarSlot, durationMinutes: number) {
+  return `${slot.timeLabel} - ${rangeEndLabel(slot, durationMinutes)}`;
+}
+
+function bookingEndDate(booking: Booking) {
+  const starts = new Date(booking.startsAt);
+  const [, endLabel] = booking.timeLabel.split(" - ");
+  if (!endLabel) return addMinutes(starts, 60);
+  const [hours, minutes] = parseClockLabel(endLabel);
+  const ends = new Date(starts);
+  ends.setHours(hours, minutes, 0, 0);
+  return ends <= starts ? addMinutes(starts, 60) : ends;
+}
+
+function bookingMatchesCoach(booking: Booking, coach: string) {
+  return booking.assignedCoach === coach || booking.requestedCoach === coach;
+}
+
+function rangesOverlap(leftStart: Date, leftEnd: Date, rightStart: Date, rightEnd: Date) {
+  return leftStart < rightEnd && rightStart < leftEnd;
+}
+
+function isRangeUnavailable(bookings: Booking[], coach: string, slot: CalendarSlot, durationMinutes: number) {
+  const starts = new Date(slot.startsAt);
+  const ends = addMinutes(starts, durationMinutes);
+  return bookings.some((booking) => {
+    if (booking.status === "cancelled" || !bookingMatchesCoach(booking, coach)) return false;
+    return rangesOverlap(starts, ends, new Date(booking.startsAt), bookingEndDate(booking));
+  });
 }
 
 function makeCalendarDay(date: Date, index: number): CalendarDay {
@@ -273,6 +322,8 @@ export function ClubApp() {
   const [visibleWeekStart, setVisibleWeekStart] = useState(initialWeekStart);
   const [selectedSlot, setSelectedSlot] = useState<CalendarSlot>(initialCalendarSlot);
   const [selectedSlots, setSelectedSlots] = useState<CalendarSlot[]>([initialCalendarSlot]);
+  const [selectedDurationMinutes, setSelectedDurationMinutes] = useState(60);
+  const [showRequestConfirm, setShowRequestConfirm] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [recurring, setRecurring] = useState(false);
   const [recurringWeeks, setRecurringWeeks] = useState(4);
@@ -295,16 +346,9 @@ export function ClubApp() {
     setSelectedSlots([slot]);
   }
 
-  function toggleSelectedSlot(slot: CalendarSlot) {
+  function selectSingleSlot(slot: CalendarSlot) {
     setSelectedSlot(slot);
-    setSelectedSlots((current) => {
-      const exists = current.some((item) => item.startsAt === slot.startsAt);
-      if (exists) {
-        const next = current.filter((item) => item.startsAt !== slot.startsAt);
-        return next.length > 0 ? next : [slot];
-      }
-      return [...current, slot].sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
-    });
+    setSelectedSlots([slot]);
   }
 
   function applyParentSession(account: ParentAccount) {
@@ -379,6 +423,10 @@ export function ClubApp() {
 
   async function requestBooking(parentNote = "") {
     const slots = recurringSlots();
+    if (isRangeUnavailable(bookings, requestedCoach, selectedSlot, selectedDurationMinutes)) {
+      setNotice(copy(language, "That coach is not available at the selected time.", "该教练这个时间不可预约。"));
+      return;
+    }
     setSaving(true);
     setNotice(copy(language, "Saving parent request...", "正在保存家长请求..."));
     try {
@@ -393,7 +441,7 @@ export function ClubApp() {
             assignedCoach: requestedCoach,
             program: lessonProgram(requestedCoach),
             dateLabel: slot.dateLabel,
-            timeLabel: slot.timeLabel,
+            timeLabel: rangeLabel(slot, selectedDurationMinutes),
             startsAt: slot.startsAt,
             priceCents: lessonPriceCents(requestedCoach),
             parentNote: recurring ? `${copy(language, "Weekly recurring request.", "每周重复预约。")} ${parentNote}` : parentNote
@@ -411,6 +459,11 @@ export function ClubApp() {
   }
 
   async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[]) {
+    const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, selectedDurationMinutes));
+    if (unavailableSlot) {
+      setNotice(copy(language, "That coach already has a class at the selected time.", "该教练这个时间已有课程。"));
+      return;
+    }
     setSaving(true);
     setNotice(copy(language, "Adding class...", "正在添加课程..."));
     try {
@@ -425,7 +478,7 @@ export function ClubApp() {
             assignedCoach: coach,
             program: lessonProgram(coach),
             dateLabel: slot.dateLabel,
-            timeLabel: slot.timeLabel,
+            timeLabel: rangeLabel(slot, selectedDurationMinutes),
             startsAt: slot.startsAt,
             priceCents: lessonPriceCents(coach),
             parentNote: copy(language, "Added by club", "俱乐部添加")
@@ -614,6 +667,7 @@ export function ClubApp() {
             requestedCoach={requestedCoach}
             selectedSlot={selectedSlot}
             selectedSlots={selectedSlots}
+            selectedDurationMinutes={selectedDurationMinutes}
             calendarDays={calendarDays}
             currentTime={currentTime}
             weekLabel={weekLabel(calendarDays, language)}
@@ -630,7 +684,8 @@ export function ClubApp() {
             onStudentEmailChange={setStudentEmail}
             onPhoneChange={setPhone}
             onCoachChange={setRequestedCoach}
-            onSlotChange={toggleSelectedSlot}
+            onSlotChange={selectSingleSlot}
+            onDurationChange={setSelectedDurationMinutes}
             onPreviousWeek={() => setVisibleWeekStart((week) => addDays(week, -7))}
             onNextWeek={() => setVisibleWeekStart((week) => addDays(week, 7))}
             onToday={() => {
@@ -639,11 +694,11 @@ export function ClubApp() {
             }}
             onRecurringChange={setRecurring}
             onRecurringWeeksChange={setRecurringWeeks}
-            onRequestBooking={() => requestBooking()}
+            onRequestBooking={() => setShowRequestConfirm(true)}
             onChangeRequest={(booking) => {
               updateBooking(booking.id, "change_requested", requestedCoach, {
                 dateLabel: selectedSlot.dateLabel,
-                timeLabel: selectedSlot.timeLabel,
+                timeLabel: rangeLabel(selectedSlot, selectedDurationMinutes),
                 startsAt: selectedSlot.startsAt,
                 parentNote: isMoreThan12HoursBeforeClass(booking)
                   ? `${copy(language, "Parent requested change from", "家长申请改期，原时间")} ${booking.dateLabel} ${booking.timeLabel}`
@@ -669,6 +724,7 @@ export function ClubApp() {
             students={students}
             selectedSlot={selectedSlot}
             selectedSlots={selectedSlots}
+            selectedDurationMinutes={selectedDurationMinutes}
             calendarDays={calendarDays}
             currentTime={currentTime}
             weekLabel={weekLabel(calendarDays, language)}
@@ -679,7 +735,8 @@ export function ClubApp() {
             activeCalendarTab={clubCalendarTab}
             saving={saving}
             language={language}
-            onSlotChange={toggleSelectedSlot}
+            onSlotChange={selectSingleSlot}
+            onDurationChange={setSelectedDurationMinutes}
             onCalendarTabChange={setClubCalendarTab}
             onPreviousWeek={() => setVisibleWeekStart((week) => addDays(week, -7))}
             onNextWeek={() => setVisibleWeekStart((week) => addDays(week, 7))}
@@ -693,6 +750,23 @@ export function ClubApp() {
             onAddClass={addClubClass}
           />
         )}
+        {showRequestConfirm ? (
+          <ConfirmRequestModal
+            language={language}
+            studentName={studentName}
+            coach={requestedCoach}
+            slot={selectedSlot}
+            durationMinutes={selectedDurationMinutes}
+            recurring={recurring}
+            recurringWeeks={recurringWeeks}
+            saving={saving}
+            onCancel={() => setShowRequestConfirm(false)}
+            onConfirm={async () => {
+              await requestBooking();
+              setShowRequestConfirm(false);
+            }}
+          />
+        ) : null}
       </section>
     </main>
   );
@@ -966,6 +1040,7 @@ function ParentApp({
   requestedCoach,
   selectedSlot,
   selectedSlots,
+  selectedDurationMinutes,
   calendarDays,
   currentTime,
   weekLabel,
@@ -980,6 +1055,7 @@ function ParentApp({
   onPhoneChange,
   onCoachChange,
   onSlotChange,
+  onDurationChange,
   onPreviousWeek,
   onNextWeek,
   onToday,
@@ -999,6 +1075,7 @@ function ParentApp({
   requestedCoach: string;
   selectedSlot: CalendarSlot;
   selectedSlots: CalendarSlot[];
+  selectedDurationMinutes: number;
   calendarDays: CalendarDay[];
   currentTime: Date;
   weekLabel: string;
@@ -1013,6 +1090,7 @@ function ParentApp({
   onPhoneChange: (value: string) => void;
   onCoachChange: (value: string) => void;
   onSlotChange: (value: CalendarSlot) => void;
+  onDurationChange: (value: number) => void;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
@@ -1022,14 +1100,16 @@ function ParentApp({
   onChangeRequest: (booking: Booking) => void;
   onCancel: (booking: Booking) => void;
 }) {
+  const selectedUnavailable = isRangeUnavailable(allBookings, requestedCoach, selectedSlot, selectedDurationMinutes);
+
   return (
     <section className="calendar-first">
       <section className="section-block calendar-core">
         <div className="section-head">
           <div>
             <p className="eyebrow">{copy(language, "Club calendar", "俱乐部日历")}</p>
-            <h2>{copy(language, "Select time blocks and request classes", "选择时间段并请求上课")}</h2>
-            <p className="section-subtitle">{copy(language, "Pick one or more blocks for the selected coach.", "为所选教练选择一个或多个时间段。")}</p>
+            <h2>{copy(language, "Select a time and request class", "选择时间并请求上课")}</h2>
+            <p className="section-subtitle">{copy(language, "Pick a start time and duration for the selected coach.", "为所选教练选择开始时间和时长。")}</p>
           </div>
           <span className="status-chip good">{bookings.length} {copy(language, "classes", "课程")}</span>
         </div>
@@ -1047,10 +1127,14 @@ function ParentApp({
             bookings={allBookings}
             selectedSlot={selectedSlot}
             selectedSlots={selectedSlots}
+            selectionDurationMinutes={selectedDurationMinutes}
             requestedCoach={requestedCoach}
+            visibleCoachTab={requestedCoach as ClubCalendarTab}
             calendarDays={calendarDays}
             currentTime={currentTime}
             language={language}
+            blockUnavailable
+            privacyMode
             onSlotChange={onSlotChange}
           />
         </div>
@@ -1062,13 +1146,26 @@ function ParentApp({
               </button>
             ))}
           </div>
-          <button className="primary-button wide-button" disabled={saving} onClick={onRequestBooking}>
+          <div className="time-range-control">
+            <span>{copy(language, "Time", "时间")}</span>
+            <strong>{rangeLabel(selectedSlot, selectedDurationMinutes)}</strong>
+            <select value={selectedDurationMinutes} onChange={(event) => onDurationChange(Number(event.target.value))}>
+              {durationOptions.map((minutes) => (
+                <option key={minutes} value={minutes}>
+                  {copy(language, `${minutes} min`, `${minutes} 分钟`)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button className="primary-button wide-button" disabled={saving || selectedUnavailable} onClick={onRequestBooking}>
             <CalendarDays size={18} />
-            {saving
+            {selectedUnavailable
+              ? copy(language, "Time not available", "该时间不可预约")
+              : saving
               ? copy(language, "Saving...", "保存中...")
               : recurring
-                ? copy(language, `Request ${selectedSlots.length} weekly blocks for ${recurringWeeks} weeks`, `请求 ${selectedSlots.length} 个时间段，每周重复 ${recurringWeeks} 周`)
-                : copy(language, `Request ${selectedSlots.length} block${selectedSlots.length === 1 ? "" : "s"} for ${requestedCoach}`, `请求 ${requestedCoach} 的 ${selectedSlots.length} 个时间段`)}
+                ? copy(language, `Request weekly ${rangeLabel(selectedSlot, selectedDurationMinutes)} for ${recurringWeeks} weeks`, `每周请求 ${rangeLabel(selectedSlot, selectedDurationMinutes)}，重复 ${recurringWeeks} 周`)
+                : copy(language, `Request ${rangeLabel(selectedSlot, selectedDurationMinutes)} for ${requestedCoach}`, `请求 ${requestedCoach} 的 ${rangeLabel(selectedSlot, selectedDurationMinutes)}`)}
           </button>
         </div>
         <div className="recurring-row">
@@ -1082,7 +1179,7 @@ function ParentApp({
             <option value={12}>{copy(language, "12 weeks", "12 周")}</option>
           </select>
           <span>
-            {copy(language, "Selected", "当前选择")}: {selectedSlots.length} {copy(language, "blocks", "个时间段")}
+            {copy(language, "Selected", "当前选择")}: {selectedSlot.dateLabel} {rangeLabel(selectedSlot, selectedDurationMinutes)}
           </span>
         </div>
         <p className="system-note">{notice}</p>
@@ -1191,22 +1288,28 @@ function ClubCalendar({
   bookings,
   selectedSlot,
   selectedSlots,
+  selectionDurationMinutes,
   requestedCoach,
   visibleCoachTab = "Combined",
   calendarDays,
   currentTime,
   language,
+  blockUnavailable = false,
+  privacyMode = false,
   onSlotChange,
   onCoachComplete
 }: {
   bookings: Booking[];
   selectedSlot: CalendarSlot;
   selectedSlots: CalendarSlot[];
+  selectionDurationMinutes: number;
   requestedCoach: string;
   visibleCoachTab?: ClubCalendarTab;
   calendarDays: CalendarDay[];
   currentTime: Date;
   language: Language;
+  blockUnavailable?: boolean;
+  privacyMode?: boolean;
   onSlotChange: (value: CalendarSlot) => void;
   onCoachComplete?: (booking: Booking) => void;
 }) {
@@ -1234,13 +1337,28 @@ function ClubCalendar({
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
               return matchesSlot && matchesCoach;
             });
+            const overlappingBookings = bookings.filter((booking) => {
+              if (booking.status === "cancelled") return false;
+              const matchesCoach =
+                visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
+              return (
+                matchesCoach &&
+                rangesOverlap(
+                  new Date(startsAt),
+                  addMinutes(new Date(startsAt), selectionDurationMinutes),
+                  new Date(booking.startsAt),
+                  bookingEndDate(booking)
+                )
+              );
+            });
             const completeTarget = slotBookings.find((booking) => booking.status === "club_confirmed");
             const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlots.some((item) => item.startsAt === startsAt);
+            const unavailable = blockUnavailable && overlappingBookings.length > 0;
             const actionable = Boolean(onCoachComplete && completeTarget);
-            const [startHour, startMinute] = timeParts[timeLabel];
+            const [startHour, startMinute] = parseClockLabel(timeLabel);
             const nextTime = calendarTimes[calendarTimes.indexOf(timeLabel) + 1];
-            const [nextHour, nextMinute] = nextTime ? timeParts[nextTime] : [startHour + 1, startMinute];
+            const [nextHour, nextMinute] = nextTime ? parseClockLabel(nextTime) : [startHour + 1, startMinute];
             const startTotal = startHour * 60 + startMinute;
             const endTotal = nextHour * 60 + nextMinute;
             const currentTotal = currentTime.getHours() * 60 + currentTime.getMinutes();
@@ -1251,10 +1369,13 @@ function ClubCalendar({
                 className={[
                   "calendar-cell",
                   selected ? "selected" : "",
+                  unavailable ? "unavailable" : "",
                   actionable ? "actionable" : ""
                 ].filter(Boolean).join(" ")}
                 key={startsAt}
+                disabled={unavailable && !actionable}
                 onClick={() => {
+                  if (unavailable && !actionable) return;
                   if (onCoachComplete && completeTarget) {
                     onCoachComplete(completeTarget);
                     return;
@@ -1267,7 +1388,12 @@ function ClubCalendar({
                     <span>{new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(currentTime)}</span>
                   </span>
                 ) : null}
-                {slotBookings.length === 0 ? (
+                {privacyMode && overlappingBookings.length > 0 ? (
+                  <span className="calendar-booking unavailable-private">
+                    <strong>{copy(language, "Not available", "不可预约")}</strong>
+                    <small>{copy(language, "Already booked or pending", "已有课程或待确认")}</small>
+                  </span>
+                ) : slotBookings.length === 0 ? (
                   <span className="open-slot" aria-hidden="true" />
                 ) : (
                   slotBookings.map((booking) => (
@@ -1279,7 +1405,7 @@ function ClubCalendar({
                     </span>
                   ))
                 )}
-                {selected ? <span className="selected-label">{copy(language, `${requestedCoach} selected`, `已选择 ${requestedCoach}`)}</span> : null}
+                {selected ? <span className="selected-label">{rangeLabel(slot, selectionDurationMinutes)}</span> : null}
               </button>
             );
           })}
@@ -1294,6 +1420,7 @@ function ClubAppView({
   students,
   selectedSlot,
   selectedSlots,
+  selectedDurationMinutes,
   calendarDays,
   currentTime,
   weekLabel,
@@ -1305,6 +1432,7 @@ function ClubAppView({
   saving,
   language,
   onSlotChange,
+  onDurationChange,
   onCalendarTabChange,
   onPreviousWeek,
   onNextWeek,
@@ -1318,6 +1446,7 @@ function ClubAppView({
   students: ParentAccount[];
   selectedSlot: CalendarSlot;
   selectedSlots: CalendarSlot[];
+  selectedDurationMinutes: number;
   calendarDays: CalendarDay[];
   currentTime: Date;
   weekLabel: string;
@@ -1329,6 +1458,7 @@ function ClubAppView({
   saving: boolean;
   language: Language;
   onSlotChange: (value: CalendarSlot) => void;
+  onDurationChange: (value: number) => void;
   onCalendarTabChange: (value: ClubCalendarTab) => void;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
@@ -1496,6 +1626,7 @@ function ClubAppView({
             bookings={bookings}
             selectedSlot={selectedSlot}
             selectedSlots={selectedSlots}
+            selectionDurationMinutes={selectedDurationMinutes}
             requestedCoach={requestedCoach}
             visibleCoachTab={activeCalendarTab}
             calendarDays={calendarDays}
@@ -1540,7 +1671,7 @@ function ClubAppView({
               <h2>{copy(language, "Add selected blocks for a student", "给学生添加已选时间段")}</h2>
               <p className="section-subtitle">{copy(language, "Search registered students from the database.", "从数据库搜索已注册学生。")}</p>
             </div>
-            <span className="status-chip good">{selectedSlots.length} {copy(language, "selected", "已选")}</span>
+            <span className="status-chip good">{rangeLabel(selectedSlot, selectedDurationMinutes)}</span>
           </div>
           <div className="add-class-panel">
             <label>
@@ -1549,6 +1680,16 @@ function ClubAppView({
                 {coaches.map((coach) => (
                   <option key={coach} value={coach}>
                     {coach}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{copy(language, "Duration", "时长")}</span>
+              <select value={selectedDurationMinutes} onChange={(event) => onDurationChange(Number(event.target.value))}>
+                {durationOptions.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {copy(language, `${minutes} min`, `${minutes} 分钟`)}
                   </option>
                 ))}
               </select>
@@ -1573,7 +1714,7 @@ function ClubAppView({
                     <button
                       className="primary-button"
                       disabled={saving}
-                      onClick={() => onAddClass(student, addCoach, selectedSlots.length > 0 ? selectedSlots : [selectedSlot])}
+                      onClick={() => onAddClass(student, addCoach, [selectedSlot])}
                     >
                       <Plus size={17} />
                       {copy(language, "Add", "添加")}
@@ -1652,6 +1793,76 @@ function ClubAppView({
         </section>
       </section>
     </section>
+  );
+}
+
+function ConfirmRequestModal({
+  language,
+  studentName,
+  coach,
+  slot,
+  durationMinutes,
+  recurring,
+  recurringWeeks,
+  saving,
+  onCancel,
+  onConfirm
+}: {
+  language: Language;
+  studentName: string;
+  coach: string;
+  slot: CalendarSlot;
+  durationMinutes: number;
+  recurring: boolean;
+  recurringWeeks: number;
+  saving: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-booking-title">
+        <div className="section-head compact">
+          <div>
+            <p className="eyebrow">{copy(language, "Confirm request", "确认预约")}</p>
+            <h2 id="confirm-booking-title">{copy(language, "Send this class request?", "发送这个预约请求？")}</h2>
+          </div>
+        </div>
+        <dl className="confirm-summary">
+          <div>
+            <dt>{copy(language, "Student", "学生")}</dt>
+            <dd>{studentName}</dd>
+          </div>
+          <div>
+            <dt>{copy(language, "Coach", "教练")}</dt>
+            <dd>{coach}</dd>
+          </div>
+          <div>
+            <dt>{copy(language, "Date", "日期")}</dt>
+            <dd>{slot.dateLabel}</dd>
+          </div>
+          <div>
+            <dt>{copy(language, "Time", "时间")}</dt>
+            <dd>{rangeLabel(slot, durationMinutes)}</dd>
+          </div>
+          {recurring ? (
+            <div>
+              <dt>{copy(language, "Repeat", "重复")}</dt>
+              <dd>{copy(language, `${recurringWeeks} weeks`, `${recurringWeeks} 周`)}</dd>
+            </div>
+          ) : null}
+        </dl>
+        <div className="modal-actions">
+          <button className="filter-button" onClick={onCancel} disabled={saving}>
+            {copy(language, "Cancel", "取消")}
+          </button>
+          <button className="primary-button" onClick={onConfirm} disabled={saving}>
+            <Check size={18} />
+            {saving ? copy(language, "Sending...", "发送中...") : copy(language, "Confirm request", "确认请求")}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 

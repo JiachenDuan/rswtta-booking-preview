@@ -515,10 +515,45 @@ p {
 
 .booking-toolbar {
   display: grid;
-  grid-template-columns: minmax(260px, 360px) minmax(280px, auto);
+  grid-template-columns: minmax(260px, 330px) minmax(220px, 280px) minmax(280px, auto);
   gap: 12px;
   align-items: center;
   margin-bottom: 12px;
+}
+
+.time-range-control {
+  display: grid;
+  gap: 5px;
+  min-height: 58px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.time-range-control span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.time-range-control strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-range-control select {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .calendar-controls {
@@ -1110,6 +1145,15 @@ p {
   box-shadow: inset 0 0 0 2px #1d4f91;
 }
 
+.calendar-cell.unavailable {
+  cursor: not-allowed;
+  background: #fff1f1;
+}
+
+.calendar-cell:disabled {
+  color: var(--ink);
+}
+
 .current-time-line {
   position: absolute;
   right: 0;
@@ -1189,6 +1233,17 @@ p {
   border-left: 5px solid #c029d9;
   background: #f8d8fb;
   color: #62166e;
+}
+
+.calendar-booking.unavailable-private {
+  border-color: rgba(242, 61, 85, 0.18);
+  border-left-color: #f23d55;
+  background: #ffe0e5;
+  color: #8f1d31;
+}
+
+.calendar-booking.unavailable-private small {
+  color: #8f1d31;
 }
 
 .calendar-booking strong,
@@ -1280,6 +1335,59 @@ p {
 .student-result strong,
 .student-result span {
   display: block;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: end center;
+  padding: 18px;
+  background: rgba(7, 24, 18, 0.42);
+}
+
+.confirm-modal {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 440px);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(15, 28, 22, 0.25);
+}
+
+.confirm-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.confirm-summary div {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.confirm-summary dt {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.confirm-summary dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .student-result span {
