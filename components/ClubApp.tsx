@@ -38,8 +38,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
-const coaches = ["Coach A", "Coach B", "Coach Tian Ye", "Coach Jorden"] as const;
-const clubCalendarTabs = ["Combined", ...coaches] as const;
+const coaches = ["Coach Tian Ye", "Coach Jorden", "Coach A", "Coach B"] as const;
+const clubCalendarTabs = [...coaches, "Combined"] as const;
 const calendarTimes = ["1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
 const durationOptions = [30, 60, 90, 120];
 const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -318,7 +318,7 @@ export function ClubApp() {
   const [studentEmail, setStudentEmail] = useState("parent@example.com");
   const [phone, setPhone] = useState("(650) 555-0188");
   const [requestedCoach, setRequestedCoach] = useState<string>(coaches[0]);
-  const [clubCalendarTab, setClubCalendarTab] = useState<ClubCalendarTab>("Combined");
+  const [clubCalendarTab, setClubCalendarTab] = useState<ClubCalendarTab>("Coach Tian Ye");
   const [visibleWeekStart, setVisibleWeekStart] = useState(initialWeekStart);
   const [selectedSlot, setSelectedSlot] = useState<CalendarSlot>(initialCalendarSlot);
   const [selectedSlots, setSelectedSlots] = useState<CalendarSlot[]>([initialCalendarSlot]);
@@ -746,6 +746,7 @@ export function ClubApp() {
             }}
             onConfirm={(booking, coach) => updateBooking(booking.id, "club_confirmed", coach)}
             onApproveCancel={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
+            onCancelClass={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
             onAddClass={addClubClass}
           />
@@ -1290,7 +1291,7 @@ function ClubCalendar({
   privacyMode = false,
   onSlotChange,
   onDurationChange,
-  onCoachComplete
+  onBookingSelect
 }: {
   bookings: Booking[];
   selectedSlot: CalendarSlot;
@@ -1306,7 +1307,7 @@ function ClubCalendar({
   privacyMode?: boolean;
   onSlotChange: (value: CalendarSlot) => void;
   onDurationChange?: (value: number) => void;
-  onCoachComplete?: (booking: Booking) => void;
+  onBookingSelect?: (booking: Booking) => void;
 }) {
   const ownBookingIds = new Set(ownBookings.map((booking) => booking.id));
   return (
@@ -1345,12 +1346,12 @@ function ClubCalendar({
                 )
               );
             });
-            const completeTarget = slotBookings.find((booking) => booking.status === "club_confirmed");
+            const selectableBooking = slotBookings.find((booking) => booking.status !== "cancelled");
             const slot = makeCalendarSlot(day, timeLabel);
             const selected = selectedSlots.some((item) => item.startsAt === startsAt);
             const unavailableBookings = overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
             const unavailable = blockUnavailable && unavailableBookings.length > 0;
-            const actionable = Boolean(onCoachComplete && completeTarget);
+            const actionable = Boolean(onBookingSelect && selectableBooking);
             const [startHour, startMinute] = parseClockLabel(timeLabel);
             const nextTime = calendarTimes[calendarTimes.indexOf(timeLabel) + 1];
             const [nextHour, nextMinute] = nextTime ? parseClockLabel(nextTime) : [startHour + 1, startMinute];
@@ -1371,8 +1372,8 @@ function ClubCalendar({
                 disabled={unavailable && !actionable}
                 onClick={() => {
                   if (unavailable && !actionable) return;
-                  if (onCoachComplete && completeTarget) {
-                    onCoachComplete(completeTarget);
+                  if (onBookingSelect && selectableBooking) {
+                    onBookingSelect(selectableBooking);
                     return;
                   }
                   onSlotChange(slot);
@@ -1396,7 +1397,7 @@ function ClubCalendar({
                       <strong>{booking.assignedCoach}</strong>
                       <small>{booking.studentName}</small>
                       <em>{statusText(booking.status, language)}</em>
-                      {onCoachComplete && booking.status === "club_confirmed" ? <b>{copy(language, "Click complete", "点击完成")}</b> : null}
+                      {onBookingSelect ? <b>{copy(language, "Click actions", "点击操作")}</b> : null}
                     </span>
                   ))
                 )}
@@ -1462,6 +1463,7 @@ function ClubAppView({
   onToday,
   onConfirm,
   onApproveCancel,
+  onCancelClass,
   onCoachComplete,
   onAddClass
 }: {
@@ -1488,6 +1490,7 @@ function ClubAppView({
   onToday: () => void;
   onConfirm: (booking: Booking, coach: string) => void;
   onApproveCancel: (booking: Booking) => void;
+  onCancelClass: (booking: Booking) => void;
   onCoachComplete: (booking: Booking) => void;
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[]) => Promise<void>;
 }) {
@@ -1495,8 +1498,10 @@ function ClubAppView({
   const [studentQuery, setStudentQuery] = useState("");
   const [addCoach, setAddCoach] = useState<string>(activeCalendarTab === "Combined" ? coaches[0] : activeCalendarTab);
   const [pendingAddStudent, setPendingAddStudent] = useState<ParentAccount | null>(null);
-  const requested = bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
-  const confirmed = bookings.filter((booking) => booking.status === "club_confirmed");
+  const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
+  const visibleBookings = bookings.filter((booking) => activeCalendarTab === "Combined" || bookingMatchesCoach(booking, activeCalendarTab));
+  const requested = visibleBookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
+  const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed");
   const studentDirectory = useMemo(() => {
     const byKey = new Map<string, ParentAccount>();
     for (const student of students) {
@@ -1664,7 +1669,7 @@ function ClubAppView({
             language={language}
             onSlotChange={onSlotChange}
             onDurationChange={onDurationChange}
-            onCoachComplete={onCoachComplete}
+            onBookingSelect={setSelectedClubBooking}
           />
         </div>
         <p className="system-note">{notice}</p>
@@ -1831,7 +1836,83 @@ function ClubAppView({
           }}
         />
       ) : null}
+      {selectedClubBooking ? (
+        <ClubBookingActionModal
+          booking={selectedClubBooking}
+          language={language}
+          onClose={() => setSelectedClubBooking(null)}
+          onCancel={() => {
+            onCancelClass(selectedClubBooking);
+            setSelectedClubBooking(null);
+          }}
+          onComplete={
+            selectedClubBooking.status === "club_confirmed"
+              ? () => {
+                  onCoachComplete(selectedClubBooking);
+                  setSelectedClubBooking(null);
+                }
+              : undefined
+          }
+        />
+      ) : null}
     </section>
+  );
+}
+
+function ClubBookingActionModal({
+  booking,
+  language,
+  onClose,
+  onCancel,
+  onComplete
+}: {
+  booking: Booking;
+  language: Language;
+  onClose: () => void;
+  onCancel: () => void;
+  onComplete?: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-booking-actions-title">
+        <div className="section-head compact">
+          <div>
+            <p className="eyebrow">{copy(language, "Class actions", "课程操作")}</p>
+            <h2 id="club-booking-actions-title">{booking.studentName}</h2>
+          </div>
+          <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
+        </div>
+        <dl className="confirm-summary">
+          <div>
+            <dt>{copy(language, "Coach", "教练")}</dt>
+            <dd>{booking.assignedCoach}</dd>
+          </div>
+          <div>
+            <dt>{copy(language, "Date", "日期")}</dt>
+            <dd>{booking.dateLabel}</dd>
+          </div>
+          <div>
+            <dt>{copy(language, "Time", "时间")}</dt>
+            <dd>{booking.timeLabel}</dd>
+          </div>
+        </dl>
+        <div className="modal-actions class-actions">
+          <button className="filter-button" onClick={onClose}>
+            {copy(language, "Close", "关闭")}
+          </button>
+          <button className="decline" onClick={onCancel}>
+            <X size={17} />
+            {copy(language, "Cancel class", "取消课程")}
+          </button>
+          {onComplete ? (
+            <button className="primary-button" onClick={onComplete}>
+              <Check size={18} />
+              {copy(language, "Complete", "完成")}
+            </button>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
