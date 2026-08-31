@@ -1648,7 +1648,9 @@ function ClubCalendar({
               const matchesCoach =
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
               const bookingStart = new Date(booking.startsAt);
-              return bookingStart >= cellStart && bookingStart < cellEnd && (matchesCoach || ownBookingIds.has(booking.id));
+              const isOwnBooking = ownBookingIds.has(booking.id);
+              const visibleToParent = !privacyMode || isOwnBooking;
+              return bookingStart >= cellStart && bookingStart < cellEnd && visibleToParent && (matchesCoach || isOwnBooking);
             });
             const overlappingBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
@@ -1667,7 +1669,10 @@ function ClubCalendar({
             const hasVisibleBooking = slotBookings.length > 0;
             const selected = !hasVisibleBooking && selectedSlots.some((item) => item.startsAt === startsAt);
             const unavailableBookings = overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
-            const unavailableDisplayBooking = unavailableBookings.find((booking) => booking.startsAt === startsAt);
+            const unavailableDisplayBooking = unavailableBookings.find((booking) => {
+              const bookingStart = new Date(booking.startsAt);
+              return bookingStart >= cellStart && bookingStart < cellEnd;
+            });
             const blockedUnavailable = unavailableDisplayBooking && isBlockedTime(unavailableDisplayBooking) ? unavailableDisplayBooking : undefined;
             const unavailable = blockUnavailable && unavailableBookings.length > 0;
             const useCoachLanes = visibleCoachTab === "Combined" && slotBookings.length > 1;
@@ -1704,7 +1709,7 @@ function ClubCalendar({
                 ) : null}
                 {privacyMode && unavailableDisplayBooking ? (
                   <span className="calendar-booking unavailable-private spanning-event" style={calendarEventStyle(unavailableDisplayBooking, false, cellStart)}>
-                    <strong>{blockedUnavailable ? copy(language, "Not working", "不可用") : copy(language, "Not available", "不可预约")}</strong>
+                    <strong>{blockedUnavailable ? copy(language, "Time unavailable", "时间不可用") : copy(language, "Time unavailable", "时间不可用")}</strong>
                     <small>{blockedUnavailable ? compactTimeRange(blockedUnavailable.timeLabel) : compactTimeRange(unavailableDisplayBooking.timeLabel)}</small>
                   </span>
                 ) : slotBookings.length === 0 ? (
