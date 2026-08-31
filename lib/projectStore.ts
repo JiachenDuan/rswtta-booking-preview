@@ -686,6 +686,22 @@ const tianYeRecurringClassSeeds: RecurringClassSeed[] = [
   { studentName: "Han Xi", day: 0, startHour: 17, startMinute: 0, endHour: 18, endMinute: 0, source: "TIAN YE L20/L21" }
 ];
 
+const coachJordenRecurringClassSeeds: RecurringClassSeed[] = [
+  { studentName: "Vanya", day: 2, startHour: 19, startMinute: 30, endHour: 20, endMinute: 30, source: "wang H5/H6" },
+  { studentName: "Alex", day: 3, startHour: 18, startMinute: 30, endHour: 19, endMinute: 30, source: "wang G8/G9" },
+  { studentName: "Adi", day: 3, startHour: 19, startMinute: 30, endHour: 20, endMinute: 30, source: "wang H8/H9" },
+  { studentName: "Nike", day: 5, startHour: 18, startMinute: 30, endHour: 19, endMinute: 30, source: "wang H14/H15" },
+  { studentName: "Desmond", day: 5, startHour: 19, startMinute: 30, endHour: 20, endMinute: 30, source: "wang I14/I15" },
+  { studentName: "Maya", day: 6, startHour: 10, startMinute: 30, endHour: 11, endMinute: 30, source: "wang C17/C18" },
+  { studentName: "Adi", day: 6, startHour: 13, startMinute: 0, endHour: 14, endMinute: 0, source: "wang F17/F18" },
+  { studentName: "Ayden", day: 6, startHour: 15, startMinute: 30, endHour: 16, endMinute: 30, source: "wang H17/H18" },
+  { studentName: "Stanley", day: 6, startHour: 16, startMinute: 30, endHour: 17, endMinute: 30, source: "wang I17/I18" },
+  { studentName: "Advik", day: 6, startHour: 17, startMinute: 30, endHour: 18, endMinute: 0, source: "wang J17/J18" },
+  { studentName: "Desmond", day: 0, startHour: 14, startMinute: 30, endHour: 15, endMinute: 30, source: "wang E21/E22" },
+  { studentName: "Elijah", day: 0, startHour: 15, startMinute: 30, endHour: 16, endMinute: 30, source: "wang F21/F22" },
+  { studentName: "Ayden", day: 0, startHour: 16, startMinute: 30, endHour: 17, endMinute: 30, source: "wang G21/G22" }
+];
+
 function formatSeedDateLabel(date: Date) {
   return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(date);
 }
@@ -730,6 +746,56 @@ function tianRecurringBookingValues(seed: RecurringClassSeed, date: Date): Booki
   };
 }
 
+
+function coachJordenRecurringBookingValues(seed: RecurringClassSeed, date: Date): Booking {
+  const starts = new Date(date);
+  starts.setHours(seed.startHour, seed.startMinute, 0, 0);
+  return {
+    id: "",
+    studentName: seed.studentName,
+    familyName: seed.studentName,
+    studentEmail: "",
+    phone: "",
+    requestedCoach: "Coach Jorden",
+    assignedCoach: "Coach Jorden",
+    program: "Group lesson",
+    dateLabel: formatSeedDateLabel(starts),
+    timeLabel: `${formatSeedTime(seed.startHour, seed.startMinute)} - ${formatSeedTime(seed.endHour, seed.endMinute)}`,
+    startsAt: starts.toISOString(),
+    priceCents: 7500,
+    status: "club_confirmed",
+    parentNote: `Imported Coach Wang recurring class from Excel as Coach Jorden (${seed.source}) through Dec 31, 2026.${seed.note ? ` ${seed.note}` : ""}`,
+    createdAt: "",
+    updatedAt: ""
+  };
+}
+
+function coachJordenRecurringBookingsThroughDec31() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(2026, 11, 31, 23, 59, 59, 999);
+  const bookings: Booking[] = [];
+  for (const seed of coachJordenRecurringClassSeeds) {
+    for (let date = nextDateForDay(start, seed.day); date <= end; date.setDate(date.getDate() + 7)) {
+      bookings.push(coachJordenRecurringBookingValues(seed, new Date(date)));
+    }
+  }
+  return bookings;
+}
+
+async function seedCoachJordenRecurringBookings(rows: Array<ProjectRow<Booking>>, create: (values: Booking) => Promise<ProjectRow<Booking>> | ProjectRow<Booking>) {
+  const existingKeys = new Set(rows.map((row) => tianRecurringKey(row.values)));
+  const created: Array<ProjectRow<Booking>> = [];
+  for (const booking of coachJordenRecurringBookingsThroughDec31()) {
+    const key = tianRecurringKey(booking);
+    if (existingKeys.has(key)) continue;
+    const row = await create(booking);
+    created.push(row);
+    existingKeys.add(key);
+  }
+  return rows.concat(created);
+}
+
 function tianYeRecurringBookingsThroughDec31() {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -760,8 +826,8 @@ function uniqueBookingRows(rows: Array<ProjectRow<Booking>>) {
   const byKey = new Map<string, ProjectRow<Booking>>();
   for (const row of rows) {
     const note = String(row.values.parentNote ?? "");
-    const key = note.includes("Imported Coach Tian Ye recurring class from Excel")
-      ? `tian-import|${row.values.studentName ?? ""}|${row.values.startsAt ?? ""}`
+    const key = note.includes("Imported Coach Tian Ye recurring class from Excel") || note.includes("Imported Coach Wang recurring class from Excel as Coach Jorden")
+      ? `recurring-import|${row.values.assignedCoach ?? row.values.requestedCoach ?? ""}|${row.values.studentName ?? ""}|${row.values.startsAt ?? ""}`
       : row.id;
     if (!byKey.has(key)) byKey.set(key, row);
   }
@@ -772,11 +838,13 @@ async function listBookingRowsWithSeeds() {
   return withLocalFallback(
     async () => {
       const rows = await listRows<Booking>("bookings");
-      return seedTianYeRecurringBookings(rows, (values) => createRow<Booking>("bookings", values));
+      const withTian = await seedTianYeRecurringBookings(rows, (values) => createRow<Booking>("bookings", values));
+      return seedCoachJordenRecurringBookings(withTian, (values) => createRow<Booking>("bookings", values));
     },
     async () => {
       const rows = localRows<Booking>("bookings");
-      return seedTianYeRecurringBookings(rows, (values) => createLocalRow("bookings", values));
+      const withTian = await seedTianYeRecurringBookings(rows, (values) => createLocalRow("bookings", values));
+      return seedCoachJordenRecurringBookings(withTian, (values) => createLocalRow("bookings", values));
     }
   );
 }
