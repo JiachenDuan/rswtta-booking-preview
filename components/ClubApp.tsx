@@ -2393,13 +2393,20 @@ function ClubBookingActionModal({
   const [dateValue, setDateValue] = useState(dateInputValue(bookingStart));
   const [startTime, setStartTime] = useState(initialStartTime || timeLabel(bookingStart));
   const [durationMinutes, setDurationMinutes] = useState(durationOptions.includes(initialDurationMinutes) ? initialDurationMinutes : 60);
+  const [confirmAction, setConfirmAction] = useState<"update" | "cancel" | null>(null);
   const editSlot = makeSlotFromInput(dateValue, startTime);
   const isFutureClass = !isBlockedTime(booking) && booking.status !== "cancelled" && booking.status !== "coach_confirmed" && bookingStart.getTime() > Date.now();
   const unavailable = isRangeUnavailableExceptBooking(bookings, booking.assignedCoach, editSlot, durationMinutes, booking.id);
+  const updateChanged =
+    editSlot.startsAt !== booking.startsAt ||
+    rangeLabel(editSlot, durationMinutes) !== booking.timeLabel;
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-booking-actions-title">
-        <div className="section-head compact">
+      <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="club-booking-actions-title">
+        <button className="modal-close-icon" type="button" aria-label="Close" onClick={onClose}>
+          <X size={20} />
+        </button>
+        <div className="section-head compact class-action-head">
           <div>
             <p className="eyebrow">{copy(language, isBlockedTime(booking) ? "Blocked time" : "Class actions", isBlockedTime(booking) ? "不可用时间" : "课程操作")}</p>
             <h2 id="club-booking-actions-title">{isBlockedTime(booking) ? booking.assignedCoach : booking.studentName}</h2>
@@ -2462,27 +2469,56 @@ function ClubBookingActionModal({
             </p>
           </div>
         ) : null}
-        <div className="modal-actions class-actions">
-          {onComplete && !isBlockedTime(booking) ? (
-            <button className="primary-button" onClick={onComplete}>
-              <Check size={18} />
-              {copy(language, "Complete", "完成")}
-            </button>
-          ) : null}
-          {isFutureClass ? (
-            <button className="primary-button" disabled={unavailable} onClick={() => onUpdateTime(editSlot, durationMinutes)}>
-              <Check size={18} />
-              {copy(language, "Update", "更新")}
-            </button>
-          ) : null}
-          <button className="decline" onClick={onCancel}>
-            <X size={17} />
-            {copy(language, isBlockedTime(booking) ? "Remove block" : "Cancel", isBlockedTime(booking) ? "移除不可用" : "取消")}
+        {onComplete && !isBlockedTime(booking) ? (
+          <button className="primary-button complete-hero-button" onClick={onComplete}>
+            <Check size={22} />
+            {copy(language, "Complete class", "完成课程")}
           </button>
-          <button className="filter-button" onClick={onClose}>
-            {copy(language, "Close", "关闭")}
+        ) : null}
+        <div className="modal-actions class-secondary-actions">
+          {isFutureClass ? (
+            <button className="primary-button secondary-red-button" disabled={unavailable || !updateChanged} onClick={() => setConfirmAction("update")}>
+              <Check size={18} />
+              {copy(language, "Update time", "更新时间")}
+            </button>
+          ) : null}
+          <button className="decline secondary-danger-button" onClick={() => setConfirmAction("cancel")}>
+            <X size={17} />
+            {copy(language, isBlockedTime(booking) ? "Remove block" : "Cancel class", isBlockedTime(booking) ? "移除不可用" : "取消课程")}
           </button>
         </div>
+        {confirmAction ? (
+          <div className="action-confirm-panel">
+            <strong>
+              {confirmAction === "update"
+                ? copy(language, "Confirm update time?", "确认更新时间？")
+                : copy(language, isBlockedTime(booking) ? "Confirm remove block?" : "Confirm cancel class?", isBlockedTime(booking) ? "确认移除不可用时间？" : "确认取消课程？")}
+            </strong>
+            <p>
+              {confirmAction === "update"
+                ? `${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`
+                : copy(language, "This prevents accidental manager taps.", "这是为了避免管理员误点。")}
+            </p>
+            <div className="modal-actions">
+              <button className="filter-button" type="button" onClick={() => setConfirmAction(null)}>
+                {copy(language, "Keep editing", "继续编辑")}
+              </button>
+              <button
+                className={confirmAction === "update" ? "primary-button" : "decline"}
+                type="button"
+                onClick={() => {
+                  if (confirmAction === "update") {
+                    onUpdateTime(editSlot, durationMinutes);
+                    return;
+                  }
+                  onCancel();
+                }}
+              >
+                {copy(language, "Yes, confirm", "确认")}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );
