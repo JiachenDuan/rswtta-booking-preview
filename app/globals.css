@@ -1408,6 +1408,10 @@ button.student-result.selected {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
 }
 
+.modal-mode-switch {
+  grid-template-columns: 1fr 1fr;
+}
+
 .modal-duration-picker,
 .modal-student-search {
   display: grid;
@@ -1451,6 +1455,16 @@ button.student-result.selected {
   background: #fff1f3;
   color: #8f1d31;
   font-weight: 900;
+}
+
+.modal-info {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7fbf8;
+  color: var(--muted);
+  font-weight: 800;
 }
 
 .student-result span {

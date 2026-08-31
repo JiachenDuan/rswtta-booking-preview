@@ -40,7 +40,24 @@ import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "Coach A", "Coach B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
-const calendarTimes = ["1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
+const calendarTimes = [
+  "7 AM",
+  "8 AM",
+  "9 AM",
+  "10 AM",
+  "11 AM",
+  "12 PM",
+  "1 PM",
+  "2 PM",
+  "3 PM",
+  "4 PM",
+  "5 PM",
+  "6 PM",
+  "7 PM",
+  "8 PM",
+  "9 PM",
+  "10 PM"
+];
 const durationOptions = [30, 60, 90, 120];
 const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const dayNamesZh = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -234,6 +251,22 @@ function rangeLabel(slot: CalendarSlot, durationMinutes: number) {
   return `${slot.timeLabel} - ${rangeEndLabel(slot, durationMinutes)}`;
 }
 
+function endTimeOptions(slot: CalendarSlot) {
+  const starts = new Date(slot.startsAt);
+  const finalEnd = new Date(starts);
+  finalEnd.setHours(22, 0, 0, 0);
+  if (finalEnd <= starts) finalEnd.setHours(23, 0, 0, 0);
+
+  const options: { label: string; duration: number }[] = [];
+  for (let cursor = addMinutes(starts, 30); cursor <= finalEnd; cursor = addMinutes(cursor, 30)) {
+    options.push({
+      label: timeLabel(cursor),
+      duration: Math.round((cursor.getTime() - starts.getTime()) / 60000)
+    });
+  }
+  return options;
+}
+
 function bookingEndDate(booking: Booking) {
   const starts = new Date(booking.startsAt);
   const [, endLabel] = booking.timeLabel.split(" - ");
@@ -246,6 +279,10 @@ function bookingEndDate(booking: Booking) {
 
 function bookingMatchesCoach(booking: Booking, coach: string) {
   return booking.assignedCoach === coach || booking.requestedCoach === coach;
+}
+
+function isBlockedTime(booking: Booking) {
+  return booking.program === "Unavailable";
 }
 
 function rangesOverlap(leftStart: Date, leftEnd: Date, rightStart: Date, rightEnd: Date) {
@@ -489,6 +526,37 @@ export function ClubApp() {
       setNotice(copy(language, `Added ${slots.length} class${slots.length === 1 ? "" : "es"}.`, `已添加 ${slots.length} 节课。`));
     } catch {
       setNotice(copy(language, "Could not add class.", "无法添加课程。"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function blockCoachTime(coach: string, slot: CalendarSlot, durationMinutes: number) {
+    if (isRangeUnavailable(bookings, coach, slot, durationMinutes)) {
+      setNotice(copy(language, "That coach already has a class or blocked time there.", "该教练这个时间已有课程或不可用时间。"));
+      return;
+    }
+    setSaving(true);
+    setNotice(copy(language, "Blocking coach time...", "正在设置教练不可用时间..."));
+    try {
+      await createBooking({
+        studentName: copy(language, "Coach unavailable", "教练不可用"),
+        familyName: "Club",
+        studentEmail: "",
+        phone: "",
+        requestedCoach: coach,
+        assignedCoach: coach,
+        program: "Unavailable",
+        dateLabel: slot.dateLabel,
+        timeLabel: rangeLabel(slot, durationMinutes),
+        startsAt: slot.startsAt,
+        priceCents: 0,
+        parentNote: copy(language, "Blocked by club manager", "俱乐部管理员设置不可用")
+      });
+      await loadAll();
+      setNotice(copy(language, "Coach time blocked.", "教练不可用时间已保存。"));
+    } catch {
+      setNotice(copy(language, "Could not block coach time.", "无法保存教练不可用时间。"));
     } finally {
       setSaving(false);
     }
@@ -749,6 +817,7 @@ export function ClubApp() {
             onCancelClass={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
             onAddClass={addClubClass}
+            onBlockTime={blockCoachTime}
           />
         )}
         {showRequestConfirm ? (
@@ -1393,9 +1462,9 @@ function ClubCalendar({
                 ) : (
                   slotBookings.map((booking) => (
                     <span className={`calendar-booking ${booking.status}`} key={booking.id}>
-                      <strong>{booking.assignedCoach}</strong>
-                      <small>{booking.studentName}</small>
-                      <em>{statusText(booking.status, language)}</em>
+                      <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.assignedCoach}</strong>
+                      <small>{isBlockedTime(booking) ? booking.timeLabel : booking.studentName}</small>
+                      <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : statusText(booking.status, language)}</em>
                       {onBookingSelect ? <b>{copy(language, "Click actions", "点击操作")}</b> : null}
                     </span>
                   ))
@@ -1440,7 +1509,8 @@ function ClubAppView({
   onApproveCancel,
   onCancelClass,
   onCoachComplete,
-  onAddClass
+  onAddClass,
+  onBlockTime
 }: {
   bookings: Booking[];
   students: ParentAccount[];
@@ -1468,6 +1538,7 @@ function ClubAppView({
   onCancelClass: (booking: Booking) => void;
   onCoachComplete: (booking: Booking) => void;
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[]) => Promise<void>;
+  onBlockTime: (coach: string, slot: CalendarSlot, durationMinutes: number) => Promise<void>;
 }) {
   const [exportPeriod, setExportPeriod] = useState<ExportPeriod>("weekly");
   const [studentQuery, setStudentQuery] = useState("");
@@ -1477,7 +1548,7 @@ function ClubAppView({
   const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
   const visibleBookings = bookings.filter((booking) => activeCalendarTab === "Combined" || bookingMatchesCoach(booking, activeCalendarTab));
   const requested = visibleBookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
-  const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed");
+  const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed" && !isBlockedTime(booking));
   const studentDirectory = useMemo(() => {
     const byKey = new Map<string, ParentAccount>();
     for (const student of students) {
@@ -1524,7 +1595,7 @@ function ClubAppView({
 
     const inPeriod = bookings.filter((booking) => {
       const startsAt = new Date(booking.startsAt);
-      return startsAt >= periodStart && startsAt <= periodEnd && booking.status !== "cancelled";
+      return startsAt >= periodStart && startsAt <= periodEnd && booking.status !== "cancelled" && !isBlockedTime(booking);
     });
 
     const grouped = new Map<
@@ -1770,6 +1841,12 @@ function ClubAppView({
             setSelectedAddStudent(null);
             setStudentQuery("");
           }}
+          onBlockTime={async (durationMinutes) => {
+            await onBlockTime(addCoach, selectedSlot, durationMinutes);
+            setShowAddClassModal(false);
+            setSelectedAddStudent(null);
+            setStudentQuery("");
+          }}
         />
       ) : null}
       {selectedClubBooking ? (
@@ -1810,7 +1887,8 @@ function ClubAddClassModal({
   onStudentQueryChange,
   onStudentSelect,
   onCancel,
-  onConfirm
+  onConfirm,
+  onBlockTime
 }: {
   language: Language;
   students: ParentAccount[];
@@ -1827,15 +1905,25 @@ function ClubAddClassModal({
   onStudentSelect: (value: ParentAccount) => void;
   onCancel: () => void;
   onConfirm: () => void;
+  onBlockTime: (durationMinutes: number) => void;
 }) {
+  const [mode, setMode] = useState<"class" | "block">("class");
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-add-class-title">
         <div className="section-head compact">
           <div>
             <p className="eyebrow">{copy(language, "Add class", "添加课程")}</p>
-            <h2 id="club-add-class-title">{copy(language, "Add class for student", "给学生添加课程")}</h2>
+            <h2 id="club-add-class-title">{copy(language, mode === "class" ? "Add class for student" : "Block coach time", mode === "class" ? "给学生添加课程" : "设置教练不可用")}</h2>
           </div>
+        </div>
+        <div className="mode-switch modal-mode-switch" aria-label="Club calendar action">
+          <button type="button" className={mode === "class" ? "selected" : ""} onClick={() => setMode("class")}>
+            {copy(language, "Add class", "添加课程")}
+          </button>
+          <button type="button" className={mode === "block" ? "selected" : ""} onClick={() => setMode("block")}>
+            {copy(language, "Block time", "不可用时间")}
+          </button>
         </div>
         <dl className="confirm-summary">
           <div>
@@ -1859,58 +1947,81 @@ function ClubAddClassModal({
             <dd>{rangeLabel(slot, durationMinutes)}</dd>
           </div>
         </dl>
-        <div className="modal-duration-picker">
-          <span>{copy(language, "Duration", "时长")}</span>
-          <div className="duration-picker" aria-label="Duration">
-            {durationOptions.map((minutes) => (
-              <button
-                type="button"
-                className={durationMinutes === minutes ? "selected" : ""}
-                key={minutes}
-                onClick={() => onDurationChange(minutes)}
-              >
-                {minutes} {copy(language, "min", "分钟")}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="modal-student-search">
-          <label>
-            <span>{copy(language, "Student", "学生")}</span>
-            <div className="input-shell">
-              <Search size={18} />
-              <input value={studentQuery} onChange={(event) => onStudentQueryChange(event.target.value)} />
-            </div>
-          </label>
-          <div className="student-results modal-results">
-            {students.length === 0 ? (
-              <p className="empty-state">{copy(language, "No enrolled students found.", "未找到已注册学生。")}</p>
-            ) : (
-              students.slice(0, 6).map((student) => (
+        {mode === "class" ? (
+          <div className="modal-duration-picker">
+            <span>{copy(language, "Duration", "时长")}</span>
+            <div className="duration-picker" aria-label="Duration">
+              {durationOptions.map((minutes) => (
                 <button
                   type="button"
-                  className={selectedStudent?.id === student.id ? "student-result selected" : "student-result"}
-                  key={student.id}
-                  onClick={() => onStudentSelect(student)}
+                  className={durationMinutes === minutes ? "selected" : ""}
+                  key={minutes}
+                  onClick={() => onDurationChange(minutes)}
                 >
-                  <span>
-                    <strong>{student.studentName}</strong>
-                    <em>{student.email || student.phone}</em>
-                  </span>
-                  <Check size={17} />
+                  {minutes} {copy(language, "min", "分钟")}
                 </button>
-              ))
-            )}
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <label className="modal-duration-picker">
+            <span>{copy(language, "End time", "结束时间")}</span>
+            <select className="modal-select" value={durationMinutes} onChange={(event) => onDurationChange(Number(event.target.value))}>
+              {endTimeOptions(slot).map((option) => (
+                <option key={option.duration} value={option.duration}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {mode === "class" ? (
+          <div className="modal-student-search">
+            <label>
+              <span>{copy(language, "Student", "学生")}</span>
+              <div className="input-shell">
+                <Search size={18} />
+                <input value={studentQuery} onChange={(event) => onStudentQueryChange(event.target.value)} />
+              </div>
+            </label>
+            <div className="student-results modal-results">
+              {students.length === 0 ? (
+                <p className="empty-state">{copy(language, "No enrolled students found.", "未找到已注册学生。")}</p>
+              ) : (
+                students.slice(0, 6).map((student) => (
+                  <button
+                    type="button"
+                    className={selectedStudent?.id === student.id ? "student-result selected" : "student-result"}
+                    key={student.id}
+                    onClick={() => onStudentSelect(student)}
+                  >
+                    <span>
+                      <strong>{student.studentName}</strong>
+                      <em>{student.email || student.phone}</em>
+                    </span>
+                    <Check size={17} />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        ) : (
+          <p className="modal-info">{copy(language, "Parents will not be able to book this coach during the selected time.", "家长不能预约该教练这个时间。")}</p>
+        )}
         {unavailable ? <p className="modal-warning">{copy(language, "This coach is not available for that duration.", "该教练这个时长不可预约。")}</p> : null}
         <div className="modal-actions">
           <button className="filter-button" onClick={onCancel} disabled={saving}>
             {copy(language, "Cancel", "取消")}
           </button>
-          <button className="primary-button" onClick={onConfirm} disabled={saving || unavailable || !selectedStudent}>
+          <button
+            className="primary-button"
+            onClick={() => (mode === "block" ? onBlockTime(durationMinutes) : onConfirm())}
+            disabled={saving || unavailable || (mode === "class" && !selectedStudent)}
+          >
             <Plus size={18} />
-            {saving ? copy(language, "Adding...", "添加中...") : copy(language, "Add class", "添加课程")}
+            {saving
+              ? copy(language, mode === "block" ? "Blocking..." : "Adding...", mode === "block" ? "保存中..." : "添加中...")
+              : copy(language, mode === "block" ? "Block time" : "Add class", mode === "block" ? "设置不可用" : "添加课程")}
           </button>
         </div>
       </section>
@@ -1936,10 +2047,12 @@ function ClubBookingActionModal({
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-booking-actions-title">
         <div className="section-head compact">
           <div>
-            <p className="eyebrow">{copy(language, "Class actions", "课程操作")}</p>
-            <h2 id="club-booking-actions-title">{booking.studentName}</h2>
+            <p className="eyebrow">{copy(language, isBlockedTime(booking) ? "Blocked time" : "Class actions", isBlockedTime(booking) ? "不可用时间" : "课程操作")}</p>
+            <h2 id="club-booking-actions-title">{isBlockedTime(booking) ? booking.assignedCoach : booking.studentName}</h2>
           </div>
-          <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
+          <span className={`status-chip ${booking.status}`}>
+            {isBlockedTime(booking) ? copy(language, "Not bookable", "不可预约") : statusText(booking.status, language)}
+          </span>
         </div>
         <dl className="confirm-summary">
           <div>
@@ -1961,9 +2074,9 @@ function ClubBookingActionModal({
           </button>
           <button className="decline" onClick={onCancel}>
             <X size={17} />
-            {copy(language, "Cancel class", "取消课程")}
+            {copy(language, isBlockedTime(booking) ? "Remove block" : "Cancel class", isBlockedTime(booking) ? "移除不可用" : "取消课程")}
           </button>
-          {onComplete ? (
+          {onComplete && !isBlockedTime(booking) ? (
             <button className="primary-button" onClick={onComplete}>
               <Check size={18} />
               {copy(language, "Complete", "完成")}
