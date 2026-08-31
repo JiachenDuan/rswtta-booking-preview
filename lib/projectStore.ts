@@ -645,8 +645,131 @@ export async function completeParentProfileSetup(input: { accountId: string; ema
   return accountFromRow(row);
 }
 
+
+type RecurringClassSeed = {
+  studentName: string;
+  day: number;
+  startHour: number;
+  startMinute: number;
+  endHour: number;
+  endMinute: number;
+  source: string;
+  note?: string;
+};
+
+const tianYeRecurringClassSeeds: RecurringClassSeed[] = [
+  { studentName: "Vishal", day: 1, startHour: 16, startMinute: 0, endHour: 17, endMinute: 30, source: "TIAN YE G2/G3" },
+  { studentName: "Ella", day: 1, startHour: 18, startMinute: 0, endHour: 19, endMinute: 0, source: "TIAN YE I2/I3" },
+  { studentName: "Kyson", day: 1, startHour: 19, startMinute: 0, endHour: 20, endMinute: 30, source: "TIAN YE J2/J3" },
+  { studentName: "Luke", day: 3, startHour: 15, startMinute: 30, endHour: 16, endMinute: 30, source: "TIAN YE H8/H9" },
+  { studentName: "Derek", day: 3, startHour: 16, startMinute: 30, endHour: 17, endMinute: 30, source: "TIAN YE I8/I9" },
+  { studentName: "Yajia", day: 3, startHour: 17, startMinute: 30, endHour: 18, endMinute: 30, source: "TIAN YE J8/J9" },
+  { studentName: "Abinav", day: 3, startHour: 18, startMinute: 30, endHour: 19, endMinute: 30, source: "TIAN YE K8/K9" },
+  { studentName: "Kyson", day: 3, startHour: 19, startMinute: 30, endHour: 20, endMinute: 30, source: "TIAN YE L8/L9" },
+  { studentName: "Shan", day: 4, startHour: 16, startMinute: 30, endHour: 17, endMinute: 30, source: "TIAN YE I11/I12", note: "Sheet cell included the time after Shan." },
+  { studentName: "Angie", day: 4, startHour: 17, startMinute: 30, endHour: 18, endMinute: 30, source: "TIAN YE J11/J12" },
+  { studentName: "Alex", day: 4, startHour: 18, startMinute: 30, endHour: 19, endMinute: 0, source: "TIAN YE K11/K12" },
+  { studentName: "Rishaan", day: 4, startHour: 19, startMinute: 0, endHour: 20, endMinute: 0, source: "TIAN YE L11/L12" },
+  { studentName: "Luke", day: 5, startHour: 15, startMinute: 30, endHour: 16, endMinute: 30, source: "TIAN YE H14/H15" },
+  { studentName: "Vishal", day: 5, startHour: 16, startMinute: 30, endHour: 18, endMinute: 0, source: "TIAN YE I14/I15" },
+  { studentName: "Kyson", day: 5, startHour: 19, startMinute: 0, endHour: 20, endMinute: 30, source: "TIAN YE K14/K15" },
+  { studentName: "Rhoy", day: 5, startHour: 20, startMinute: 30, endHour: 21, endMinute: 30, source: "TIAN YE L14/L15" },
+  { studentName: "Kyson", day: 6, startHour: 9, startMinute: 30, endHour: 11, endMinute: 0, source: "TIAN YE B17/B18" },
+  { studentName: "Rishaan", day: 6, startHour: 11, startMinute: 0, endHour: 12, endMinute: 0, source: "TIAN YE C17/C18" },
+  { studentName: "Max", day: 6, startHour: 13, startMinute: 30, endHour: 14, endMinute: 30, source: "TIAN YE F17/F18", note: "Cell says Max & Daria 1:30-2:30; imported as two students." },
+  { studentName: "Daria", day: 6, startHour: 13, startMinute: 30, endHour: 14, endMinute: 30, source: "TIAN YE F17/F18", note: "Cell says Max & Daria 1:30-2:30; imported as two students." },
+  { studentName: "Siva", day: 6, startHour: 15, startMinute: 30, endHour: 16, endMinute: 30, source: "TIAN YE H17/H18" },
+  { studentName: "Kyson", day: 0, startHour: 14, startMinute: 0, endHour: 15, endMinute: 30, source: "TIAN YE I20/I21" },
+  { studentName: "Alex", day: 0, startHour: 15, startMinute: 30, endHour: 16, endMinute: 0, source: "TIAN YE J20/J21" },
+  { studentName: "Chen", day: 0, startHour: 16, startMinute: 0, endHour: 17, endMinute: 0, source: "TIAN YE K20/K21" },
+  { studentName: "Han Xi", day: 0, startHour: 17, startMinute: 0, endHour: 18, endMinute: 0, source: "TIAN YE L20/L21" }
+];
+
+function formatSeedDateLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function formatSeedTime(hour: number, minute: number) {
+  const date = new Date(2026, 0, 1, hour, minute, 0, 0);
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(date).replace(":00", "");
+}
+
+function nextDateForDay(start: Date, day: number) {
+  const date = new Date(start);
+  date.setHours(0, 0, 0, 0);
+  const offset = (day - date.getDay() + 7) % 7;
+  date.setDate(date.getDate() + offset);
+  return date;
+}
+
+function tianRecurringKey(values: Partial<Booking>) {
+  return `${values.studentName ?? ""}|${values.assignedCoach ?? values.requestedCoach ?? ""}|${values.startsAt ?? ""}`;
+}
+
+function tianRecurringBookingValues(seed: RecurringClassSeed, date: Date): Booking {
+  const starts = new Date(date);
+  starts.setHours(seed.startHour, seed.startMinute, 0, 0);
+  return {
+    id: "",
+    studentName: seed.studentName,
+    familyName: seed.studentName,
+    studentEmail: "",
+    phone: "",
+    requestedCoach: "Coach Tian Ye",
+    assignedCoach: "Coach Tian Ye",
+    program: "Private lesson",
+    dateLabel: formatSeedDateLabel(starts),
+    timeLabel: `${formatSeedTime(seed.startHour, seed.startMinute)} - ${formatSeedTime(seed.endHour, seed.endMinute)}`,
+    startsAt: starts.toISOString(),
+    priceCents: 15000,
+    status: "club_confirmed",
+    parentNote: `Imported Coach Tian Ye recurring class from Excel (${seed.source}) through Dec 31, 2026.${seed.note ? ` ${seed.note}` : ""}`,
+    createdAt: "",
+    updatedAt: ""
+  };
+}
+
+function tianYeRecurringBookingsThroughDec31() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(2026, 11, 31, 23, 59, 59, 999);
+  const bookings: Booking[] = [];
+  for (const seed of tianYeRecurringClassSeeds) {
+    for (let date = nextDateForDay(start, seed.day); date <= end; date.setDate(date.getDate() + 7)) {
+      bookings.push(tianRecurringBookingValues(seed, new Date(date)));
+    }
+  }
+  return bookings;
+}
+
+async function seedTianYeRecurringBookings(rows: Array<ProjectRow<Booking>>, create: (values: Booking) => Promise<ProjectRow<Booking>> | ProjectRow<Booking>) {
+  const existingKeys = new Set(rows.map((row) => tianRecurringKey(row.values)));
+  const created: Array<ProjectRow<Booking>> = [];
+  for (const booking of tianYeRecurringBookingsThroughDec31()) {
+    const key = tianRecurringKey(booking);
+    if (existingKeys.has(key)) continue;
+    const row = await create(booking);
+    created.push(row);
+    existingKeys.add(key);
+  }
+  return rows.concat(created);
+}
+
+async function listBookingRowsWithSeeds() {
+  return withLocalFallback(
+    async () => {
+      const rows = await listRows<Booking>("bookings");
+      return seedTianYeRecurringBookings(rows, (values) => createRow<Booking>("bookings", values));
+    },
+    async () => {
+      const rows = localRows<Booking>("bookings");
+      return seedTianYeRecurringBookings(rows, (values) => createLocalRow("bookings", values));
+    }
+  );
+}
+
 export async function listBookings() {
-  const rows = await withLocalFallback(() => listRows<Booking>("bookings"), () => localRows<Booking>("bookings"));
+  const rows = await listBookingRowsWithSeeds();
   return rows
     .map(bookingFromRow)
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
