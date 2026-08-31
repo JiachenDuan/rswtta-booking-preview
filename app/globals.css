@@ -1444,18 +1444,23 @@ button.student-result.selected {
   display: grid;
   place-items: end center;
   padding: 18px;
+  overflow-y: auto;
   background: rgba(0, 0, 0, 0.72);
+  -webkit-overflow-scrolling: touch;
 }
 
 .confirm-modal {
   display: grid;
   gap: 14px;
   width: min(100%, 440px);
+  max-height: calc(100dvh - 36px);
   padding: 18px;
+  overflow-y: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  overscroll-behavior: contain;
 }
 
 .confirm-summary {
