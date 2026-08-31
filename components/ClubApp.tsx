@@ -444,10 +444,10 @@ export function ClubApp() {
   const canGoPrevious = addDays(visibleWeekStart, -7) >= startOfWeek(minCalendarDate);
   const canGoNext = addDays(visibleWeekStart, 7) <= startOfWeek(maxCalendarDate);
 
-  const parentBookings = useMemo(
-    () => bookings.filter((booking) => booking.familyName === familyName || booking.phone === phone || booking.studentEmail === studentEmail),
-    [bookings, familyName, phone, studentEmail]
-  );
+  const parentBookings = useMemo(() => {
+    const sessionStudentName = parentSession?.studentName.trim().toLowerCase() ?? studentName.trim().toLowerCase();
+    return bookings.filter((booking) => booking.studentName.trim().toLowerCase() === sessionStudentName);
+  }, [bookings, parentSession?.studentName, studentName]);
 
   const completedTotal = parentBookings
     .filter((booking) => booking.status === "coach_confirmed")
