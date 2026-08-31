@@ -437,7 +437,7 @@ export async function loginParentAccount(identifier: string, password: string) {
 }
 
 export async function resetPasswordForEmail(email: string) {
-  const redirectTo = isBrowser() ? window.location.origin : undefined;
+  const redirectTo = isBrowser() ? `${window.location.origin}${window.location.pathname}` : undefined;
   const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase(), {
     redirectTo
   });

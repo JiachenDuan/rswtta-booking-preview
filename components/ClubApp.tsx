@@ -22,6 +22,7 @@ import {
   UserRound,
   X
 } from "lucide-react";
+import Link from "next/link";
 import {
   createBillNotification,
   createBooking,
@@ -69,6 +70,7 @@ type CalendarSlot = CalendarDay & {
 type ClubCalendarTab = (typeof clubCalendarTabs)[number];
 type ExportPeriod = "weekly" | "monthly";
 type AuthMode = "login" | "register" | "forgot" | "updatePassword";
+type AppMode = "parent" | "club";
 
 const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
@@ -239,8 +241,8 @@ const initialWeekStart = startOfWeek(addDays(today, 1));
 const initialCalendarDay = makeCalendarDay(addDays(initialWeekStart, 2), 2);
 const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7:00 PM");
 
-export function ClubApp() {
-  const [mode, setMode] = useState<"parent" | "club">("parent");
+export function ClubApp({ appMode }: { appMode: AppMode }) {
+  const mode = appMode;
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
   const [notice, setNotice] = useState("");
@@ -282,7 +284,6 @@ export function ClubApp() {
   async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
     const result = await registerParentAccount(input);
     applyParentSession(result.account);
-    setMode("parent");
   }
 
   async function loginParent(identifier: string, password: string) {
@@ -298,19 +299,12 @@ export function ClubApp() {
     await updateUserPassword(password);
   }
 
-  async function loginUnified(identifier: string, password: string) {
-    if (identifier.trim().toLowerCase() === clubEmail) {
-      if (password !== clubPassword) {
-        throw new Error("Wrong club password");
-      }
-      setClubAuthenticated(true);
-      window.localStorage.setItem(clubSessionKey, "true");
-      setMode("club");
-      return;
+  async function loginClub(identifier: string, password: string) {
+    if (identifier.trim().toLowerCase() !== clubEmail || password !== clubPassword) {
+      throw new Error("Wrong club login");
     }
-
-    await loginParent(identifier, password);
-    setMode("parent");
+    setClubAuthenticated(true);
+    window.localStorage.setItem(clubSessionKey, "true");
   }
 
   async function loadAll() {
@@ -377,7 +371,7 @@ export function ClubApp() {
     try {
       await updateStoredBooking(id, { status, assignedCoach, ...schedule });
       await loadAll();
-      setNotice(`Saved: ${statusText(status)}. Parent and club views now match.`);
+      setNotice(`Saved: ${statusText(status)}.`);
     } catch {
       setNotice("无法更新课程 / Could not update booking.");
     }
@@ -452,14 +446,14 @@ export function ClubApp() {
         </div>
 
         <nav className="nav-list">
-          <button className={mode === "parent" ? "nav-item active" : "nav-item"} onClick={() => setMode("parent")}>
+          <Link className={mode === "parent" ? "nav-item active" : "nav-item"} href="/parent">
             <Phone size={18} />
             <span>家长 Parent</span>
-          </button>
-          <button className={mode === "club" ? "nav-item active" : "nav-item"} onClick={() => setMode("club")}>
+          </Link>
+          <Link className={mode === "club" ? "nav-item active" : "nav-item"} href="/club">
             <LayoutDashboard size={18} />
             <span>俱乐部 Club</span>
-          </button>
+          </Link>
         </nav>
       </aside>
 
@@ -498,14 +492,6 @@ export function ClubApp() {
                 退出 / Logout
               </button>
             ) : null}
-            <div className="mode-switch" aria-label="Switch app view">
-              <button className={mode === "parent" ? "selected" : ""} onClick={() => setMode("parent")}>
-                家长 Parent
-              </button>
-              <button className={mode === "club" ? "selected" : ""} onClick={() => setMode("club")}>
-                俱乐部 Club
-              </button>
-            </div>
           </div>
         </header>
 
@@ -514,7 +500,7 @@ export function ClubApp() {
             initialAuthMode="register"
             intent="parent"
             onRegister={registerParent}
-            onLogin={loginUnified}
+            onLogin={loginParent}
             onRequestPasswordReset={requestPasswordReset}
             onUpdatePassword={updatePassword}
           />
@@ -581,7 +567,7 @@ export function ClubApp() {
             initialAuthMode="login"
             intent="club"
             onRegister={registerParent}
-            onLogin={loginUnified}
+            onLogin={loginClub}
             onRequestPasswordReset={requestPasswordReset}
             onUpdatePassword={updatePassword}
           />
@@ -639,7 +625,7 @@ function UnifiedAuth({
   const [notice, setNotice] = useState(
     intent === "club"
       ? "俱乐部登录会直接进入管理界面 / Club login opens the dashboard."
-      : "家长注册或登录；俱乐部也从这里登录 / Parent and club use the same login."
+      : "家长注册或登录后进入预约界面 / Parent login opens the booking app."
   );
   const [busy, setBusy] = useState(false);
 
@@ -720,12 +706,12 @@ function UnifiedAuth({
       <div className="auth-card">
         <div className="section-head">
           <div>
-            <p className="eyebrow">统一登录 / One login</p>
-            <h2>统一登录入口</h2>
+            <p className="eyebrow">{intent === "club" ? "Club App" : "Parent App"}</p>
+            <h2>{intent === "club" ? "俱乐部登录入口" : "家长登录入口"}</h2>
             <p className="section-subtitle">
               {intent === "club"
                 ? "俱乐部输入管理邮箱后自动进入 Club 界面 / Club manager login opens the club app."
-                : "家长和俱乐部共用这个登录页 / One login page for parent and club."}
+                : "家长登录后进入预约课程界面 / Parent login opens the booking app."}
             </p>
           </div>
         </div>
@@ -800,7 +786,7 @@ function UnifiedAuth({
             <p className="helper-line">
               {intent === "club"
                 ? "登录后进入 Club App。"
-                : "俱乐部使用管理邮箱登录 / Club uses the manager email."}
+                : "登录后进入 Parent App。"}
             </p>
           </div>
         ) : null}
