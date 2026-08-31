@@ -178,24 +178,31 @@ async function selectOrInsertTable(projectId: string, slug: keyof typeof tableDe
 
 async function ensureColumns(table: ProjectTable) {
   const definitions = tableDefinitions[table.slug];
+  const existing = await supabase.from("project_columns").select("slug").eq("project_table_id", table.id);
+  if (existing.error) throw setupError(existing.error.message);
+
+  const existingSlugs = new Set((existing.data ?? []).map((column) => String(column.slug)));
+  const missingDefinitions = definitions.filter(([slug]) => !existingSlugs.has(slug));
+  if (missingDefinitions.length === 0) return;
+
   await Promise.all(
-    definitions.map(([slug, dataType], index) =>
+    missingDefinitions.map(([slug, dataType]) => {
+      const index = definitions.findIndex(([definitionSlug]) => definitionSlug === slug);
+      return (
       supabase
         .from("project_columns")
-        .upsert(
-          {
-            project_table_id: table.id,
-            slug,
-            name: slug,
-            data_type: dataType,
-            sort_order: index
-          },
-          { onConflict: "project_table_id,slug" }
-        )
-        .then(({ error }) => {
-          if (error) throw setupError(error.message);
+        .insert({
+          project_table_id: table.id,
+          slug,
+          name: slug,
+          data_type: dataType,
+          sort_order: index
         })
-    )
+        .then(({ error }) => {
+          if (error && error.code !== "23505") throw setupError(error.message);
+        })
+      );
+    })
   );
 }
 
