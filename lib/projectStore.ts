@@ -331,7 +331,8 @@ async function listRows<T>(tableSlug: keyof typeof tableDefinitions) {
   const response = await supabase
     .from("project_rows")
     .select("id, project_table_id, values, created_at, updated_at")
-    .eq("project_table_id", tables[tableSlug]);
+    .eq("project_table_id", tables[tableSlug])
+    .range(0, 4999);
   if (response.error) throw setupError(response.error.message);
   return response.data as Array<ProjectRow<T>>;
 }
@@ -755,6 +756,18 @@ async function seedTianYeRecurringBookings(rows: Array<ProjectRow<Booking>>, cre
   return rows.concat(created);
 }
 
+function uniqueBookingRows(rows: Array<ProjectRow<Booking>>) {
+  const byKey = new Map<string, ProjectRow<Booking>>();
+  for (const row of rows) {
+    const note = String(row.values.parentNote ?? "");
+    const key = note.includes("Imported Coach Tian Ye recurring class from Excel")
+      ? `tian-import|${row.values.studentName ?? ""}|${row.values.startsAt ?? ""}`
+      : row.id;
+    if (!byKey.has(key)) byKey.set(key, row);
+  }
+  return [...byKey.values()];
+}
+
 async function listBookingRowsWithSeeds() {
   return withLocalFallback(
     async () => {
@@ -770,7 +783,7 @@ async function listBookingRowsWithSeeds() {
 
 export async function listBookings() {
   const rows = await listBookingRowsWithSeeds();
-  return rows
+  return uniqueBookingRows(rows)
     .map(bookingFromRow)
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
 }
