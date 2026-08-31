@@ -26,7 +26,8 @@ const tableDefinitions = {
     ["passwordHash", "text"],
     ["passwordSalt", "text"],
     ["confirmationCode", "text"],
-    ["confirmed", "boolean"]
+    ["confirmed", "boolean"],
+    ["profileSetupRequired", "boolean"]
   ],
   bill_notifications: [
     ["studentName", "text"],
@@ -61,7 +62,64 @@ type ProjectRow<T> = {
 let schemaPromise: Promise<Record<keyof typeof tableDefinitions, string>> | null = null;
 const localStoreKey = "rswtta-local-data";
 
-type AccountValues = ParentAccount & { passwordHash: string; passwordSalt: string; confirmationCode: string };
+export const preregisteredStudentNames = [
+  "Abinav",
+  "Adi",
+  "Advik",
+  "Akash",
+  "Alex",
+  "Andrew",
+  "Angie",
+  "Ayden",
+  "Brandon",
+  "Bryan",
+  "Chen",
+  "Dan",
+  "Dan Rosenthal",
+  "Daria",
+  "Derek",
+  "Desmond",
+  "Dian",
+  "Dylan",
+  "Eddie",
+  "Ela",
+  "Elijah",
+  "Ella",
+  "Felix",
+  "Han Xi",
+  "Helen",
+  "Joshua",
+  "Kayden",
+  "Kelsi",
+  "Kyson",
+  "Leo",
+  "Li",
+  "Luke",
+  "Lyon",
+  "Max",
+  "Maya",
+  "Melvin",
+  "Nike",
+  "Oaur",
+  "Pat",
+  "Pavani",
+  "Rhoy",
+  "Rishaan",
+  "Shan",
+  "Siva",
+  "Stanley",
+  "Suheng",
+  "Tanish",
+  "Vanya",
+  "Vishal",
+  "Wang",
+  "William",
+  "Yajia"
+] as const;
+
+const preregisteredPasswordTemplate = ["rs", "wt", "ta"].join("");
+
+type AccountValues = ParentAccount & { passwordHash: string; passwordSalt: string; confirmationCode: string; profileSetupRequired: boolean };
 type LocalRowMap = {
   bookings: Array<ProjectRow<Booking>>;
   parent_accounts: Array<ProjectRow<AccountValues>>;
@@ -230,6 +288,7 @@ function accountFromRow(row: ProjectRow<ParentAccount & { passwordHash: string; 
     email: String(row.values.email ?? ""),
     phone: String(row.values.phone ?? ""),
     confirmed: Boolean(row.values.confirmed),
+    profileSetupRequired: Boolean(row.values.profileSetupRequired),
     createdAt: row.created_at
   };
 }
@@ -324,6 +383,45 @@ async function verifyPassword(password: string, saltBase64: string, expectedHash
   return hash === expectedHash;
 }
 
+async function seedPreregisteredAccounts(rows: Array<ProjectRow<AccountValues>>, create: (values: AccountValues) => Promise<ProjectRow<AccountValues>> | ProjectRow<AccountValues>) {
+  const existingNames = new Set(rows.map((row) => String(row.values.studentName ?? "").trim().toLowerCase()).filter(Boolean));
+  const password = await hashPassword(preregisteredPasswordTemplate);
+  const created: Array<ProjectRow<AccountValues>> = [];
+
+  for (const studentName of preregisteredStudentNames) {
+    if (existingNames.has(studentName.toLowerCase())) continue;
+    const row = await create({
+      id: "",
+      studentName,
+      email: "",
+      phone: "",
+      passwordHash: password.hash,
+      passwordSalt: password.salt,
+      confirmationCode: "",
+      confirmed: true,
+      profileSetupRequired: true,
+      createdAt: ""
+    });
+    created.push(row);
+    existingNames.add(studentName.toLowerCase());
+  }
+
+  return rows.concat(created);
+}
+
+async function listAccountRowsWithSeeds() {
+  return withLocalFallback(
+    async () => {
+      const rows = await listRows<AccountValues>("parent_accounts");
+      return seedPreregisteredAccounts(rows, (values) => createRow<AccountValues>("parent_accounts", values));
+    },
+    async () => {
+      const rows = localRows<AccountValues>("parent_accounts");
+      return seedPreregisteredAccounts(rows, (values) => createLocalRow("parent_accounts", values));
+    }
+  );
+}
+
 export async function registerParentAccount(input: { studentName: string; email: string; phone: string; password: string }) {
   return withLocalFallback(
     async () => {
@@ -360,7 +458,8 @@ export async function registerParentAccount(input: { studentName: string; email:
         passwordHash: password.hash,
         passwordSalt: password.salt,
         confirmationCode: "",
-        confirmed: true
+        confirmed: true,
+        profileSetupRequired: false
       });
       return { account: accountFromRow(row), alreadyExists: false };
     },
@@ -381,7 +480,8 @@ export async function registerParentAccount(input: { studentName: string; email:
         passwordHash: password.hash,
         passwordSalt: password.salt,
         confirmationCode: "",
-        confirmed: true
+        confirmed: true,
+        profileSetupRequired: false
       });
       return { account: accountFromRow(row), alreadyExists: false };
     }
@@ -412,10 +512,12 @@ export async function loginParentAccount(identifier: string, password: string) {
         if (authResult.error) authError = authResult.error;
       }
 
-      const rows = await listRows<AccountValues>("parent_accounts");
+      const rows = await listAccountRowsWithSeeds();
       const row = rows.find(
         (item) =>
-          String(item.values.email ?? "").toLowerCase() === normalizedIdentifier || String(item.values.phone ?? "") === identifier
+          String(item.values.email ?? "").toLowerCase() === normalizedIdentifier ||
+          String(item.values.phone ?? "") === identifier ||
+          String(item.values.studentName ?? "").trim().toLowerCase() === normalizedIdentifier
       );
       if (!row) throw authError ?? new Error("Invalid login");
       if (!isEmail || authError) {
@@ -429,10 +531,13 @@ export async function loginParentAccount(identifier: string, password: string) {
       return accountFromRow(row);
     },
     async () => {
-      const rows = localRows<AccountValues>("parent_accounts");
+      const rows = await seedPreregisteredAccounts(localRows<AccountValues>("parent_accounts"), (values) => createLocalRow("parent_accounts", values));
+      const normalizedIdentifier = identifier.toLowerCase();
       const row = rows.find(
         (item) =>
-          String(item.values.email ?? "").toLowerCase() === identifier.toLowerCase() || String(item.values.phone ?? "") === identifier
+          String(item.values.email ?? "").toLowerCase() === normalizedIdentifier ||
+          String(item.values.phone ?? "") === identifier ||
+          String(item.values.studentName ?? "").trim().toLowerCase() === normalizedIdentifier
       );
       if (!row) throw new Error("Invalid login");
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
@@ -447,7 +552,7 @@ export async function loginParentAccount(identifier: string, password: string) {
 }
 
 export async function listParentAccounts() {
-  const rows = await withLocalFallback(() => listRows<AccountValues>("parent_accounts"), () => localRows<AccountValues>("parent_accounts"));
+  const rows = await listAccountRowsWithSeeds();
   return rows.map(accountFromRow).sort((left, right) => left.studentName.localeCompare(right.studentName));
 }
 
@@ -478,7 +583,8 @@ export async function updateUserPassword(password: string) {
         ...row.values,
         passwordHash: passwordParts.hash,
         passwordSalt: passwordParts.salt,
-        confirmed: true
+        confirmed: true,
+        profileSetupRequired: false
       });
     }
   } catch {
@@ -490,9 +596,59 @@ export async function updateUserPassword(password: string) {
       ...row.values,
       passwordHash: passwordParts.hash,
       passwordSalt: passwordParts.salt,
-      confirmed: true
+      confirmed: true,
+      profileSetupRequired: false
     });
   }
+}
+
+export async function completeParentProfileSetup(input: { accountId: string; email: string; phone: string; password: string }) {
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const normalizedPhone = input.phone.trim();
+  if (!normalizedEmail.includes("@") || normalizedPhone.length < 7 || input.password.length < 6 || input.password === preregisteredPasswordTemplate) {
+    throw new Error("Email, phone, and a new password are required");
+  }
+
+  const passwordParts = await hashPassword(input.password);
+  const values = {
+    email: normalizedEmail,
+    phone: normalizedPhone,
+    passwordHash: passwordParts.hash,
+    passwordSalt: passwordParts.salt,
+    confirmed: true,
+    profileSetupRequired: false
+  };
+
+  const row = await withLocalFallback(
+    async () => {
+      const rows = await listRows<AccountValues>("parent_accounts");
+      const existing = rows.find((item) => item.id === input.accountId);
+      if (!existing) throw new Error("Account not found");
+      const duplicate = rows.find(
+        (item) =>
+          item.id !== input.accountId &&
+          normalizedEmail &&
+          String(item.values.email ?? "").toLowerCase() === normalizedEmail
+      );
+      if (duplicate) throw new Error("Email already used by another student");
+      return updateRow("parent_accounts", input.accountId, { ...existing.values, ...values });
+    },
+    () => {
+      const rows = localRows<AccountValues>("parent_accounts");
+      const existing = rows.find((item) => item.id === input.accountId);
+      if (!existing) throw new Error("Account not found");
+      const duplicate = rows.find(
+        (item) =>
+          item.id !== input.accountId &&
+          normalizedEmail &&
+          String(item.values.email ?? "").toLowerCase() === normalizedEmail
+      );
+      if (duplicate) throw new Error("Email already used by another student");
+      return updateLocalRow("parent_accounts", input.accountId, { ...existing.values, ...values });
+    }
+  );
+
+  return accountFromRow(row);
 }
 
 export async function listBookings() {

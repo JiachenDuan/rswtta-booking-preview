@@ -2255,3 +2255,17 @@ button.student-result.selected {
     grid-column: 2;
   }
 }
+
+.setup-card {
+  max-width: 680px;
+}
+
+.setup-lockout {
+  margin: 0 0 18px;
+  border: 1px solid rgba(244, 196, 48, 0.38);
+  background: rgba(244, 196, 48, 0.12);
+  color: #f8df87;
+  border-radius: 16px;
+  padding: 12px 14px;
+  font-weight: 800;
+}

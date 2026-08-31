@@ -23,6 +23,7 @@ import {
   X
 } from "lucide-react";
 import {
+  completeParentProfileSetup,
   createBillNotification,
   createBooking,
   listBillNotifications,
@@ -87,6 +88,7 @@ const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
 const clubEmail = "rswtta@gmail.com";
 const clubPassword = "rswtta888";
+const preregisteredPasswordTemplate = ["rs", "wt", "ta"].join("");
 
 function copy(language: Language, english: string, chinese: string) {
   return language === "zh" ? chinese : english;
@@ -483,6 +485,19 @@ export function ClubApp() {
     await updateUserPassword(password);
   }
 
+  async function completeFirstLoginSetup(input: { email: string; phone: string; password: string }) {
+    if (!parentSession) return;
+    const account = await completeParentProfileSetup({
+      accountId: parentSession.id,
+      email: input.email,
+      phone: input.phone,
+      password: input.password
+    });
+    applyParentSession(account);
+    await loadAll();
+    setNotice(copy(language, "Profile setup complete. You can now use the dashboard.", "资料设置完成。现在可以使用主页。"));
+  }
+
   async function loginClub(identifier: string, password: string) {
     if (identifier.trim().toLowerCase() !== clubEmail || password !== clubPassword) {
       throw new Error("Wrong club login");
@@ -818,6 +833,17 @@ export function ClubApp() {
             onLogin={loginUnified}
             onRequestPasswordReset={requestPasswordReset}
             onUpdatePassword={updatePassword}
+          />
+        ) : mode === "parent" && parentSession?.profileSetupRequired ? (
+          <FirstLoginSetup
+            account={parentSession}
+            language={language}
+            onComplete={completeFirstLoginSetup}
+            onLogout={() => {
+              setParentSession(null);
+              window.localStorage.removeItem(parentSessionKey);
+              setMode("parent");
+            }}
           />
         ) : mode === "parent" && parentSession ? (
           <ParentApp
@@ -1173,6 +1199,107 @@ function UnifiedAuth({
           </div>
         ) : null}
 
+        <p className="system-note">{notice}</p>
+      </div>
+    </section>
+  );
+}
+
+function FirstLoginSetup({
+  account,
+  language,
+  onComplete,
+  onLogout
+}: {
+  account: ParentAccount;
+  language: Language;
+  onComplete: (input: { email: string; phone: string; password: string }) => Promise<void>;
+  onLogout: () => void;
+}) {
+  const [email, setEmail] = useState(account.email);
+  const [phone, setPhone] = useState(account.phone);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [notice, setNotice] = useState(copy(language, "Please finish setup before opening the dashboard.", "请先完成资料设置，才能进入主页。"));
+  const [busy, setBusy] = useState(false);
+  const emailReady = email.trim().includes("@");
+  const phoneReady = phone.trim().replace(/\D/g, "").length >= 7;
+  const passwordReady = password.length >= 6 && password !== preregisteredPasswordTemplate && password === confirmPassword;
+  const ready = emailReady && phoneReady && passwordReady;
+
+  async function handleComplete() {
+    if (!ready) {
+      setNotice(copy(language, "Email, phone, and matching new password are required.", "必须填写邮箱、电话，并输入一致的新密码。"));
+      return;
+    }
+    setBusy(true);
+    try {
+      await onComplete({ email, phone, password });
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not save profile setup.", "无法保存资料设置。"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="auth-panel">
+      <div className="auth-card setup-card">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">First login setup</p>
+            <h2>{copy(language, "Complete your student account", "完成学生账号设置")}</h2>
+            <p className="section-subtitle">
+              {copy(
+                language,
+                `${account.studentName}, update your password and add contact info before using the dashboard.`,
+                `${account.studentName}，请先更新密码并填写联系方式，然后才能使用主页。`
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="setup-lockout">
+          {copy(language, "Dashboard is locked until email and phone are filled out.", "填写邮箱和电话前，主页会保持锁定。")}
+        </div>
+        <div className="simple-form auth-form">
+          <label>
+            <span>{copy(language, "Student name", "学生名字")}</span>
+            <div className="input-shell">
+              <UserRound size={18} />
+              <input value={account.studentName} readOnly />
+            </div>
+          </label>
+          <label>
+            <span>{copy(language, "Email required", "邮箱（必填）")}</span>
+            <div className="input-shell">
+              <Mail size={18} />
+              <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="student@example.com" />
+            </div>
+          </label>
+          <label>
+            <span>{copy(language, "Phone required", "电话（必填）")}</span>
+            <div className="input-shell">
+              <Phone size={18} />
+              <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(650) 555-0000" />
+            </div>
+          </label>
+          <label>
+            <span>{copy(language, "New password", "新密码")}</span>
+            <PasswordField value={password} onChange={setPassword} />
+          </label>
+          <label>
+            <span>{copy(language, "Confirm new password", "确认新密码")}</span>
+            <PasswordField value={confirmPassword} onChange={setConfirmPassword} />
+          </label>
+          <button type="button" className="primary-button auth-submit" disabled={busy || !ready} onClick={handleComplete}>
+            <Check size={18} />
+            {copy(language, "Save and open dashboard", "保存并进入主页")}
+          </button>
+          <button type="button" className="text-button auth-submit" disabled={busy} onClick={onLogout}>
+            {copy(language, "Logout", "退出")}
+          </button>
+          <p className="helper-line">{copy(language, "Password must be at least 6 characters and cannot stay as the temporary password.", "密码至少 6 位，不能继续使用临时密码。")}</p>
+        </div>
         <p className="system-note">{notice}</p>
       </div>
     </section>
@@ -1653,6 +1780,7 @@ function ClubAppView({
         email: booking.studentEmail,
         phone: booking.phone,
         confirmed: true,
+        profileSetupRequired: false,
         createdAt: booking.createdAt
       });
     }

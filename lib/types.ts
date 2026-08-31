@@ -35,5 +35,6 @@ export type ParentAccount = {
   email: string;
   phone: string;
   confirmed: boolean;
+  profileSetupRequired: boolean;
   createdAt: string;
 };
