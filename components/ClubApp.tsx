@@ -1122,6 +1122,13 @@ function ParentApp({
           onNextWeek={onNextWeek}
           onToday={onToday}
         />
+        <div className="calendar-tabs" aria-label="Coach calendar views">
+          {coaches.map((coach) => (
+            <button className={requestedCoach === coach ? "selected" : ""} key={coach} onClick={() => onCoachChange(coach)}>
+              {coach.replace("Coach ", "")}
+            </button>
+          ))}
+        </div>
         <div className="calendar-board">
           <ClubCalendar
             bookings={allBookings}
@@ -1141,13 +1148,6 @@ function ParentApp({
           />
         </div>
         <div className="booking-toolbar">
-          <div className="coach-toggle">
-            {coaches.map((coach) => (
-              <button className={requestedCoach === coach ? "selected" : ""} key={coach} onClick={() => onCoachChange(coach)}>
-                {coach}
-              </button>
-            ))}
-          </div>
           <button className="primary-button wide-button" disabled={saving || selectedUnavailable} onClick={onRequestBooking}>
             <CalendarDays size={18} />
             {selectedUnavailable
@@ -1494,6 +1494,7 @@ function ClubAppView({
   const [exportPeriod, setExportPeriod] = useState<ExportPeriod>("weekly");
   const [studentQuery, setStudentQuery] = useState("");
   const [addCoach, setAddCoach] = useState<string>(activeCalendarTab === "Combined" ? coaches[0] : activeCalendarTab);
+  const [pendingAddStudent, setPendingAddStudent] = useState<ParentAccount | null>(null);
   const requested = bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested");
   const confirmed = bookings.filter((booking) => booking.status === "club_confirmed");
   const studentDirectory = useMemo(() => {
@@ -1524,6 +1525,12 @@ function ClubAppView({
       student.phone.toLowerCase().includes(query)
     );
   });
+
+  useEffect(() => {
+    if (activeCalendarTab !== "Combined") {
+      setAddCoach(activeCalendarTab);
+    }
+  }, [activeCalendarTab]);
 
   function exportCompletedClassReport() {
     const anchorDate = selectedSlot.date;
@@ -1692,7 +1699,7 @@ function ClubAppView({
           <div className="section-head">
             <div>
               <p className="eyebrow">{copy(language, "Add class", "添加课程")}</p>
-              <h2>{copy(language, "Add selected blocks for a student", "给学生添加已选时间段")}</h2>
+              <h2>{copy(language, "Add selected time for a student", "给学生添加已选时间")}</h2>
               <p className="section-subtitle">{copy(language, "Search registered students from the database.", "从数据库搜索已注册学生。")}</p>
             </div>
             <span className="status-chip good">{rangeLabel(selectedSlot, selectedDurationMinutes)}</span>
@@ -1728,7 +1735,7 @@ function ClubAppView({
                     <button
                       className="primary-button"
                       disabled={saving}
-                      onClick={() => onAddClass(student, addCoach, [selectedSlot])}
+                      onClick={() => setPendingAddStudent(student)}
                     >
                       <Plus size={17} />
                       {copy(language, "Add", "添加")}
@@ -1806,11 +1813,30 @@ function ClubAppView({
           </div>
         </section>
       </section>
+      {pendingAddStudent ? (
+        <ConfirmRequestModal
+          action="add"
+          language={language}
+          studentName={pendingAddStudent.studentName}
+          coach={addCoach}
+          slot={selectedSlot}
+          durationMinutes={selectedDurationMinutes}
+          recurring={false}
+          recurringWeeks={1}
+          saving={saving}
+          onCancel={() => setPendingAddStudent(null)}
+          onConfirm={async () => {
+            await onAddClass(pendingAddStudent, addCoach, [selectedSlot]);
+            setPendingAddStudent(null);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
 
 function ConfirmRequestModal({
+  action = "request",
   language,
   studentName,
   coach,
@@ -1822,6 +1848,7 @@ function ConfirmRequestModal({
   onCancel,
   onConfirm
 }: {
+  action?: "request" | "add";
   language: Language;
   studentName: string;
   coach: string;
@@ -1838,8 +1865,10 @@ function ConfirmRequestModal({
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-booking-title">
         <div className="section-head compact">
           <div>
-            <p className="eyebrow">{copy(language, "Confirm request", "确认预约")}</p>
-            <h2 id="confirm-booking-title">{copy(language, "Send this class request?", "发送这个预约请求？")}</h2>
+            <p className="eyebrow">{copy(language, action === "add" ? "Confirm class" : "Confirm request", action === "add" ? "确认课程" : "确认预约")}</p>
+            <h2 id="confirm-booking-title">
+              {copy(language, action === "add" ? "Add this class?" : "Send this class request?", action === "add" ? "添加这节课？" : "发送这个预约请求？")}
+            </h2>
           </div>
         </div>
         <dl className="confirm-summary">
@@ -1872,7 +1901,9 @@ function ConfirmRequestModal({
           </button>
           <button className="primary-button" onClick={onConfirm} disabled={saving}>
             <Check size={18} />
-            {saving ? copy(language, "Sending...", "发送中...") : copy(language, "Confirm request", "确认请求")}
+            {saving
+              ? copy(language, action === "add" ? "Adding..." : "Sending...", action === "add" ? "添加中..." : "发送中...")
+              : copy(language, action === "add" ? "Add class" : "Confirm request", action === "add" ? "添加课程" : "确认请求")}
           </button>
         </div>
       </section>
