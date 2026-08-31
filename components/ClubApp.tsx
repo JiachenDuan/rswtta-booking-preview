@@ -826,7 +826,7 @@ export function ClubApp() {
 
         {!parentSession && !clubAuthenticated ? (
           <UnifiedAuth
-            initialAuthMode="register"
+            initialAuthMode="login"
             intent="parent"
             language={language}
             onRegister={registerParent}
@@ -995,11 +995,11 @@ function UnifiedAuth({
   const [phone, setPhone] = useState("(650) 555-0188");
   const [password, setPassword] = useState(intent === "club" ? clubPassword : "parent123");
   const [newPassword, setNewPassword] = useState("");
-  const [identifier, setIdentifier] = useState(intent === "club" ? clubEmail : "parent@example.com");
+  const [identifier, setIdentifier] = useState(intent === "club" ? clubEmail : "Ethan Chen");
   const [notice, setNotice] = useState(
     intent === "club"
       ? copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。")
-      : copy(language, "Parents register or login; club uses the manager email.", "家长注册或登录；俱乐部用管理邮箱登录。")
+      : copy(language, "Login with username and password.", "请用用户名和密码登录。")
   );
   const [busy, setBusy] = useState(false);
 
@@ -1092,11 +1092,11 @@ function UnifiedAuth({
 
         {intent === "parent" ? (
           <div className="mode-switch auth-switch">
-            <button type="button" className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
-              {copy(language, "Register", "注册")}
-            </button>
             <button type="button" className={authMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
               {copy(language, "Login", "登录")}
+            </button>
+            <button type="button" className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
+              {copy(language, "Register", "注册")}
             </button>
           </div>
         ) : null}
@@ -1138,7 +1138,7 @@ function UnifiedAuth({
         {authMode === "login" ? (
           <div className="simple-form auth-form">
             <label>
-              <span>{intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "Email or phone", "邮箱或电话")}</span>
+              <span>{intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "Username", "用户名")}</span>
               <div className="input-shell">
                 <Mail size={18} />
                 <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} />
@@ -1160,7 +1160,7 @@ function UnifiedAuth({
             <p className="helper-line">
               {intent === "club"
                 ? copy(language, "Login opens Club App.", "登录后进入 Club App。")
-                : copy(language, "Parent accounts open Parent App; club preset email/password opens Club App.", "家长账号进入 Parent App；Club 预设邮箱和密码进入 Club App。")}
+                : copy(language, "For preregistered students, username is the student name from the roster.", "预注册学生的用户名就是名单里的学生名字。")}
             </p>
           </div>
         ) : null}

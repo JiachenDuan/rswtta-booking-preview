@@ -514,10 +514,7 @@ export async function loginParentAccount(identifier: string, password: string) {
 
       const rows = await listAccountRowsWithSeeds();
       const row = rows.find(
-        (item) =>
-          String(item.values.email ?? "").toLowerCase() === normalizedIdentifier ||
-          String(item.values.phone ?? "") === identifier ||
-          String(item.values.studentName ?? "").trim().toLowerCase() === normalizedIdentifier
+        (item) => String(item.values.studentName ?? "").trim().toLowerCase() === normalizedIdentifier
       );
       if (!row) throw authError ?? new Error("Invalid login");
       if (!isEmail || authError) {
@@ -534,10 +531,7 @@ export async function loginParentAccount(identifier: string, password: string) {
       const rows = await seedPreregisteredAccounts(localRows<AccountValues>("parent_accounts"), (values) => createLocalRow("parent_accounts", values));
       const normalizedIdentifier = identifier.toLowerCase();
       const row = rows.find(
-        (item) =>
-          String(item.values.email ?? "").toLowerCase() === normalizedIdentifier ||
-          String(item.values.phone ?? "") === identifier ||
-          String(item.values.studentName ?? "").trim().toLowerCase() === normalizedIdentifier
+        (item) => String(item.values.studentName ?? "").trim().toLowerCase() === normalizedIdentifier
       );
       if (!row) throw new Error("Invalid login");
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
