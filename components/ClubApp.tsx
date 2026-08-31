@@ -250,6 +250,21 @@ function rangeLabel(slot: CalendarSlot, durationMinutes: number) {
   return `${slot.timeLabel} - ${rangeEndLabel(slot, durationMinutes)}`;
 }
 
+function compactTimeRange(label: string) {
+  const [start, end] = label.split(" - ");
+  if (!start || !end) return label;
+  const startMatch = start.match(/^(.+?)\s(AM|PM)$/);
+  const endMatch = end.match(/^(.+?)\s(AM|PM)$/);
+  if (startMatch && endMatch && startMatch[2] === endMatch[2]) {
+    return `${startMatch[1]}-${endMatch[1]} ${endMatch[2]}`;
+  }
+  return `${start}-${end}`;
+}
+
+function compactRangeLabel(slot: CalendarSlot, durationMinutes: number) {
+  return compactTimeRange(rangeLabel(slot, durationMinutes));
+}
+
 function endTimeOptions(slot: CalendarSlot) {
   const starts = new Date(slot.startsAt);
   const finalEnd = new Date(starts);
@@ -1440,6 +1455,7 @@ function ClubCalendar({
               <button
                 className={[
                   "calendar-cell",
+                  selected || slotBookings.length > 0 || unavailableDisplayBooking ? "has-event" : "",
                   selected ? "selected" : "",
                   unavailable ? "unavailable" : "",
                   actionable ? "actionable" : ""
@@ -1463,7 +1479,7 @@ function ClubCalendar({
                 {privacyMode && unavailableDisplayBooking ? (
                   <span className="calendar-booking unavailable-private spanning-event" style={eventHeightStyle(bookingDurationHours(unavailableDisplayBooking))}>
                     <strong>{blockedUnavailable ? copy(language, "Not working", "不可用") : copy(language, "Not available", "不可预约")}</strong>
-                    <small>{blockedUnavailable ? blockedUnavailable.timeLabel : unavailableDisplayBooking.timeLabel}</small>
+                    <small>{blockedUnavailable ? compactTimeRange(blockedUnavailable.timeLabel) : compactTimeRange(unavailableDisplayBooking.timeLabel)}</small>
                   </span>
                 ) : slotBookings.length === 0 ? (
                   <span className="open-slot" aria-hidden="true" />
@@ -1475,15 +1491,15 @@ function ClubCalendar({
                       style={eventHeightStyle(bookingDurationHours(booking))}
                     >
                       <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.assignedCoach}</strong>
-                      <small>{isBlockedTime(booking) ? booking.timeLabel : booking.studentName}</small>
-                      <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : statusText(booking.status, language)}</em>
+                      <small>{isBlockedTime(booking) ? compactTimeRange(booking.timeLabel) : booking.studentName}</small>
+                      <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : `${compactTimeRange(booking.timeLabel)} · ${statusText(booking.status, language)}`}</em>
                       {onBookingSelect ? <b>{copy(language, "Click actions", "点击操作")}</b> : null}
                     </span>
                   ))
                 )}
                 {selected ? (
                   <span className="selected-label spanning-event" style={eventHeightStyle(selectionDurationMinutes / 60)}>
-                    <strong>{rangeLabel(slot, selectionDurationMinutes)}</strong>
+                    <strong>{compactRangeLabel(slot, selectionDurationMinutes)}</strong>
                   </span>
                 ) : null}
               </button>

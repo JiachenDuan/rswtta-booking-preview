@@ -1120,14 +1120,26 @@ p {
   color: var(--ink);
 }
 
+.calendar-cell.has-event {
+  z-index: 4;
+}
+
 .spanning-event {
   position: absolute;
   top: 5px;
   right: 7px;
   left: 7px;
-  z-index: 2;
   min-height: 0;
   overflow: hidden;
+  box-shadow: 0 8px 16px rgba(18, 28, 34, 0.08);
+}
+
+.selected-label.spanning-event {
+  z-index: 2;
+}
+
+.calendar-booking.spanning-event {
+  z-index: 3;
 }
 
 .current-time-line {
