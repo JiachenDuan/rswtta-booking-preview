@@ -1493,11 +1493,10 @@ function ClubCalendar({
                       <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.assignedCoach}</strong>
                       <small>{isBlockedTime(booking) ? compactTimeRange(booking.timeLabel) : booking.studentName}</small>
                       <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : `${compactTimeRange(booking.timeLabel)} · ${statusText(booking.status, language)}`}</em>
-                      {onBookingSelect ? <b>{copy(language, "Click actions", "点击操作")}</b> : null}
                     </span>
                   ))
                 )}
-                {selected ? (
+                {selected && slotBookings.length === 0 && !unavailableDisplayBooking ? (
                   <span className="selected-label spanning-event" style={eventHeightStyle(selectionDurationMinutes / 60)}>
                     <strong>{compactRangeLabel(slot, selectionDurationMinutes)}</strong>
                   </span>

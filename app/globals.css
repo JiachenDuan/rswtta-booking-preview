@@ -1103,6 +1103,11 @@ p {
   box-shadow: inset 0 0 0 2px #f3bf3d;
 }
 
+.calendar-cell.has-event.selected {
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: none;
+}
+
 .calendar-cell.actionable {
   background: #f6fbff;
 }
@@ -1126,12 +1131,12 @@ p {
 
 .spanning-event {
   position: absolute;
-  top: 5px;
-  right: 7px;
-  left: 7px;
+  top: 4px;
+  right: 4px;
+  left: 4px;
   min-height: 0;
   overflow: hidden;
-  box-shadow: 0 8px 16px rgba(18, 28, 34, 0.08);
+  box-shadow: none;
 }
 
 .selected-label.spanning-event {
@@ -1251,22 +1256,20 @@ p {
 
 .calendar-booking {
   min-height: 100%;
-  padding: 8px 8px 8px 12px;
-  border: 1px solid rgba(189, 42, 202, 0.14);
-  border-left: 5px solid #c029d9;
-  background: #f8d8fb;
+  padding: 8px 8px 8px 13px;
+  border: 0;
+  border-left: 5px solid #c020de;
+  background: #f7d8fb;
   color: #62166e;
 }
 
 .calendar-booking.unavailable-private {
-  border-color: rgba(242, 61, 85, 0.18);
   border-left-color: #f23d55;
   background: #ffe0e5;
   color: #8f1d31;
 }
 
 .calendar-booking.blocked-time {
-  border-color: rgba(242, 61, 85, 0.22);
   border-left-color: #f23d55;
   background: #ffe0e5;
   color: #8f1d31;
@@ -1302,18 +1305,6 @@ p {
 .calendar-booking em {
   margin-top: 2px;
   font-style: normal;
-}
-
-.calendar-booking b {
-  display: block;
-  margin-top: 6px;
-  padding: 5px 6px;
-  border-radius: 6px;
-  background: #0d1d18;
-  color: #fff;
-  font-size: 0.68rem;
-  line-height: 1.2;
-  text-align: center;
 }
 
 .request-stack {
