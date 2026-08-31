@@ -1681,94 +1681,92 @@ function ClubAppView({
 
     const inPeriod = bookings.filter((booking) => {
       const startsAt = new Date(booking.startsAt);
-      return startsAt >= periodStart && startsAt <= periodEnd && booking.status !== "cancelled" && !isBlockedTime(booking);
+      return (
+        startsAt >= periodStart &&
+        startsAt <= periodEnd &&
+        !isBlockedTime(booking) &&
+        (booking.status === "club_confirmed" || booking.status === "coach_confirmed")
+      );
     });
 
-    const grouped = new Map<
+    const studentsByKey = new Map<
       string,
       {
-        coach: string;
         studentName: string;
         email: string;
         phone: string;
-        requestedCount: number;
-        confirmedCount: number;
-        completedCount: number;
-        totalCount: number;
-        completedAmountCents: number;
+        bookings: Booking[];
       }
     >();
 
     for (const booking of inPeriod) {
-      const key = `${booking.assignedCoach}|${booking.studentName}|${booking.studentEmail}|${booking.phone}`;
+      const key = `${booking.studentName}|${booking.studentEmail}|${booking.phone}`;
       const existing =
-        grouped.get(key) ??
+        studentsByKey.get(key) ??
         {
-          coach: booking.assignedCoach,
           studentName: booking.studentName,
           email: booking.studentEmail,
           phone: booking.phone,
-          requestedCount: 0,
-          confirmedCount: 0,
-          completedCount: 0,
-          totalCount: 0,
-          completedAmountCents: 0
+          bookings: []
         };
 
-      existing.totalCount += 1;
-      if (booking.status === "coach_confirmed") {
-        existing.completedCount += 1;
-        existing.completedAmountCents += booking.priceCents;
-      } else if (booking.status === "club_confirmed") {
-        existing.confirmedCount += 1;
-      } else {
-        existing.requestedCount += 1;
-      }
-
-      grouped.set(key, existing);
+      existing.bookings.push(booking);
+      studentsByKey.set(key, existing);
     }
 
     const summaryRows = [
-      ["Coach", "Student", "Email", "Phone", "Requested/change", "Confirmed not completed", "Completed", "Total active", "Completed amount"],
-      ...[...grouped.values()]
-        .sort((left, right) => `${left.coach}|${left.studentName}`.localeCompare(`${right.coach}|${right.studentName}`))
-        .map((row) => [
-        row.coach,
-        row.studentName,
-        row.email,
-        row.phone,
-        row.requestedCount,
-        row.confirmedCount,
-        row.completedCount,
-        row.totalCount,
-        dollars(row.completedAmountCents)
-      ])
+      ["Student", "Email", "Phone", "Confirmed not completed", "Coach completed", "Total classes", "Completed amount"],
+      ...[...studentsByKey.values()]
+        .sort((left, right) => left.studentName.localeCompare(right.studentName))
+        .map((student) => {
+          const confirmedCount = student.bookings.filter((booking) => booking.status === "club_confirmed").length;
+          const completed = student.bookings.filter((booking) => booking.status === "coach_confirmed");
+          return [
+            student.studentName,
+            student.email,
+            student.phone,
+            confirmedCount,
+            completed.length,
+            student.bookings.length,
+            dollars(completed.reduce((sum, booking) => sum + booking.priceCents, 0))
+          ];
+        })
     ];
 
-    const detailRows = [
-      ["Date", "Time", "Student", "Coach", "Status", "Price", "Parent note"],
-      ...inPeriod
-        .sort((left, right) => `${left.assignedCoach}|${left.studentName}|${left.startsAt}`.localeCompare(`${right.assignedCoach}|${right.studentName}|${right.startsAt}`))
-        .map((booking) => [
-          booking.dateLabel,
-          booking.timeLabel,
-          booking.studentName,
-          booking.assignedCoach,
-          statusText(booking.status),
-          dollars(booking.priceCents),
-          booking.parentNote
-        ])
-    ];
+    const studentDetailRows = [...studentsByKey.values()]
+      .sort((left, right) => left.studentName.localeCompare(right.studentName))
+      .flatMap((student) => {
+        const completed = student.bookings.filter((booking) => booking.status === "coach_confirmed");
+        const rows = [
+          [],
+          ["Student", student.studentName],
+          ["Email", student.email],
+          ["Phone", student.phone],
+          ["Date", "Time", "Coach", "Status", "Price", "Parent note"],
+          ...student.bookings
+            .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
+            .map((booking) => [
+              booking.dateLabel,
+              booking.timeLabel,
+              booking.assignedCoach,
+              statusText(booking.status),
+              dollars(booking.priceCents),
+              booking.parentNote
+            ]),
+          ["Student total", "", "", "", dollars(completed.reduce((sum, booking) => sum + booking.priceCents, 0)), ""]
+        ];
+        return rows;
+      });
 
     const csv = [
       ["RSWTTA class report", periodTitle],
       ["Date range", `${exportStartDate} to ${exportEndDate}`],
       [],
-      ["Summary by coach and student"],
+      ["Student summary"],
       ...summaryRows,
       [],
-      ["Class details"],
-      ...detailRows
+      ["Class details by student"],
+      ...studentDetailRows
     ]
       .map((row) => row.map((cell) => csvValue(cell)).join(","))
       .join("\n");
@@ -1832,8 +1830,8 @@ function ClubAppView({
           <div className="section-head">
             <div>
               <p className="eyebrow">{copy(language, "Export", "下载表格")}</p>
-              <h2>{copy(language, "Download completed class summary", "下载 completed class 汇总")}</h2>
-              <p className="section-subtitle">{copy(language, "Choose dates and export grouped coach/student classes.", "选择日期，按教练和学生导出课程。")}</p>
+              <h2>{copy(language, "Download student class details", "下载学生课程明细")}</h2>
+              <p className="section-subtitle">{copy(language, "Confirmed and coach-completed classes grouped by student.", "按学生分组导出已确认和已完成课程。")}</p>
             </div>
           </div>
           <div className="export-panel">
