@@ -1398,13 +1398,10 @@ function ClubCalendar({
             const cellEnd = addMinutes(cellStart, (nextHour * 60 + nextMinute) - (startHour * 60 + startMinute));
             const slotBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
-              const matchesSlot =
-                booking.startsAt === startsAt ||
-                (isBlockedTime(booking) && rangesOverlap(cellStart, cellEnd, new Date(booking.startsAt), bookingEndDate(booking)));
+              const overlapsCell = rangesOverlap(cellStart, cellEnd, new Date(booking.startsAt), bookingEndDate(booking));
               const matchesCoach =
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
-              if (isBlockedTime(booking)) return matchesSlot && matchesCoach;
-              return booking.startsAt === startsAt && (matchesCoach || ownBookingIds.has(booking.id));
+              return overlapsCell && (matchesCoach || ownBookingIds.has(booking.id));
             });
             const overlappingBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
