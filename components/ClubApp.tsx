@@ -695,6 +695,35 @@ export function ClubApp() {
     }
   }
 
+  async function completeParentClass(booking: Booking) {
+    setNotice(copy(language, "Marking class complete...", "正在标记课程完成..."));
+    try {
+      if (booking.id.startsWith("virtual-")) {
+        const created = await createBooking({
+          studentName: booking.studentName,
+          familyName: booking.familyName,
+          studentEmail: booking.studentEmail,
+          phone: booking.phone,
+          requestedCoach: booking.requestedCoach,
+          assignedCoach: booking.assignedCoach,
+          program: booking.program,
+          dateLabel: booking.dateLabel,
+          timeLabel: booking.timeLabel,
+          startsAt: booking.startsAt,
+          priceCents: booking.priceCents,
+          parentNote: `${booking.parentNote} Marked complete by student.`
+        });
+        await updateStoredBooking(created.id, { status: "coach_confirmed", assignedCoach: booking.assignedCoach });
+      } else {
+        await updateStoredBooking(booking.id, { status: "coach_confirmed", assignedCoach: booking.assignedCoach });
+      }
+      await loadAll();
+      setNotice(copy(language, "Class marked complete.", "课程已标记完成。"));
+    } catch {
+      setNotice(copy(language, "Could not mark class complete.", "无法标记课程完成。"));
+    }
+  }
+
   async function generateBills() {
     setNotice("Generating weekly student bill notifications...");
     try {
@@ -911,6 +940,7 @@ export function ClubApp() {
               }
               updateBooking(booking.id, "cancelled");
             }}
+            onComplete={completeParentClass}
           />
         ) : (
           <ClubAppView
@@ -1365,7 +1395,8 @@ function ParentApp({
   onNextWeek,
   onToday,
   onChangeRequest,
-  onCancel
+  onCancel,
+  onComplete
 }: {
   bookings: Booking[];
   allBookings: Booking[];
@@ -1396,7 +1427,9 @@ function ParentApp({
   onToday: () => void;
   onChangeRequest: (booking: Booking) => void;
   onCancel: (booking: Booking) => void;
+  onComplete: (booking: Booking) => void;
 }) {
+  const [selectedParentBooking, setSelectedParentBooking] = useState<Booking | null>(null);
   return (
     <section className="calendar-first">
       <section className="section-block calendar-core">
@@ -1439,6 +1472,7 @@ function ParentApp({
             blockUnavailable
             privacyMode
             onSlotChange={onSlotChange}
+            onBookingSelect={setSelectedParentBooking}
           />
         </div>
         <p className="system-note">{notice}</p>
@@ -1500,7 +1534,18 @@ function ParentApp({
               <strong>{dollars(completedTotal)}</strong>
             </div>
           </div>
-          <BookingList bookings={bookings} parentActions language={language} onChangeRequest={onChangeRequest} onCancel={onCancel} />
+          <BookingList bookings={bookings} parentActions language={language} onChangeRequest={onChangeRequest} onCancel={onCancel} onComplete={onComplete} />
+          {selectedParentBooking ? (
+            <ParentClassCompleteModal
+              booking={selectedParentBooking}
+              language={language}
+              onClose={() => setSelectedParentBooking(null)}
+              onComplete={() => {
+                onComplete(selectedParentBooking);
+                setSelectedParentBooking(null);
+              }}
+            />
+          ) : null}
         </section>
       </section>
     </section>
@@ -2541,18 +2586,60 @@ function ConfirmRequestModal({
   );
 }
 
+function ParentClassCompleteModal({
+  booking,
+  language,
+  onClose,
+  onComplete
+}: {
+  booking: Booking;
+  language: Language;
+  onClose: () => void;
+  onComplete: () => void;
+}) {
+  const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking);
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
+        <div className="section-head compact">
+          <div>
+            <p className="eyebrow">{copy(language, "Class actions", "课程操作")}</p>
+            <h2 id="student-class-actions-title">{booking.studentName}</h2>
+            <p className="section-subtitle">{copy(language, "Mark this class complete after it is finished.", "课程结束后可以标记完成。")}</p>
+          </div>
+          <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
+        </div>
+        <dl className="confirm-summary">
+          <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{booking.assignedCoach}</dd></div>
+          <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
+          <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
+        </dl>
+        <div className="modal-actions">
+          <button className="filter-button" onClick={onClose}>{copy(language, "Close", "关闭")}</button>
+          <button className="primary-button" disabled={!canComplete} onClick={onComplete}>
+            <Check size={18} />
+            {copy(language, "Complete", "完成")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function BookingList({
   bookings,
   parentActions,
   language,
   onChangeRequest,
-  onCancel
+  onCancel,
+  onComplete
 }: {
   bookings: Booking[];
   parentActions?: boolean;
   language: Language;
   onChangeRequest?: (booking: Booking) => void;
   onCancel?: (booking: Booking) => void;
+  onComplete?: (booking: Booking) => void;
 }) {
   if (bookings.length === 0) {
     return <p className="empty-state">{copy(language, "No classes yet.", "还没有课程。")}</p>;
@@ -2574,10 +2661,13 @@ function BookingList({
           <strong className={booking.status}>{statusText(booking.status, language)}</strong>
           {parentActions ? (
             <div className="row-actions parent-actions">
-              <button disabled={!canParentRequestChange(booking)} onClick={() => onChangeRequest?.(booking)}>
+              <button disabled={booking.status !== "club_confirmed"} title={copy(language, "Complete", "完成")} onClick={() => onComplete?.(booking)}>
+                <Check size={15} />
+              </button>
+              <button disabled={!canParentRequestChange(booking)} title={copy(language, "Request change", "申请改期")} onClick={() => onChangeRequest?.(booking)}>
                 <RefreshCcw size={15} />
               </button>
-              <button disabled={!canParentRequestChange(booking)} onClick={() => onCancel?.(booking)}>
+              <button disabled={!canParentRequestChange(booking)} title={copy(language, "Cancel", "取消")} onClick={() => onCancel?.(booking)}>
                 <X size={15} />
               </button>
             </div>
