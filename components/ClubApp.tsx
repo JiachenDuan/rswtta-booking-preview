@@ -1682,7 +1682,6 @@ function ClubCalendar({
                 className={[
                   "calendar-cell",
                   selected || slotBookings.length > 0 || unavailableDisplayBooking ? "has-event" : "",
-                  selected ? "selected" : "",
                   unavailable ? "unavailable" : "",
                   actionable ? "actionable" : ""
                 ].filter(Boolean).join(" ")}
@@ -1732,11 +1731,6 @@ function ClubCalendar({
                     </span>
                   ))
                 )}
-                {selected && slotBookings.length === 0 && !unavailableDisplayBooking ? (
-                  <span className="selected-label spanning-event" style={eventHeightStyle(selectionDurationMinutes / 60)}>
-                    <strong>{compactRangeLabel(slot, selectionDurationMinutes)}</strong>
-                  </span>
-                ) : null}
               </button>
             );
           })}
