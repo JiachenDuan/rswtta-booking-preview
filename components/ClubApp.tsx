@@ -644,6 +644,36 @@ export function ClubApp() {
     }
   }
 
+  async function requestGroupClass(groupClass: Booking) {
+    const coach = groupClass.assignedCoach || groupClass.requestedCoach;
+    setSaving(true);
+    setNotice(copy(language, "Saving group class request...", "正在保存团体课请求..."));
+    try {
+      await createBooking({
+        studentName,
+        familyName: studentName,
+        studentEmail,
+        phone,
+        requestedCoach: coach,
+        assignedCoach: coach,
+        program: "Group lesson",
+        dateLabel: groupClass.dateLabel,
+        timeLabel: groupClass.timeLabel,
+        startsAt: groupClass.startsAt,
+        priceCents: 7500,
+        parentNote: `Parent requested to join group class. Group block id: ${groupClass.id}`
+      });
+      await loadAll();
+      setNotice(copy(language, "Saved group class request. Club can confirm or reject it.", "已保存团体课请求，Club 可以确认或拒绝。"));
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not save group class request.", "无法保存团体课请求。"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) {
     const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
     if (unavailableSlot) {
@@ -1019,6 +1049,7 @@ export function ClubApp() {
               updateBooking(booking.id, "cancelled");
             }}
             onComplete={completeParentClass}
+            onGroupClassRequest={requestGroupClass}
           />
         ) : (
           <ClubAppView
@@ -1479,7 +1510,8 @@ function ParentApp({
   onToday,
   onChangeRequest,
   onCancel,
-  onComplete
+  onComplete,
+  onGroupClassRequest
 }: {
   bookings: Booking[];
   allBookings: Booking[];
@@ -1515,8 +1547,10 @@ function ParentApp({
   onChangeRequest: (booking: Booking) => void;
   onCancel: (booking: Booking) => void;
   onComplete: (booking: Booking) => void;
+  onGroupClassRequest: (booking: Booking) => Promise<boolean>;
 }) {
   const [selectedParentBooking, setSelectedParentBooking] = useState<Booking | null>(null);
+  const [selectedGroupClass, setSelectedGroupClass] = useState<Booking | null>(null);
   const [classStatusFilter, setClassStatusFilter] = useState<"requested" | "club_confirmed" | "coach_confirmed" | "cancelled">("requested");
   const [classStartDate, setClassStartDate] = useState(() => dateInputValue(calendarDays[0]?.date ?? new Date()));
   const [classEndDate, setClassEndDate] = useState(() => dateInputValue(calendarDays[calendarDays.length - 1]?.date ?? addDays(new Date(), 6)));
@@ -1595,7 +1629,13 @@ function ParentApp({
             blockUnavailable
             privacyMode
             onSlotChange={onSlotChange}
-            onBookingSelect={setSelectedParentBooking}
+            onBookingSelect={(booking) => {
+              if (isGroupClassBlock(booking)) {
+                setSelectedGroupClass(booking);
+                return;
+              }
+              setSelectedParentBooking(booking);
+            }}
           />
         </div>
         <p className="system-note">{notice}</p>
@@ -1683,6 +1723,19 @@ function ParentApp({
               onComplete={() => {
                 onComplete(selectedParentBooking);
                 setSelectedParentBooking(null);
+              }}
+            />
+          ) : null}
+          {selectedGroupClass ? (
+            <GroupClassRequestModal
+              booking={selectedGroupClass}
+              studentName={studentName}
+              language={language}
+              saving={saving}
+              onClose={() => setSelectedGroupClass(null)}
+              onConfirm={async () => {
+                const saved = await onGroupClassRequest(selectedGroupClass);
+                if (saved) setSelectedGroupClass(null);
               }}
             />
           ) : null}
@@ -2922,6 +2975,50 @@ function ConfirmRequestModal({
   );
 }
 
+function GroupClassRequestModal({
+  booking,
+  studentName,
+  language,
+  saving,
+  onClose,
+  onConfirm
+}: {
+  booking: Booking;
+  studentName: string;
+  language: Language;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="group-class-request-title">
+        <div className="section-head compact">
+          <div>
+            <p className="eyebrow">{copy(language, "Group class", "团体课")}</p>
+            <h2 id="group-class-request-title">{copy(language, "Request to join this group class?", "申请加入这节团体课？")}</h2>
+            <p className="section-subtitle">{copy(language, "Club will confirm or reject this request.", "Club 会确认或拒绝这个请求。")}</p>
+          </div>
+          <span className="status-chip club_confirmed">{copy(language, "Group", "团体")}</span>
+        </div>
+        <dl className="confirm-summary">
+          <div><dt>{copy(language, "Student", "学生")}</dt><dd>{studentName}</dd></div>
+          <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{booking.assignedCoach || booking.requestedCoach}</dd></div>
+          <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
+          <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
+        </dl>
+        <div className="modal-actions">
+          <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, "Cancel", "取消")}</button>
+          <button className="primary-button" onClick={onConfirm} disabled={saving}>
+            <Check size={18} />
+            {saving ? copy(language, "Sending...", "发送中...") : copy(language, "Request to join", "申请加入")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ParentClassCompleteModal({
   booking,
   language,
@@ -2933,7 +3030,7 @@ function ParentClassCompleteModal({
   onClose: () => void;
   onComplete: () => void;
 }) {
-  const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking);
+  const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking);
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
