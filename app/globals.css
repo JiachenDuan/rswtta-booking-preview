@@ -1918,6 +1918,10 @@ button.student-result.selected {
   border-top: 1px solid var(--line);
 }
 
+.group-dropin-results {
+  grid-column: 1 / -1;
+}
+
 .group-dropin-panel label {
   display: grid;
   gap: 6px;
