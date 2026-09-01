@@ -575,7 +575,7 @@ export function ClubApp() {
     const slots = [selectedSlot];
     if (isRangeUnavailable(bookings, requestedCoach, selectedSlot, selectedDurationMinutes)) {
       setNotice(copy(language, "That coach is not available at the selected time.", "该教练这个时间不可预约。"));
-      return;
+      return false;
     }
     setSaving(true);
     setNotice(copy(language, "Saving parent request...", "正在保存家长请求..."));
@@ -600,9 +600,11 @@ export function ClubApp() {
       );
 
       await loadAll();
-      setNotice(copy(language, `Saved ${slots.length} request${slots.length === 1 ? "" : "s"}.`, `已保存 ${slots.length} 个请求。`));
-    } catch {
-      setNotice(copy(language, "Could not save booking request.", "无法保存预约请求。"));
+      setNotice(copy(language, `Saved ${slots.length} request${slots.length === 1 ? "" : "s"}. Club can see it now.`, `已保存 ${slots.length} 个请求。Club 现在可以看到。`));
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not save booking request.", "无法保存预约请求。"));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1039,8 +1041,8 @@ export function ClubApp() {
             onDurationChange={setSelectedDurationMinutes}
             onCancel={() => setShowRequestConfirm(false)}
             onConfirm={async () => {
-              await requestBooking();
-              setShowRequestConfirm(false);
+              const saved = await requestBooking();
+              if (saved) setShowRequestConfirm(false);
             }}
           />
         ) : null}

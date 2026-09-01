@@ -904,28 +904,24 @@ export async function createBooking(input: Omit<Booking, "id" | "status" | "crea
     createdAt: "",
     updatedAt: ""
   };
-  const row = await withLocalFallback(() => createRow<Booking>("bookings", values), () => createLocalRow("bookings", values));
-  return bookingFromRow(row);
+  try {
+    const row = await createRow<Booking>("bookings", values);
+    return bookingFromRow(row);
+  } catch (error) {
+    throw error instanceof Error
+      ? new Error(`Could not save to shared club view. ${error.message}`)
+      : new Error("Could not save to shared club view.");
+  }
 }
 
 export async function updateBooking(
   id: string,
   input: Partial<Pick<Booking, "studentName" | "familyName" | "studentEmail" | "phone" | "status" | "assignedCoach" | "dateLabel" | "timeLabel" | "startsAt" | "parentNote">>
 ) {
-  const updated = await withLocalFallback(
-    async () => {
-      const rows = await listRows<Booking>("bookings");
-      const row = rows.find((item) => item.id === id);
-      if (!row) throw new Error("Booking not found");
-      return updateRow("bookings", id, { ...row.values, ...input });
-    },
-    () => {
-      const rows = localRows<Booking>("bookings");
-      const row = rows.find((item) => item.id === id);
-      if (!row) throw new Error("Booking not found");
-      return updateLocalRow("bookings", id, { ...row.values, ...input });
-    }
-  );
+  const rows = await listRows<Booking>("bookings");
+  const row = rows.find((item) => item.id === id);
+  if (!row) throw new Error("Booking not found in shared club view");
+  const updated = await updateRow("bookings", id, { ...row.values, ...input });
   return bookingFromRow(updated);
 }
 
