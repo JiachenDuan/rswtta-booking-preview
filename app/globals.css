@@ -2481,3 +2481,26 @@ button.student-result.selected {
   position: relative;
   z-index: 1001;
 }
+
+.complete-scroll-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 6px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.complete-scroll-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.complete-scroll-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+@media (max-width: 760px) {
+  .complete-scroll-list {
+    max-height: 360px;
+  }
+}

@@ -2150,7 +2150,7 @@ function ClubAppView({
             </div>
             <span className="status-chip good">{confirmed.length} {copy(language, "ready", "可完成")}</span>
           </div>
-          <div className="request-stack">
+          <div className="request-stack complete-scroll-list">
             {confirmed.map((booking) => (
               <article className="flow-card" key={booking.id}>
                 <div>
