@@ -1608,8 +1608,8 @@ function ParentApp({
               <strong>{bookings.filter((booking) => booking.status === "club_confirmed").length}</strong>
             </div>
             <div>
-              <span>{copy(language, "Bill", "已计费")}</span>
-              <strong>{dollars(completedTotal)}</strong>
+              <span>{copy(language, "Complete", "完成")}</span>
+              <strong>{bookings.filter((booking) => booking.status === "coach_confirmed").length}</strong>
             </div>
           </div>
           <BookingList bookings={bookings} parentActions language={language} onChangeRequest={onChangeRequest} onCancel={onCancel} onComplete={onComplete} />
