@@ -344,6 +344,13 @@ function isGroupClassCalendarItem(booking: Booking) {
   return isGroupClassBlock(booking) || isGroupClassJoinRequest(booking);
 }
 
+function sameGroupClassTime(left: Booking, right: Booking) {
+  return (
+    (left.assignedCoach || left.requestedCoach) === (right.assignedCoach || right.requestedCoach) &&
+    left.startsAt === right.startsAt
+  );
+}
+
 function calendarBookingTitle(booking: Booking, language: Language) {
   if (isBlockedTime(booking)) return copy(language, "Blocked time", "不可预约时间");
   if (isGroupClassCalendarItem(booking)) return copy(language, "Group class", "团体课");
@@ -382,6 +389,10 @@ function bookingDurationHours(booking: Booking) {
 function bookingHoursLabel(booking: Booking) {
   const hours = bookingDurationHours(booking);
   return Number.isInteger(hours) ? String(hours) : String(hours);
+}
+
+function classTypeText(booking: Booking, language: Language = "en") {
+  return isGroupClassJoinRequest(booking) || booking.program === "Group lesson" ? copy(language, "Group", "团体") : copy(language, "Private", "私教");
 }
 
 function eventHeightStyle(hours: number) {
@@ -1866,7 +1877,7 @@ function ClubCalendar({
                 )
               );
             });
-            const selectableBooking = slotBookings.find((booking) => booking.status !== "cancelled");
+            const selectableBooking = slotBookings.find((booking) => booking.status !== "cancelled" && isGroupClassBlock(booking)) ?? slotBookings.find((booking) => booking.status !== "cancelled");
             const slot = makeCalendarSlot(day, timeLabel);
             const hasVisibleBooking = slotBookings.length > 0;
             const selected = !hasVisibleBooking && selectedSlots.some((item) => item.startsAt === startsAt);
@@ -2130,19 +2141,21 @@ function ClubAppView({
     }
 
     const summaryRows = [
-      ["Student", "Confirmed not completed", "Coach completed", "Total classes", "Total hours"],
+      ["Student", "Private classes", "Private hours", "Group classes", "Group hours", "Total classes"],
       ...[...studentsByKey.values()]
         .sort((left, right) => left.studentName.localeCompare(right.studentName))
         .map((student) => {
-          const confirmedCount = student.bookings.filter((booking) => booking.status === "club_confirmed").length;
-          const completed = student.bookings.filter((booking) => booking.status === "coach_confirmed");
-          const totalHours = student.bookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
+          const privateBookings = student.bookings.filter((booking) => classTypeText(booking) === "Private");
+          const groupBookings = student.bookings.filter((booking) => classTypeText(booking) === "Group");
+          const privateHours = privateBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
+          const groupHours = groupBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
           return [
             student.studentName,
-            confirmedCount,
-            completed.length,
-            student.bookings.length,
-            Number.isInteger(totalHours) ? String(totalHours) : String(totalHours)
+            privateBookings.length,
+            Number.isInteger(privateHours) ? String(privateHours) : String(privateHours),
+            groupBookings.length,
+            Number.isInteger(groupHours) ? String(groupHours) : String(groupHours),
+            student.bookings.length
           ];
         })
     ];
@@ -2157,18 +2170,19 @@ function ClubAppView({
           ["========================================"],
           [`STUDENT: ${student.studentName}`],
           ["========================================"],
-          ["Date", "Time", "Hours", "Coach", "Status", "Parent note"],
+          ["Date", "Time", "Type", "Hours", "Coach", "Status", "Parent note"],
           ...student.bookings
             .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
             .map((booking) => [
               booking.dateLabel,
               booking.timeLabel,
+              classTypeText(booking),
               bookingHoursLabel(booking),
               booking.assignedCoach,
               statusText(booking.status),
               booking.parentNote
             ]),
-          ["Student total hours", "", totalHoursLabel, "", "", ""]
+          ["Student total hours", "", "", totalHoursLabel, "", "", ""]
         ];
         return rows;
       });
@@ -2433,6 +2447,9 @@ function ClubAppView({
             onCancelClass(selectedClubBooking);
             setSelectedClubBooking(null);
           }}
+          onConfirmEnrollment={(booking) => onConfirm(booking, booking.assignedCoach || booking.requestedCoach)}
+          onRejectEnrollment={(booking) => onApproveCancel(booking)}
+          onCompleteEnrollment={(booking) => onCoachComplete(booking)}
           onComplete={
             selectedClubBooking.status === "club_confirmed"
               ? () => {
@@ -2730,7 +2747,10 @@ function ClubBookingActionModal({
   onClose,
   onCancel,
   onComplete,
-  onUpdateTime
+  onUpdateTime,
+  onConfirmEnrollment,
+  onRejectEnrollment,
+  onCompleteEnrollment
 }: {
   booking: Booking;
   bookings: Booking[];
@@ -2739,6 +2759,9 @@ function ClubBookingActionModal({
   onCancel: () => void;
   onComplete?: () => void;
   onUpdateTime: (slot: CalendarSlot, durationMinutes: number) => void;
+  onConfirmEnrollment: (booking: Booking) => void;
+  onRejectEnrollment: (booking: Booking) => void;
+  onCompleteEnrollment: (booking: Booking) => void;
 }) {
   const bookingStart = new Date(booking.startsAt);
   const [initialStartTime] = booking.timeLabel.split(" - ");
@@ -2753,6 +2776,69 @@ function ClubBookingActionModal({
   const updateChanged =
     editSlot.startsAt !== booking.startsAt ||
     rangeLabel(editSlot, durationMinutes) !== booking.timeLabel;
+  const groupEnrollments = bookings
+    .filter((item) => item.id !== booking.id && item.status !== "cancelled" && isGroupClassJoinRequest(item) && sameGroupClassTime(item, booking))
+    .sort((left, right) => left.studentName.localeCompare(right.studentName));
+  const requestedGroupEnrollments = groupEnrollments.filter((item) => item.status === "requested" || item.status === "change_requested");
+  const confirmedGroupEnrollments = groupEnrollments.filter((item) => item.status === "club_confirmed");
+  const completedGroupEnrollments = groupEnrollments.filter((item) => item.status === "coach_confirmed");
+
+  if (isGroupClassBlock(booking)) {
+    return (
+      <div className="modal-backdrop" role="presentation">
+        <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="club-group-class-title">
+          <button className="modal-close-icon" type="button" aria-label="Close" onClick={onClose}>
+            <X size={20} />
+          </button>
+          <div className="section-head compact class-action-head">
+            <div>
+              <p className="eyebrow">{copy(language, "Group class", "团体课")}</p>
+              <h2 id="club-group-class-title">{booking.assignedCoach}</h2>
+              <p className="section-subtitle">{copy(language, "View requests and mark attendance for this date.", "查看申请并标记当天出勤。")}</p>
+            </div>
+            <span className="status-chip club_confirmed">{copy(language, "Group", "团体")}</span>
+          </div>
+          <dl className="confirm-summary">
+            <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
+            <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
+            <div><dt>{copy(language, "Requested", "申请")}</dt><dd>{requestedGroupEnrollments.length}</dd></div>
+            <div><dt>{copy(language, "Enrolled", "已确认")}</dt><dd>{confirmedGroupEnrollments.length}</dd></div>
+            <div><dt>{copy(language, "Complete", "完成")}</dt><dd>{completedGroupEnrollments.length}</dd></div>
+          </dl>
+          <div className="group-roster-list">
+            {groupEnrollments.length === 0 ? (
+              <p className="empty-state">{copy(language, "No student requests yet.", "还没有学生申请。")}</p>
+            ) : (
+              groupEnrollments.map((studentBooking) => (
+                <article className="group-roster-row" key={studentBooking.id}>
+                  <div>
+                    <strong>{studentBooking.studentName}</strong>
+                    <span>{statusText(studentBooking.status, language)}</span>
+                  </div>
+                  <div className="row-actions group-attendance-actions">
+                    {studentBooking.status === "requested" || studentBooking.status === "change_requested" ? (
+                      <>
+                        <button className="accept" type="button" onClick={() => onConfirmEnrollment(studentBooking)}>{copy(language, "Confirm", "确认")}</button>
+                        <button className="decline" type="button" onClick={() => onRejectEnrollment(studentBooking)}>{copy(language, "Reject", "拒绝")}</button>
+                      </>
+                    ) : null}
+                    {studentBooking.status === "club_confirmed" ? (
+                      <button className="primary-button" type="button" onClick={() => onCompleteEnrollment(studentBooking)}>
+                        <Check size={16} />
+                        {copy(language, "Attended", "已出勤")}
+                      </button>
+                    ) : null}
+                    {studentBooking.status === "coach_confirmed" ? <span className="class-type-badge group">{copy(language, "Attended", "已出勤")}</span> : null}
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="club-booking-actions-title">

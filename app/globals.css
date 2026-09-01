@@ -1831,6 +1831,48 @@ button.student-result.selected {
   color: #dfd2ff;
 }
 
+.group-roster-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.group-roster-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.08);
+}
+
+.group-roster-row strong,
+.group-roster-row span {
+  display: block;
+}
+
+.group-roster-row span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.group-attendance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.group-attendance-actions button {
+  min-height: 32px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
 .parent-actions {
   justify-self: end;
   grid-column: 1 / -1;
