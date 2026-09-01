@@ -1803,6 +1803,34 @@ button.student-result.selected {
   grid-template-columns: 42px minmax(0, 1fr) minmax(150px, auto);
 }
 
+.class-sign-stack {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.class-type-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.class-type-badge.private {
+  background: rgba(220, 38, 38, 0.16);
+  color: #fca5a5;
+}
+
+.class-type-badge.group {
+  background: rgba(139, 92, 246, 0.24);
+  color: #dfd2ff;
+}
+
 .parent-actions {
   justify-self: end;
   grid-column: 1 / -1;

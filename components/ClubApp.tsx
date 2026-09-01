@@ -3100,7 +3100,12 @@ function BookingList({
               {booking.dateLabel} {booking.timeLabel} with {booking.assignedCoach}
             </p>
           </div>
-          <strong className={booking.status}>{statusText(booking.status, language)}</strong>
+          <div className="class-sign-stack">
+            <span className={isGroupClassJoinRequest(booking) || booking.program === "Group lesson" ? "class-type-badge group" : "class-type-badge private"}>
+              {isGroupClassJoinRequest(booking) || booking.program === "Group lesson" ? copy(language, "Group", "团体") : copy(language, "Private", "私教")}
+            </span>
+            <strong className={booking.status}>{statusText(booking.status, language)}</strong>
+          </div>
           {parentActions ? (
             <div className="row-actions parent-actions">
               <button disabled={booking.status !== "club_confirmed"} title={copy(language, "Complete", "完成")} onClick={() => onComplete?.(booking)}>
