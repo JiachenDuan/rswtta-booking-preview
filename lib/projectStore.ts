@@ -356,13 +356,24 @@ function billFromRow(row: ProjectRow<BillNotification>): BillNotification {
 
 async function listRows<T>(tableSlug: keyof typeof tableDefinitions) {
   const tables = await ensureSchema();
-  const response = await supabase
-    .from("project_rows")
-    .select("id, project_table_id, values, created_at, updated_at")
-    .eq("project_table_id", tables[tableSlug])
-    .range(0, 4999);
-  if (response.error) throw setupError(response.error.message);
-  return response.data as Array<ProjectRow<T>>;
+  const pageSize = 1000;
+  const allRows: Array<ProjectRow<T>> = [];
+
+  for (let from = 0; from < 10000; from += pageSize) {
+    const response = await supabase
+      .from("project_rows")
+      .select("id, project_table_id, values, created_at, updated_at")
+      .eq("project_table_id", tables[tableSlug])
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (response.error) throw setupError(response.error.message);
+
+    const page = (response.data ?? []) as Array<ProjectRow<T>>;
+    allRows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  return allRows;
 }
 
 async function createRow<T extends Record<string, unknown>>(tableSlug: keyof typeof tableDefinitions, values: T) {
