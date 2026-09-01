@@ -332,6 +332,22 @@ function isBlockedTime(booking: Booking) {
   return booking.program === "Unavailable";
 }
 
+function isGroupClassBlock(booking: Booking) {
+  return booking.program === "Group class" && booking.studentName.trim().toLowerCase() === "group class";
+}
+
+function calendarBookingTitle(booking: Booking, language: Language) {
+  if (isBlockedTime(booking)) return copy(language, "Blocked time", "不可预约时间");
+  if (isGroupClassBlock(booking)) return copy(language, "Group class", "团体课");
+  return booking.studentName;
+}
+
+function calendarBookingSubtitle(booking: Booking, language: Language) {
+  if (isBlockedTime(booking)) return copy(language, "Blocked time", "不可预约时间");
+  if (isGroupClassBlock(booking)) return copy(language, "Group class", "团体课");
+  return statusText(booking.status, language);
+}
+
 function rangesOverlap(leftStart: Date, leftEnd: Date, rightStart: Date, rightEnd: Date) {
   return leftStart < rightEnd && rightStart < leftEnd;
 }
@@ -785,7 +801,7 @@ export function ClubApp() {
   async function generateBills() {
     setNotice("Generating weekly student bill notifications...");
     try {
-      const completed = bookings.filter((booking) => booking.status === "coach_confirmed");
+      const completed = bookings.filter((booking) => booking.status === "coach_confirmed" && !isGroupClassBlock(booking));
       const grouped = new Map<string, BillNotification>();
 
       for (const booking of completed) {
@@ -1773,7 +1789,7 @@ function ClubCalendar({
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
               const bookingStart = new Date(booking.startsAt);
               const isOwnBooking = ownBookingIds.has(booking.id);
-              const visibleToParent = !privacyMode || isOwnBooking;
+              const visibleToParent = !privacyMode || isOwnBooking || isGroupClassBlock(booking);
               return bookingStart >= cellStart && bookingStart < cellEnd && visibleToParent && (matchesCoach || isOwnBooking);
             });
             const overlappingBookings = bookings.filter((booking) => {
@@ -1846,7 +1862,7 @@ function ClubCalendar({
                     )
                     .map((booking) => (
                     <span
-                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${useCoachLanes ? " coach-lane" : ""} spanning-event`}
+                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${isGroupClassBlock(booking) ? " group-class-block" : ""}${useCoachLanes ? " coach-lane" : ""} spanning-event`}
                       key={booking.id}
                       style={calendarEventStyle(booking, useCoachLanes, cellStart)}
                       onClick={(event) => {
@@ -1856,11 +1872,11 @@ function ClubCalendar({
                       }}
                     >
                       <span className={`calendar-status-badge ${booking.status}`}>
-                        {isBlockedTime(booking) ? copy(language, "Blocked", "不可用") : calendarStatusText(booking.status, language)}
+                        {isBlockedTime(booking) ? copy(language, "Blocked", "不可用") : isGroupClassBlock(booking) ? copy(language, "Group", "团体") : calendarStatusText(booking.status, language)}
                       </span>
-                      <strong>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : booking.studentName}</strong>
-                      <small>{isBlockedTime(booking) ? compactTimeRange(booking.timeLabel) : compactTimeRange(booking.timeLabel)}</small>
-                      <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : statusText(booking.status, language)}</em>
+                      <strong>{calendarBookingTitle(booking, language)}</strong>
+                      <small>{compactTimeRange(booking.timeLabel)}</small>
+                      <em>{calendarBookingSubtitle(booking, language)}</em>
                     </span>
                   ))
                 )}
@@ -1946,8 +1962,8 @@ function ClubAppView({
   const [selectedAddStudent, setSelectedAddStudent] = useState<ParentAccount | null>(null);
   const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
   const visibleBookings = bookings.filter((booking) => activeCalendarTab === "Combined" || bookingMatchesCoach(booking, activeCalendarTab));
-  const requested = bookings.filter((booking) => !isBlockedTime(booking) && (booking.status === "requested" || booking.status === "change_requested"));
-  const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed" && !isBlockedTime(booking));
+  const requested = bookings.filter((booking) => !isBlockedTime(booking) && !isGroupClassBlock(booking) && (booking.status === "requested" || booking.status === "change_requested"));
+  const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking));
   const studentDirectory = useMemo(() => {
     const byName = new Map<string, ParentAccount>();
     const rememberStudent = (student: ParentAccount) => {
@@ -1964,6 +1980,7 @@ function ClubAppView({
     };
     for (const student of students) rememberStudent(student);
     for (const booking of bookings) {
+      if (isGroupClassBlock(booking) || isBlockedTime(booking)) continue;
       rememberStudent({
         id: booking.studentName,
         studentName: booking.studentName,
@@ -2024,6 +2041,7 @@ function ClubAppView({
         startsAt <= periodEnd &&
         matchesStudent &&
         !isBlockedTime(booking) &&
+        !isGroupClassBlock(booking) &&
         (booking.status === "club_confirmed" || booking.status === "coach_confirmed")
       );
     });

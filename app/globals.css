@@ -1389,12 +1389,22 @@ p {
   color: #ffe6a3;
 }
 
+.calendar-booking.group-class-block {
+  border-left-color: #8b5cf6;
+  background: #33205f;
+  color: #eee5ff;
+}
+
 .calendar-booking.unavailable-private small {
   color: #ffe6a3;
 }
 
 .calendar-booking.blocked-time small {
   color: #ffe6a3;
+}
+
+.calendar-booking.group-class-block small {
+  color: #dfd2ff;
 }
 
 .calendar-booking strong,
@@ -1434,6 +1444,11 @@ p {
 .calendar-status-badge.coach_confirmed {
   background: rgba(108, 165, 255, 0.24);
   color: #d8e8ff;
+}
+
+.calendar-booking.group-class-block .calendar-status-badge {
+  background: rgba(139, 92, 246, 0.34);
+  color: #f2eaff;
 }
 
 .calendar-booking strong {
