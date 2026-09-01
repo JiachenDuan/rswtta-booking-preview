@@ -597,6 +597,52 @@ export async function updateUserPassword(password: string) {
   }
 }
 
+export async function updateParentAccount(input: { accountId: string; studentName: string; email: string; phone: string }) {
+  const normalizedStudentName = input.studentName.trim();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const normalizedPhone = input.phone.trim();
+  if (!normalizedStudentName || !normalizedEmail.includes("@") || normalizedPhone.length < 7) {
+    throw new Error("Student name, email, and phone are required");
+  }
+
+  const values = {
+    studentName: normalizedStudentName,
+    email: normalizedEmail,
+    phone: normalizedPhone
+  };
+
+  const row = await withLocalFallback(
+    async () => {
+      const rows = await listRows<AccountValues>("parent_accounts");
+      const existing = rows.find((item) => item.id === input.accountId);
+      if (!existing) throw new Error("Account not found");
+      const duplicate = rows.find(
+        (item) =>
+          item.id !== input.accountId &&
+          normalizedEmail &&
+          String(item.values.email ?? "").toLowerCase() === normalizedEmail
+      );
+      if (duplicate) throw new Error("Email already used by another student");
+      return updateRow("parent_accounts", input.accountId, { ...existing.values, ...values });
+    },
+    () => {
+      const rows = localRows<AccountValues>("parent_accounts");
+      const existing = rows.find((item) => item.id === input.accountId);
+      if (!existing) throw new Error("Account not found");
+      const duplicate = rows.find(
+        (item) =>
+          item.id !== input.accountId &&
+          normalizedEmail &&
+          String(item.values.email ?? "").toLowerCase() === normalizedEmail
+      );
+      if (duplicate) throw new Error("Email already used by another student");
+      return updateLocalRow("parent_accounts", input.accountId, { ...existing.values, ...values });
+    }
+  );
+
+  return accountFromRow(row);
+}
+
 export async function completeParentProfileSetup(input: { accountId: string; email: string; phone: string; password: string }) {
   const normalizedEmail = input.email.trim().toLowerCase();
   const normalizedPhone = input.phone.trim();
@@ -864,7 +910,7 @@ export async function createBooking(input: Omit<Booking, "id" | "status" | "crea
 
 export async function updateBooking(
   id: string,
-  input: Partial<Pick<Booking, "status" | "assignedCoach" | "dateLabel" | "timeLabel" | "startsAt" | "parentNote">>
+  input: Partial<Pick<Booking, "studentName" | "familyName" | "studentEmail" | "phone" | "status" | "assignedCoach" | "dateLabel" | "timeLabel" | "startsAt" | "parentNote">>
 ) {
   const updated = await withLocalFallback(
     async () => {

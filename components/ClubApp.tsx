@@ -33,6 +33,7 @@ import {
   registerParentAccount,
   resetPasswordForEmail,
   updateUserPassword,
+  updateParentAccount,
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { supabase } from "@/lib/supabase";
@@ -491,6 +492,42 @@ export function ClubApp() {
     await updateUserPassword(password);
   }
 
+
+  async function updateParentInfo(input: { studentName: string; email: string; phone: string }) {
+    if (!parentSession) return;
+    setSaving(true);
+    setNotice(copy(language, "Updating student info...", "正在更新学生信息..."));
+    try {
+      const oldStudentName = parentSession.studentName;
+      const account = await updateParentAccount({
+        accountId: parentSession.id,
+        studentName: input.studentName,
+        email: input.email,
+        phone: input.phone
+      });
+      const matchingBookings = bookings.filter(
+        (booking) => booking.studentName.trim().toLowerCase() === oldStudentName.trim().toLowerCase()
+      );
+      await Promise.all(
+        matchingBookings.map((booking) =>
+          updateStoredBooking(booking.id, {
+            studentName: account.studentName,
+            familyName: account.studentName,
+            studentEmail: account.email,
+            phone: account.phone
+          })
+        )
+      );
+      applyParentSession(account);
+      await loadAll();
+      setNotice(copy(language, "Student info updated.", "学生信息已更新。"));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not update student info.", "无法更新学生信息。"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function completeFirstLoginSetup(input: { email: string; phone: string; password: string }) {
     if (!parentSession) return;
     const account = await completeParentProfileSetup({
@@ -906,6 +943,10 @@ export function ClubApp() {
             }}
             onStudentEmailChange={setStudentEmail}
             onPhoneChange={setPhone}
+            onStudentInfoSave={updateParentInfo}
+            savedStudentName={parentSession.studentName}
+            savedStudentEmail={parentSession.email}
+            savedPhone={parentSession.phone}
             onCoachChange={setRequestedCoach}
             onSlotChange={(slot) => {
               selectSingleSlot(slot);
@@ -1388,6 +1429,10 @@ function ParentApp({
   onStudentNameChange,
   onStudentEmailChange,
   onPhoneChange,
+  onStudentInfoSave,
+  savedStudentName,
+  savedStudentEmail,
+  savedPhone,
   onCoachChange,
   onSlotChange,
   onDurationChange,
@@ -1419,6 +1464,10 @@ function ParentApp({
   onStudentNameChange: (value: string) => void;
   onStudentEmailChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
+  onStudentInfoSave: (input: { studentName: string; email: string; phone: string }) => void;
+  savedStudentName: string;
+  savedStudentEmail: string;
+  savedPhone: string;
   onCoachChange: (value: string) => void;
   onSlotChange: (value: CalendarSlot) => void;
   onDurationChange: (value: number) => void;
@@ -1430,6 +1479,11 @@ function ParentApp({
   onComplete: (booking: Booking) => void;
 }) {
   const [selectedParentBooking, setSelectedParentBooking] = useState<Booking | null>(null);
+  const studentInfoChanged =
+    studentName.trim() !== savedStudentName.trim() ||
+    studentEmail.trim().toLowerCase() !== savedStudentEmail.trim().toLowerCase() ||
+    phone.trim() !== savedPhone.trim();
+  const studentInfoReady = studentName.trim().length > 0 && studentEmail.includes("@") && phone.trim().length >= 7;
   return (
     <section className="calendar-first">
       <section className="section-block calendar-core">
@@ -1509,6 +1563,15 @@ function ParentApp({
                 <input value={phone} onChange={(event) => onPhoneChange(event.target.value)} />
               </div>
             </label>
+            <button
+              type="button"
+              className="primary-button wide-button"
+              disabled={saving || !studentInfoChanged || !studentInfoReady}
+              onClick={() => onStudentInfoSave({ studentName, email: studentEmail, phone })}
+            >
+              <Check size={18} />
+              {copy(language, "Update student info", "更新学生信息")}
+            </button>
           </div>
         </section>
 
