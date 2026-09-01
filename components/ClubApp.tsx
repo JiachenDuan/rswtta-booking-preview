@@ -60,6 +60,7 @@ const calendarTimes = [
   "10 PM"
 ];
 const durationOptions = [30, 60, 90, 120];
+const modalTimeOptions = Array.from({ length: 31 }, (_, index) => timeLabel(addMinutes(new Date(2026, 0, 1, 7, 0, 0, 0), index * 30)));
 const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const dayNamesZh = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 const today = new Date();
@@ -1038,6 +1039,7 @@ export function ClubApp() {
             recurring={false}
             recurringWeeks={1}
             saving={saving}
+            onSlotChange={selectSingleSlot}
             onDurationChange={setSelectedDurationMinutes}
             onCancel={() => setShowRequestConfirm(false)}
             onConfirm={async () => {
@@ -2170,6 +2172,7 @@ function ClubAppView({
           unavailable={isRangeUnavailable(bookings, addCoach, selectedSlot, selectedDurationMinutes)}
           saving={saving}
           onCoachChange={setAddCoach}
+          onSlotChange={onSlotChange}
           onDurationChange={onDurationChange}
           onStudentQueryChange={setStudentQuery}
           onStudentSelect={setSelectedAddStudent}
@@ -2236,6 +2239,7 @@ function ClubAddClassModal({
   unavailable,
   saving,
   onCoachChange,
+  onSlotChange,
   onDurationChange,
   onStudentQueryChange,
   onStudentSelect,
@@ -2254,6 +2258,7 @@ function ClubAddClassModal({
   unavailable: boolean;
   saving: boolean;
   onCoachChange: (value: string) => void;
+  onSlotChange: (value: CalendarSlot) => void;
   onDurationChange: (value: number) => void;
   onStudentQueryChange: (value: string) => void;
   onStudentSelect: (value: ParentAccount) => void;
@@ -2309,34 +2314,29 @@ function ClubAddClassModal({
             <dd>{rangeLabel(slot, durationMinutes)}</dd>
           </div>
         </dl>
-        {mode === "class" ? (
-          <div className="modal-duration-picker">
-            <span>{copy(language, "Duration", "时长")}</span>
-            <div className="duration-picker" aria-label="Duration">
-              {durationOptions.map((minutes) => (
-                <button
-                  type="button"
-                  className={durationMinutes === minutes ? "selected" : ""}
-                  key={minutes}
-                  onClick={() => onDurationChange(minutes)}
-                >
-                  {minutes} {copy(language, "min", "分钟")}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <label className="modal-duration-picker">
-            <span>{copy(language, "End time", "结束时间")}</span>
-            <select className="modal-select" value={durationMinutes} onChange={(event) => onDurationChange(Number(event.target.value))}>
-              {endTimeOptions(slot).map((option) => (
-                <option key={option.duration} value={option.duration}>
-                  {option.label}
-                </option>
+        <div className="modal-field-grid time-range-picker">
+          <label>
+            <span>{copy(language, "Start time", "开始时间")}</span>
+            <select className="modal-select" value={slot.timeLabel} onChange={(event) => {
+              const nextSlot = makeCalendarSlot(slot, event.target.value);
+              onSlotChange(nextSlot);
+              const firstEnd = endTimeOptions(nextSlot)[0];
+              if (firstEnd && durationMinutes <= 0) onDurationChange(firstEnd.duration);
+            }}>
+              {modalTimeOptions.slice(0, -1).map((option) => (
+                <option key={option} value={option}>{option}</option>
               ))}
             </select>
           </label>
-        )}
+          <label>
+            <span>{copy(language, "End time", "结束时间")}</span>
+            <select className="modal-select" value={durationMinutes} onChange={(event) => onDurationChange(Number(event.target.value))}>
+              {endTimeOptions(slot).map((option) => (
+                <option key={option.duration} value={option.duration}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
         {mode === "class" ? (
           <div className="modal-student-search">
             <div className="mode-switch modal-mode-switch" aria-label="Student type">
@@ -2458,7 +2458,7 @@ function ClubBookingActionModal({
   const initialDurationMinutes = Math.max(30, Math.round((bookingEndDate(booking).getTime() - bookingStart.getTime()) / 60000));
   const [dateValue, setDateValue] = useState(dateInputValue(bookingStart));
   const [startTime, setStartTime] = useState(initialStartTime || timeLabel(bookingStart));
-  const [durationMinutes, setDurationMinutes] = useState(durationOptions.includes(initialDurationMinutes) ? initialDurationMinutes : 60);
+  const [durationMinutes, setDurationMinutes] = useState(initialDurationMinutes);
   const [confirmAction, setConfirmAction] = useState<"update" | "cancel" | null>(null);
   const editSlot = makeSlotFromInput(dateValue, startTime);
   const isFutureClass = !isBlockedTime(booking) && booking.status !== "cancelled" && booking.status !== "coach_confirmed" && bookingStart.getTime() > Date.now();
@@ -2504,8 +2504,14 @@ function ClubBookingActionModal({
               </label>
               <label>
                 <span>{copy(language, "Start time", "开始时间")}</span>
-                <select className="modal-select" value={startTime} onChange={(event) => setStartTime(event.target.value)}>
-                  {calendarTimes.map((option) => (
+                <select className="modal-select" value={startTime} onChange={(event) => {
+                  const nextStart = event.target.value;
+                  setStartTime(nextStart);
+                  const nextSlot = makeSlotFromInput(dateValue, nextStart);
+                  const firstEnd = endTimeOptions(nextSlot)[0];
+                  if (firstEnd) setDurationMinutes(firstEnd.duration);
+                }}>
+                  {modalTimeOptions.slice(0, -1).map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -2513,21 +2519,14 @@ function ClubBookingActionModal({
                 </select>
               </label>
             </div>
-            <div className="modal-duration-picker">
-              <span>{copy(language, "New length", "新时长")}</span>
-              <div className="duration-picker" aria-label="New class length">
-                {durationOptions.map((minutes) => (
-                  <button
-                    type="button"
-                    className={durationMinutes === minutes ? "selected" : ""}
-                    key={minutes}
-                    onClick={() => setDurationMinutes(minutes)}
-                  >
-                    {minutes}m
-                  </button>
+            <label className="modal-duration-picker">
+              <span>{copy(language, "End time", "结束时间")}</span>
+              <select className="modal-select" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}>
+                {endTimeOptions(editSlot).map((option) => (
+                  <option key={option.duration} value={option.duration}>{option.label}</option>
                 ))}
-              </div>
-            </div>
+              </select>
+            </label>
             <p className={unavailable ? "modal-warning" : "modal-info"}>
               {unavailable
                 ? copy(language, "That coach already has something at the new time.", "该教练新时间已有安排。")
@@ -2601,6 +2600,7 @@ function ConfirmRequestModal({
   recurring,
   recurringWeeks,
   saving,
+  onSlotChange,
   onDurationChange,
   onCancel,
   onConfirm
@@ -2615,6 +2615,7 @@ function ConfirmRequestModal({
   recurring: boolean;
   recurringWeeks: number;
   saving: boolean;
+  onSlotChange?: (value: CalendarSlot) => void;
   onDurationChange?: (value: number) => void;
   onCancel: () => void;
   onConfirm: () => void;
@@ -2654,21 +2655,29 @@ function ConfirmRequestModal({
             </div>
           ) : null}
         </dl>
-        {onDurationChange ? (
-          <div className="modal-duration-picker">
-            <span>{copy(language, "Duration", "时长")}</span>
-            <div className="duration-picker" aria-label="Duration">
-              {durationOptions.map((minutes) => (
-                <button
-                  type="button"
-                  className={durationMinutes === minutes ? "selected" : ""}
-                  key={minutes}
-                  onClick={() => onDurationChange(minutes)}
-                >
-                  {minutes} {copy(language, "min", "分钟")}
-                </button>
-              ))}
-            </div>
+        {onDurationChange && onSlotChange ? (
+          <div className="modal-field-grid time-range-picker">
+            <label>
+              <span>{copy(language, "Start time", "开始时间")}</span>
+              <select className="modal-select" value={slot.timeLabel} onChange={(event) => {
+                const nextSlot = makeCalendarSlot(slot, event.target.value);
+                onSlotChange(nextSlot);
+                const firstEnd = endTimeOptions(nextSlot)[0];
+                if (firstEnd) onDurationChange(firstEnd.duration);
+              }}>
+                {modalTimeOptions.slice(0, -1).map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{copy(language, "End time", "结束时间")}</span>
+              <select className="modal-select" value={durationMinutes} onChange={(event) => onDurationChange(Number(event.target.value))}>
+                {endTimeOptions(slot).map((option) => (
+                  <option key={option.duration} value={option.duration}>{option.label}</option>
+                ))}
+              </select>
+            </label>
           </div>
         ) : null}
         {unavailable ? <p className="modal-warning">{copy(language, "This time is not available.", "这个时间不可预约。")}</p> : null}
