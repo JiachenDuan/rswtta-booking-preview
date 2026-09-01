@@ -2135,21 +2135,16 @@ function ClubAppView({
                   </p>
                   {booking.parentNote ? <p>{booking.parentNote}</p> : null}
                 </div>
-                {isCancellationRequest(booking) ? (
+                <div className="confirm-actions">
+                  <button className="accept" onClick={() => onConfirm(booking, booking.requestedCoach || booking.assignedCoach)}>
+                    <Check size={17} />
+                    {copy(language, "Confirm", "确认")}
+                  </button>
                   <button className="decline" onClick={() => onApproveCancel(booking)}>
                     <X size={17} />
-                    {copy(language, "Approve cancel", "批准取消")}
+                    {copy(language, "Reject", "拒绝")}
                   </button>
-                ) : (
-                  <div className="confirm-actions">
-                    {coaches.map((coach) => (
-                      <button className="accept" key={coach} onClick={() => onConfirm(booking, coach)}>
-                        <Check size={17} />
-                        {coach.replace("Coach ", "")}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                </div>
               </article>
             ))}
           </div>
