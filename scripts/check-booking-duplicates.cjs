@@ -8,9 +8,10 @@ const supabase = createClient(
 const projectSlug = 'rswtta-booking';
 
 function normalizeCoachName(coach = '') {
-  if (coach === 'Coach A' || coach === 'National Level Coach A') return 'National A';
-  if (coach === 'Coach B' || coach === 'National Coach B') return 'National B';
-  return coach;
+  const value = String(coach).trim();
+  if (value === 'Coach A' || value === 'National Level Coach A' || value === 'National A' || value === 'Debolina' || value === 'Coach Debolina') return 'National A';
+  if (value === 'Coach B' || value === 'National Coach B' || value === 'National B' || value === 'Diren' || value === 'Coach Diren') return 'National B';
+  return value;
 }
 
 function bookingNaturalKey(values = {}) {

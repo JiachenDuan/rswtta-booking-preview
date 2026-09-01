@@ -303,9 +303,9 @@ function uniqueAccountRowsByStudentName(rows: Array<ProjectRow<AccountValues>>) 
 }
 
 function normalizeCoachName(value: unknown) {
-  const coach = String(value ?? "Coach A");
-  if (coach === "Coach A" || coach === "National A") return "National A";
-  if (coach === "Coach B" || coach === "National B") return "National B";
+  const coach = String(value ?? "Coach A").trim();
+  if (coach === "Coach A" || coach === "National A" || coach === "Debolina" || coach === "Coach Debolina") return "National A";
+  if (coach === "Coach B" || coach === "National B" || coach === "Diren" || coach === "Coach Diren") return "National B";
   return coach;
 }
 
