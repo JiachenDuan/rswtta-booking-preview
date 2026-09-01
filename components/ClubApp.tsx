@@ -2554,36 +2554,36 @@ function ClubBookingActionModal({
         {onComplete && !isBlockedTime(booking) ? (
           <button className="primary-button complete-hero-button" onClick={onComplete}>
             <Check size={22} />
-            {copy(language, "Complete class", "完成课程")}
+            {copy(language, "Complete", "完成")}
           </button>
         ) : null}
         <div className="modal-actions class-secondary-actions">
           {isFutureClass ? (
             <button className="primary-button secondary-red-button" disabled={unavailable || !updateChanged} onClick={() => setConfirmAction("update")}>
               <Check size={18} />
-              {copy(language, "Update time", "更新时间")}
+              {copy(language, "Update", "更新")}
             </button>
           ) : null}
           <button className="decline secondary-danger-button" onClick={() => setConfirmAction("cancel")}>
             <X size={17} />
-            {copy(language, isBlockedTime(booking) ? "Remove block" : "Cancel class", isBlockedTime(booking) ? "移除不可用" : "取消课程")}
+            {copy(language, isBlockedTime(booking) ? "Remove block" : "Cancel", isBlockedTime(booking) ? "移除不可用" : "取消")}
           </button>
         </div>
         {confirmAction ? (
           <div className="action-confirm-panel">
             <strong>
               {confirmAction === "update"
-                ? copy(language, "Confirm update time?", "确认更新时间？")
-                : copy(language, isBlockedTime(booking) ? "Confirm remove block?" : "Confirm cancel class?", isBlockedTime(booking) ? "确认移除不可用时间？" : "确认取消课程？")}
+                ? copy(language, "Confirm update?", "确认更新？")
+                : copy(language, isBlockedTime(booking) ? "Confirm remove block?" : "Confirm cancel?", isBlockedTime(booking) ? "确认移除不可用时间？" : "确认取消？")}
             </strong>
             <p>
               {confirmAction === "update"
-                ? `${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`
-                : copy(language, "This prevents accidental manager taps.", "这是为了避免管理员误点。")}
+                ? `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`
+                : copy(language, isBlockedTime(booking) ? "Remove this blocked time." : "Cancel this class.", isBlockedTime(booking) ? "移除这个不可用时间。" : "取消这节课。")}
             </p>
             <div className="modal-actions">
               <button className="filter-button" type="button" onClick={() => setConfirmAction(null)}>
-                {copy(language, "Keep editing", "继续编辑")}
+                {copy(language, "Back", "返回")}
               </button>
               <button
                 className={confirmAction === "update" ? "primary-button" : "decline"}
@@ -2596,7 +2596,7 @@ function ClubBookingActionModal({
                   onCancel();
                 }}
               >
-                {copy(language, "Yes, confirm", "确认")}
+                {copy(language, "Confirm", "确认")}
               </button>
             </div>
           </div>
