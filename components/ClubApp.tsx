@@ -336,14 +336,23 @@ function isGroupClassBlock(booking: Booking) {
   return booking.program === "Group class" && booking.studentName.trim().toLowerCase() === "group class";
 }
 
+function isGroupClassJoinRequest(booking: Booking) {
+  return booking.program === "Group lesson" && booking.parentNote.includes("Parent requested to join group class");
+}
+
+function isGroupClassCalendarItem(booking: Booking) {
+  return isGroupClassBlock(booking) || isGroupClassJoinRequest(booking);
+}
+
 function calendarBookingTitle(booking: Booking, language: Language) {
   if (isBlockedTime(booking)) return copy(language, "Blocked time", "不可预约时间");
-  if (isGroupClassBlock(booking)) return copy(language, "Group class", "团体课");
+  if (isGroupClassCalendarItem(booking)) return copy(language, "Group class", "团体课");
   return booking.studentName;
 }
 
 function calendarBookingSubtitle(booking: Booking, language: Language) {
   if (isBlockedTime(booking)) return copy(language, "Blocked time", "不可预约时间");
+  if (isGroupClassJoinRequest(booking)) return copy(language, "Join request", "加入请求");
   if (isGroupClassBlock(booking)) return copy(language, "Group class", "团体课");
   return statusText(booking.status, language);
 }
@@ -1908,7 +1917,7 @@ function ClubCalendar({
                     )
                     .map((booking) => (
                     <span
-                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${isGroupClassBlock(booking) ? " group-class-block" : ""}${useCoachLanes ? " coach-lane" : ""} spanning-event`}
+                      className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${isGroupClassCalendarItem(booking) ? " group-class-block" : ""}${useCoachLanes ? " coach-lane" : ""} spanning-event`}
                       key={booking.id}
                       style={calendarEventStyle(booking, useCoachLanes, cellStart)}
                       onClick={(event) => {
@@ -1918,7 +1927,7 @@ function ClubCalendar({
                       }}
                     >
                       <span className={`calendar-status-badge ${booking.status}`}>
-                        {isBlockedTime(booking) ? copy(language, "Blocked", "不可用") : isGroupClassBlock(booking) ? copy(language, "Group", "团体") : calendarStatusText(booking.status, language)}
+                        {isBlockedTime(booking) ? copy(language, "Blocked", "不可用") : isGroupClassCalendarItem(booking) ? copy(language, "Group", "团体") : calendarStatusText(booking.status, language)}
                       </span>
                       <strong>{calendarBookingTitle(booking, language)}</strong>
                       <small>{compactTimeRange(booking.timeLabel)}</small>
