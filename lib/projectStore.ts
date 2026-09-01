@@ -364,7 +364,6 @@ async function listRows<T>(tableSlug: keyof typeof tableDefinitions) {
       .from("project_rows")
       .select("id, project_table_id, values, created_at, updated_at")
       .eq("project_table_id", tables[tableSlug])
-      .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
     if (response.error) throw setupError(response.error.message);
 
@@ -814,8 +813,16 @@ function nextDateForDay(start: Date, day: number) {
   return date;
 }
 
+function bookingNaturalKey(values: Partial<Booking>) {
+  return [
+    String(values.studentName ?? "").trim().toLowerCase(),
+    normalizeCoachName(values.assignedCoach ?? values.requestedCoach ?? ""),
+    String(values.startsAt ?? "")
+  ].join("|");
+}
+
 function tianRecurringKey(values: Partial<Booking>) {
-  return `${values.studentName ?? ""}|${values.assignedCoach ?? values.requestedCoach ?? ""}|${values.startsAt ?? ""}`;
+  return bookingNaturalKey(values);
 }
 
 function tianRecurringBookingValues(seed: RecurringClassSeed, date: Date): Booking {
@@ -954,6 +961,11 @@ export async function createBooking(input: Omit<Booking, "id" | "status" | "crea
     updatedAt: ""
   };
   try {
+    const rows = await listRows<Booking>("bookings");
+    const newKey = bookingNaturalKey(values);
+    const existing = rows.find((row) => bookingNaturalKey(row.values) === newKey && row.values.status !== "cancelled");
+    if (existing) return bookingFromRow(existing);
+
     const row = await createRow<Booking>("bookings", values);
     return bookingFromRow(row);
   } catch (error) {
