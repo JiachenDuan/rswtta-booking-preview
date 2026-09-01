@@ -2471,3 +2471,13 @@ button.student-result.selected {
 .calendar-booking.spanning-event {
   z-index: 30 !important;
 }
+
+/* Modal must always appear above calendar event cards. */
+.modal-backdrop {
+  z-index: 1000 !important;
+}
+
+.confirm-modal {
+  position: relative;
+  z-index: 1001;
+}
