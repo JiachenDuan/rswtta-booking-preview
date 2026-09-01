@@ -670,7 +670,7 @@ export function ClubApp() {
         timeLabel: groupClass.timeLabel,
         startsAt: groupClass.startsAt,
         priceCents: 7500,
-        parentNote: `Parent requested to join group class. Group block id: ${groupClass.id}`
+        parentNote: "Parent requested to join group class."
       });
       await loadAll();
       setNotice(copy(language, "Saved group class request. Club can confirm or reject it.", "已保存团体课请求，Club 可以确认或拒绝。"));
