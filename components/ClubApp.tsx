@@ -337,7 +337,7 @@ function isGroupClassBlock(booking: Booking) {
 }
 
 function isGroupClassJoinRequest(booking: Booking) {
-  return booking.program === "Group lesson" && booking.parentNote.includes("Parent requested to join group class");
+  return booking.program === "Group lesson";
 }
 
 function isGroupClassCalendarItem(booking: Booking) {
