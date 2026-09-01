@@ -2362,11 +2362,13 @@ button.student-result.selected {
     grid-template-columns: 42px minmax(0, 1fr);
   }
 
-  .appointment-row > span,
-  .appointment-row strong,
-  .row-actions {
-    justify-self: start;
+  .class-sign-stack {
+    justify-items: start;
     grid-column: 2;
+  }
+
+  .appointment-row strong {
+    justify-self: start;
   }
 }
 

@@ -3106,19 +3106,6 @@ function BookingList({
             </span>
             <strong className={booking.status}>{statusText(booking.status, language)}</strong>
           </div>
-          {parentActions ? (
-            <div className="row-actions parent-actions">
-              <button disabled={booking.status !== "club_confirmed"} title={copy(language, "Complete", "完成")} onClick={() => onComplete?.(booking)}>
-                <Check size={15} />
-              </button>
-              <button disabled={!canParentRequestChange(booking)} title={copy(language, "Request change", "申请改期")} onClick={() => onChangeRequest?.(booking)}>
-                <RefreshCcw size={15} />
-              </button>
-              <button disabled={!canParentRequestChange(booking)} title={copy(language, "Cancel", "取消")} onClick={() => onCancel?.(booking)}>
-                <X size={15} />
-              </button>
-            </div>
-          ) : null}
         </article>
       ))}
     </div>
