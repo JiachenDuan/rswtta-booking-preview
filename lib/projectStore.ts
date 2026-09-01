@@ -304,8 +304,8 @@ function uniqueAccountRowsByStudentName(rows: Array<ProjectRow<AccountValues>>) 
 
 function normalizeCoachName(value: unknown) {
   const coach = String(value ?? "Coach A");
-  if (coach === "Coach A") return "National Level Coach A";
-  if (coach === "Coach B") return "National Coach B";
+  if (coach === "Coach A" || coach === "National A") return "National A";
+  if (coach === "Coach B" || coach === "National B") return "National B";
   return coach;
 }
 
@@ -328,8 +328,8 @@ function bookingFromRow(row: ProjectRow<Booking>): Booking {
     familyName: String(row.values.familyName ?? row.values.studentName ?? "Student"),
     studentEmail: String(row.values.studentEmail ?? ""),
     phone: String(row.values.phone ?? ""),
-    requestedCoach: normalizeCoachName(row.values.requestedCoach ?? row.values.assignedCoach ?? "National Level Coach A"),
-    assignedCoach: normalizeCoachName(row.values.assignedCoach ?? row.values.requestedCoach ?? "National Level Coach A"),
+    requestedCoach: normalizeCoachName(row.values.requestedCoach ?? row.values.assignedCoach ?? "National A"),
+    assignedCoach: normalizeCoachName(row.values.assignedCoach ?? row.values.requestedCoach ?? "National A"),
     program: String(row.values.program ?? "Private lesson"),
     dateLabel: String(row.values.dateLabel ?? "Today"),
     timeLabel: String(row.values.timeLabel ?? "4:30 PM"),
