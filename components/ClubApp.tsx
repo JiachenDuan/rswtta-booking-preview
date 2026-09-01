@@ -2050,17 +2050,19 @@ function ClubAppView({
     }
 
     const summaryRows = [
-      ["Student", "Confirmed not completed", "Coach completed", "Total classes"],
+      ["Student", "Confirmed not completed", "Coach completed", "Total classes", "Total hours"],
       ...[...studentsByKey.values()]
         .sort((left, right) => left.studentName.localeCompare(right.studentName))
         .map((student) => {
           const confirmedCount = student.bookings.filter((booking) => booking.status === "club_confirmed").length;
           const completed = student.bookings.filter((booking) => booking.status === "coach_confirmed");
+          const totalHours = student.bookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
           return [
             student.studentName,
             confirmedCount,
             completed.length,
-            student.bookings.length
+            student.bookings.length,
+            Number.isInteger(totalHours) ? String(totalHours) : String(totalHours)
           ];
         })
     ];
@@ -2068,6 +2070,8 @@ function ClubAppView({
     const studentDetailRows = [...studentsByKey.values()]
       .sort((left, right) => left.studentName.localeCompare(right.studentName))
       .flatMap((student) => {
+        const totalHours = student.bookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
+        const totalHoursLabel = Number.isInteger(totalHours) ? String(totalHours) : String(totalHours);
         const rows = [
           [],
           ["========================================"],
@@ -2083,7 +2087,8 @@ function ClubAppView({
               booking.assignedCoach,
               statusText(booking.status),
               booking.parentNote
-            ])
+            ]),
+          ["Student total hours", "", totalHoursLabel, "", "", ""]
         ];
         return rows;
       });
