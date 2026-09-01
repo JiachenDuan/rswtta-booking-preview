@@ -1934,6 +1934,7 @@ function ClubAppView({
   const [exportStartDate, setExportStartDate] = useState(defaultExportStart);
   const [exportEndDate, setExportEndDate] = useState(defaultExportEnd);
   const [exportStudentQuery, setExportStudentQuery] = useState("");
+  const [selectedExportStudent, setSelectedExportStudent] = useState<ParentAccount | null>(null);
   const [studentQuery, setStudentQuery] = useState("");
   const [addCoach, setAddCoach] = useState<string>(activeCalendarTab === "Combined" ? coaches[0] : activeCalendarTab);
   const [showAddClassModal, setShowAddClassModal] = useState(false);
@@ -1979,6 +1980,17 @@ function ClubAppView({
       student.phone.toLowerCase().includes(query)
     );
   });
+  const exportStudentLocked = Boolean(selectedExportStudent && exportStudentQuery.trim() === selectedExportStudent.studentName);
+  const exportStudentResults = exportStudentQuery.trim() && !exportStudentLocked
+    ? studentDirectory.filter((student) => {
+        const query = exportStudentQuery.trim().toLowerCase();
+        return (
+          student.studentName.toLowerCase().includes(query) ||
+          student.email.toLowerCase().includes(query) ||
+          student.phone.toLowerCase().includes(query)
+        );
+      }).slice(0, 6)
+    : [];
 
   useEffect(() => {
     if (activeCalendarTab !== "Combined") {
@@ -1991,13 +2003,17 @@ function ClubAppView({
     const periodEnd = endOfDay(dateFromInputValue(exportEndDate));
     const periodTitle = `${dateLabel(periodStart)} - ${dateLabel(periodEnd)}`;
     const studentFilter = exportStudentQuery.trim().toLowerCase();
+    const selectedStudentName = selectedExportStudent?.studentName.trim().toLowerCase();
 
     const inPeriod = bookings.filter((booking) => {
       const startsAt = new Date(booking.startsAt);
-      const matchesStudent = !studentFilter ||
-        booking.studentName.toLowerCase().includes(studentFilter) ||
-        booking.studentEmail.toLowerCase().includes(studentFilter) ||
-        booking.phone.toLowerCase().includes(studentFilter);
+      const bookingStudentName = booking.studentName.trim().toLowerCase();
+      const matchesStudent = selectedStudentName
+        ? bookingStudentName === selectedStudentName
+        : !studentFilter ||
+          bookingStudentName.includes(studentFilter) ||
+          booking.studentEmail.toLowerCase().includes(studentFilter) ||
+          booking.phone.toLowerCase().includes(studentFilter);
       return (
         startsAt >= periodStart &&
         startsAt <= periodEnd &&
@@ -2073,7 +2089,7 @@ function ClubAppView({
     const csv = [
       ["RSWTTA class report", periodTitle],
       ["Date range", `${exportStartDate} to ${exportEndDate}`],
-      ["Student filter", exportStudentQuery.trim() || "All students"],
+      ["Student filter", selectedExportStudent?.studentName || exportStudentQuery.trim() || "All students"],
       [],
       ["Student summary"],
       ...summaryRows,
@@ -2084,7 +2100,7 @@ function ClubAppView({
       .map((row) => row.map((cell) => csvValue(cell)).join(","))
       .join("\n");
 
-    const filenameStudent = exportStudentQuery.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    const filenameStudent = (selectedExportStudent?.studentName || exportStudentQuery.trim()).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
     downloadTextFile(`rswtta-classes${filenameStudent ? `-${filenameStudent}` : ""}-${exportStartDate}-to-${exportEndDate}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
   }
 
@@ -2155,11 +2171,47 @@ function ClubAppView({
                 <Search size={18} />
                 <input
                   value={exportStudentQuery}
-                  onChange={(event) => setExportStudentQuery(event.target.value)}
+                  onChange={(event) => {
+                    setExportStudentQuery(event.target.value);
+                    if (selectedExportStudent && event.target.value !== selectedExportStudent.studentName) setSelectedExportStudent(null);
+                  }}
                   placeholder={copy(language, "Leave blank for all students", "留空下载全部学生")}
                 />
               </div>
             </label>
+            <div className="student-results modal-results export-student-results">
+              {exportStudentLocked && selectedExportStudent ? (
+                <div className="student-result selected locked-selection">
+                  <span>
+                    <strong>{selectedExportStudent.studentName}</strong>
+                    <em>{selectedExportStudent.email || selectedExportStudent.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
+                  </span>
+                  <Check size={17} />
+                </div>
+              ) : exportStudentQuery.trim() ? (
+                exportStudentResults.length === 0 ? (
+                  <p className="empty-state">{copy(language, "No student found.", "未找到学生。")}</p>
+                ) : (
+                  exportStudentResults.map((student) => (
+                    <button
+                      type="button"
+                      className="student-result"
+                      key={student.id}
+                      onClick={() => {
+                        setSelectedExportStudent(student);
+                        setExportStudentQuery(student.studentName);
+                      }}
+                    >
+                      <span>
+                        <strong>{student.studentName}</strong>
+                        <em>{student.email || student.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
+                      </span>
+                      <Check size={17} />
+                    </button>
+                  ))
+                )
+              ) : null}
+            </div>
             <div className="export-date-grid">
               <label>
                 <span>{copy(language, "Start", "开始")}</span>
