@@ -1165,13 +1165,13 @@ p {
   border: 0;
   border-left: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: rgba(17, 17, 23, 0.72);
+  background: transparent;
   color: var(--ink);
   text-align: left;
 }
 
 .calendar-cell:hover {
-  background: rgba(17, 17, 23, 0.78);
+  background: transparent;
   box-shadow: none;
 }
 
@@ -1181,7 +1181,7 @@ p {
 }
 
 .calendar-cell.actionable {
-  background: rgba(220, 38, 38, 0.05);
+  background: transparent;
 }
 
 .calendar-cell.actionable:hover {
@@ -1190,7 +1190,7 @@ p {
 
 .calendar-cell.unavailable {
   cursor: not-allowed;
-  background: rgba(220, 38, 38, 0.11);
+  background: transparent;
 }
 
 .calendar-cell:disabled {
@@ -1198,7 +1198,7 @@ p {
 }
 
 .calendar-cell.has-event {
-  z-index: 4;
+  z-index: auto;
 }
 
 .spanning-event {
@@ -1216,7 +1216,7 @@ p {
 }
 
 .calendar-booking.spanning-event {
-  z-index: 6;
+  z-index: 30;
   min-height: 0;
 }
 
@@ -2411,11 +2411,11 @@ button.student-result.selected {
 
 .calendar-cell.privacy-unavailable {
   cursor: not-allowed;
-  background: rgba(17, 17, 23, 0.72);
+  background: transparent;
 }
 
 .calendar-cell.privacy-unavailable:hover {
-  background: rgba(17, 17, 23, 0.72);
+  background: transparent;
 }
 
 /* Parent privacy unavailable blocks must render as one solid, class-sized piece. */
@@ -2451,4 +2451,23 @@ button.student-result.selected {
   z-index: -1;
   border-radius: inherit;
   background: #6b5a1d;
+}
+
+
+/* Calendar cards can span across time rows; cells must not paint over them. */
+.calendar-cell,
+.calendar-cell:hover,
+.calendar-cell.actionable,
+.calendar-cell.unavailable,
+.calendar-cell.privacy-unavailable,
+.calendar-cell.privacy-unavailable:hover {
+  background: transparent !important;
+}
+
+.calendar-cell.has-event {
+  z-index: auto !important;
+}
+
+.calendar-booking.spanning-event {
+  z-index: 30 !important;
 }
