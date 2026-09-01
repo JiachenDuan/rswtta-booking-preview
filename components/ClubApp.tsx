@@ -2232,8 +2232,14 @@ function ClubAppView({
           onCoachChange={setAddCoach}
           onSlotChange={onSlotChange}
           onDurationChange={onDurationChange}
-          onStudentQueryChange={setStudentQuery}
-          onStudentSelect={setSelectedAddStudent}
+          onStudentQueryChange={(value) => {
+            setStudentQuery(value);
+            if (selectedAddStudent && value !== selectedAddStudent.studentName) setSelectedAddStudent(null);
+          }}
+          onStudentSelect={(student) => {
+            setSelectedAddStudent(student);
+            setStudentQuery(student.studentName);
+          }}
           onCancel={() => setShowAddClassModal(false)}
           onConfirm={async (durationMinutes, recurring, weeks) => {
             const slots = recurring ? repeatedCalendarSlots(selectedSlot, weeks) : [selectedSlot];
@@ -2335,7 +2341,8 @@ function ClubAddClassModal({
   const [recurring, setRecurring] = useState(false);
   const [weeks, setWeeks] = useState(4);
   const enrolledQuery = studentQuery.trim().toLowerCase();
-  const enrolledResults = enrolledQuery
+  const selectedStudentLocked = Boolean(selectedStudent && studentQuery.trim() === selectedStudent.studentName);
+  const enrolledResults = enrolledQuery && !selectedStudentLocked
     ? students.filter((student) =>
         student.studentName.toLowerCase().includes(enrolledQuery) ||
         student.email.toLowerCase().includes(enrolledQuery) ||
@@ -2440,7 +2447,15 @@ function ClubAddClassModal({
               </div>
             </label>
             <div className="student-results modal-results">
-              {!enrolledQuery ? (
+              {selectedStudentLocked && selectedStudent ? (
+                <div className="student-result selected locked-selection">
+                  <span>
+                    <strong>{selectedStudent.studentName}</strong>
+                    <em>{selectedStudent.email || selectedStudent.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
+                  </span>
+                  <Check size={17} />
+                </div>
+              ) : !enrolledQuery ? (
                 <p className="empty-state">{copy(language, "Search student name to start.", "输入学生姓名开始搜索。")}</p>
               ) : enrolledResults.length === 0 ? (
                 <p className="empty-state">{copy(language, "No enrolled students found.", "未找到已注册学生。")}</p>
