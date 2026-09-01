@@ -354,6 +354,11 @@ function bookingDurationHours(booking: Booking) {
   return durationMinutes / 60;
 }
 
+function bookingHoursLabel(booking: Booking) {
+  const hours = bookingDurationHours(booking);
+  return Number.isInteger(hours) ? String(hours) : String(hours);
+}
+
 function eventHeightStyle(hours: number) {
   return { height: `calc(${hours} * var(--calendar-hour-height) - 10px)` };
 }
@@ -2068,12 +2073,13 @@ function ClubAppView({
           ["========================================"],
           [`STUDENT: ${student.studentName}`],
           ["========================================"],
-          ["Date", "Time", "Coach", "Status", "Parent note"],
+          ["Date", "Time", "Hours", "Coach", "Status", "Parent note"],
           ...student.bookings
             .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
             .map((booking) => [
               booking.dateLabel,
               booking.timeLabel,
+              bookingHoursLabel(booking),
               booking.assignedCoach,
               statusText(booking.status),
               booking.parentNote
