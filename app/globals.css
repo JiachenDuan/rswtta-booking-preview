@@ -1894,6 +1894,20 @@ button.student-result.selected {
   color: #fca5a5;
 }
 
+.group-attendance-actions .class-type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  line-height: 1;
+  text-align: center;
+}
+
 .group-dropin-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
