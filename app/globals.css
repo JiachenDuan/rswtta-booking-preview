@@ -1873,6 +1873,38 @@ button.student-result.selected {
   font-weight: 900;
 }
 
+.group-dropin-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.group-dropin-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.group-dropin-panel span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .group-roster-row,
+  .group-dropin-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .group-attendance-actions {
+    justify-content: flex-start;
+  }
+}
+
 .parent-actions {
   justify-self: end;
   grid-column: 1 / -1;

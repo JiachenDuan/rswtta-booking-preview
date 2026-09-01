@@ -694,6 +694,46 @@ export function ClubApp() {
     }
   }
 
+  async function addGroupDropIn(groupClass: Booking, inputStudentName: string) {
+    const trimmedName = inputStudentName.trim();
+    if (!trimmedName) {
+      setNotice(copy(language, "Student name is required.", "请输入学生姓名。"));
+      return false;
+    }
+    const coach = groupClass.assignedCoach || groupClass.requestedCoach;
+    setSaving(true);
+    setNotice(copy(language, "Adding drop-in student...", "正在添加临时学生..."));
+    try {
+      let account = students.find((student) => student.studentName.trim().toLowerCase() === trimmedName.toLowerCase());
+      if (!account) {
+        account = await createClubStudentAccount({ studentName: trimmedName, email: "", phone: "" });
+      }
+      const booking = await createBooking({
+        studentName: account.studentName,
+        familyName: account.studentName,
+        studentEmail: account.email,
+        phone: account.phone,
+        requestedCoach: coach,
+        assignedCoach: coach,
+        program: "Group lesson",
+        dateLabel: groupClass.dateLabel,
+        timeLabel: groupClass.timeLabel,
+        startsAt: groupClass.startsAt,
+        priceCents: 7500,
+        parentNote: "Added as group class drop-in by club."
+      });
+      await updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach });
+      await loadAll();
+      setNotice(copy(language, `Added ${account.studentName} to group class.`, `已添加 ${account.studentName} 到团体课。`));
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not add drop-in student.", "无法添加临时学生。"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) {
     const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
     if (unavailableSlot) {
@@ -1111,6 +1151,7 @@ export function ClubApp() {
             onAddClass={addClubClass}
             onAddNewStudentClass={addClubNewStudentClass}
             onBlockTime={blockCoachTime}
+            onAddGroupDropIn={addGroupDropIn}
           />
         )}
         {showRequestConfirm ? (
@@ -1991,7 +2032,8 @@ function ClubAppView({
   onUpdateClassTime,
   onAddClass,
   onAddNewStudentClass,
-  onBlockTime
+  onBlockTime,
+  onAddGroupDropIn
 }: {
   bookings: Booking[];
   students: ParentAccount[];
@@ -2022,6 +2064,7 @@ function ClubAppView({
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onAddNewStudentClass: (input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
+  onAddGroupDropIn: (groupClass: Booking, studentName: string) => Promise<boolean>;
 }) {
   const defaultExportStart = dateInputValue(startOfWeek(selectedSlot.date));
   const defaultExportEnd = dateInputValue(addDays(startOfWeek(selectedSlot.date), 6));
@@ -2450,6 +2493,8 @@ function ClubAppView({
           onConfirmEnrollment={(booking) => onConfirm(booking, booking.assignedCoach || booking.requestedCoach)}
           onRejectEnrollment={(booking) => onApproveCancel(booking)}
           onCompleteEnrollment={(booking) => onCoachComplete(booking)}
+          onAddDropIn={onAddGroupDropIn}
+          saving={saving}
           onComplete={
             selectedClubBooking.status === "club_confirmed"
               ? () => {
@@ -2750,7 +2795,9 @@ function ClubBookingActionModal({
   onUpdateTime,
   onConfirmEnrollment,
   onRejectEnrollment,
-  onCompleteEnrollment
+  onCompleteEnrollment,
+  onAddDropIn,
+  saving
 }: {
   booking: Booking;
   bookings: Booking[];
@@ -2762,6 +2809,8 @@ function ClubBookingActionModal({
   onConfirmEnrollment: (booking: Booking) => void;
   onRejectEnrollment: (booking: Booking) => void;
   onCompleteEnrollment: (booking: Booking) => void;
+  onAddDropIn: (groupClass: Booking, studentName: string) => Promise<boolean>;
+  saving: boolean;
 }) {
   const bookingStart = new Date(booking.startsAt);
   const [initialStartTime] = booking.timeLabel.split(" - ");
@@ -2782,6 +2831,7 @@ function ClubBookingActionModal({
   const requestedGroupEnrollments = groupEnrollments.filter((item) => item.status === "requested" || item.status === "change_requested");
   const confirmedGroupEnrollments = groupEnrollments.filter((item) => item.status === "club_confirmed");
   const completedGroupEnrollments = groupEnrollments.filter((item) => item.status === "coach_confirmed");
+  const [dropInName, setDropInName] = useState("");
 
   if (isGroupClassBlock(booking)) {
     return (
@@ -2829,10 +2879,31 @@ function ClubBookingActionModal({
                       </button>
                     ) : null}
                     {studentBooking.status === "coach_confirmed" ? <span className="class-type-badge group">{copy(language, "Attended", "已出勤")}</span> : null}
+                    {studentBooking.status !== "requested" && studentBooking.status !== "change_requested" ? (
+                      <button className="decline" type="button" onClick={() => onRejectEnrollment(studentBooking)}>{copy(language, "Cancel", "取消")}</button>
+                    ) : null}
                   </div>
                 </article>
               ))
             )}
+          </div>
+          <div className="group-dropin-panel">
+            <label>
+              <span>{copy(language, "Add drop-in student", "添加临时学生")}</span>
+              <input className="modal-input" value={dropInName} onChange={(event) => setDropInName(event.target.value)} placeholder={copy(language, "Student name", "学生姓名")} />
+            </label>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={saving || !dropInName.trim()}
+              onClick={async () => {
+                const saved = await onAddDropIn(booking, dropInName);
+                if (saved) setDropInName("");
+              }}
+            >
+              <Plus size={17} />
+              {copy(language, "Add drop-in", "添加临时学生")}
+            </button>
           </div>
         </section>
       </div>
