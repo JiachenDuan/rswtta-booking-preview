@@ -1485,13 +1485,18 @@ p {
   gap: 10px;
 }
 
-.export-date-grid label {
+.export-date-grid label,
+.export-student-search {
   display: grid;
   gap: 7px;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.export-student-search input {
+  text-transform: none;
 }
 
 .add-class-panel {

@@ -1933,6 +1933,7 @@ function ClubAppView({
   const defaultExportEnd = dateInputValue(addDays(startOfWeek(selectedSlot.date), 6));
   const [exportStartDate, setExportStartDate] = useState(defaultExportStart);
   const [exportEndDate, setExportEndDate] = useState(defaultExportEnd);
+  const [exportStudentQuery, setExportStudentQuery] = useState("");
   const [studentQuery, setStudentQuery] = useState("");
   const [addCoach, setAddCoach] = useState<string>(activeCalendarTab === "Combined" ? coaches[0] : activeCalendarTab);
   const [showAddClassModal, setShowAddClassModal] = useState(false);
@@ -1989,12 +1990,18 @@ function ClubAppView({
     const periodStart = dateFromInputValue(exportStartDate);
     const periodEnd = endOfDay(dateFromInputValue(exportEndDate));
     const periodTitle = `${dateLabel(periodStart)} - ${dateLabel(periodEnd)}`;
+    const studentFilter = exportStudentQuery.trim().toLowerCase();
 
     const inPeriod = bookings.filter((booking) => {
       const startsAt = new Date(booking.startsAt);
+      const matchesStudent = !studentFilter ||
+        booking.studentName.toLowerCase().includes(studentFilter) ||
+        booking.studentEmail.toLowerCase().includes(studentFilter) ||
+        booking.phone.toLowerCase().includes(studentFilter);
       return (
         startsAt >= periodStart &&
         startsAt <= periodEnd &&
+        matchesStudent &&
         !isBlockedTime(booking) &&
         (booking.status === "club_confirmed" || booking.status === "coach_confirmed")
       );
@@ -2066,6 +2073,7 @@ function ClubAppView({
     const csv = [
       ["RSWTTA class report", periodTitle],
       ["Date range", `${exportStartDate} to ${exportEndDate}`],
+      ["Student filter", exportStudentQuery.trim() || "All students"],
       [],
       ["Student summary"],
       ...summaryRows,
@@ -2076,7 +2084,8 @@ function ClubAppView({
       .map((row) => row.map((cell) => csvValue(cell)).join(","))
       .join("\n");
 
-    downloadTextFile(`rswtta-classes-${exportStartDate}-to-${exportEndDate}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
+    const filenameStudent = exportStudentQuery.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    downloadTextFile(`rswtta-classes${filenameStudent ? `-${filenameStudent}` : ""}-${exportStartDate}-to-${exportEndDate}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
   }
 
   return (
@@ -2140,6 +2149,17 @@ function ClubAppView({
             </div>
           </div>
           <div className="export-panel">
+            <label className="export-student-search">
+              <span>{copy(language, "Student search optional", "学生搜索（可选）")}</span>
+              <div className="input-shell">
+                <Search size={18} />
+                <input
+                  value={exportStudentQuery}
+                  onChange={(event) => setExportStudentQuery(event.target.value)}
+                  placeholder={copy(language, "Leave blank for all students", "留空下载全部学生")}
+                />
+              </div>
+            </label>
             <div className="export-date-grid">
               <label>
                 <span>{copy(language, "Start", "开始")}</span>
