@@ -26,6 +26,7 @@ import {
   completeParentProfileSetup,
   createBillNotification,
   createBooking,
+  createClubStudentAccount,
   listBillNotifications,
   listBookings,
   listParentAccounts,
@@ -658,22 +659,23 @@ export function ClubApp() {
     }
   }
 
-  async function addClubTryoutClass(input: { studentName: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) {
+  async function addClubNewStudentClass(input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) {
     const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
     if (unavailableSlot) {
       setNotice(copy(language, "That coach already has a class at the selected time.", "该教练这个时间已有课程。"));
       return;
     }
     setSaving(true);
-    setNotice(copy(language, "Adding tryout class...", "正在添加体验课..."));
+    setNotice(copy(language, "Creating student and adding class...", "正在创建学生并添加课程..."));
     try {
+      const account = await createClubStudentAccount({ studentName: input.studentName, email: input.email, phone: input.phone });
       await Promise.all(
         slots.map((slot) =>
           createBooking({
-            studentName: input.studentName,
-            familyName: input.studentName,
-            studentEmail: "",
-            phone: input.phone,
+            studentName: account.studentName,
+            familyName: account.studentName,
+            studentEmail: account.email,
+            phone: account.phone,
             requestedCoach: coach,
             assignedCoach: coach,
             program: lessonProgram(coach),
@@ -681,14 +683,14 @@ export function ClubApp() {
             timeLabel: rangeLabel(slot, durationMinutes),
             startsAt: slot.startsAt,
             priceCents: lessonPriceCents(coach),
-            parentNote: input.note ? `Tryout: ${input.note}` : "Tryout class"
+            parentNote: input.note ? `Added by club: ${input.note}` : "Added by club"
           }).then((booking) => updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach }))
         )
       );
       await loadAll();
-      setNotice(copy(language, `Added ${slots.length} tryout class${slots.length === 1 ? "" : "es"}.`, `已添加 ${slots.length} 节体验课。`));
+      setNotice(copy(language, `Added ${slots.length} class${slots.length === 1 ? "" : "es"} for ${account.studentName}.`, `已为 ${account.studentName} 添加 ${slots.length} 节课。`));
     } catch {
-      setNotice(copy(language, "Could not add tryout class.", "无法添加体验课。"));
+      setNotice(copy(language, "Could not create student or add class.", "无法创建学生或添加课程。"));
     } finally {
       setSaving(false);
     }
@@ -1035,7 +1037,7 @@ export function ClubApp() {
               })
             }
             onAddClass={addClubClass}
-            onAddTryoutClass={addClubTryoutClass}
+            onAddNewStudentClass={addClubNewStudentClass}
             onBlockTime={blockCoachTime}
           />
         )}
@@ -1894,7 +1896,7 @@ function ClubAppView({
   onCoachComplete,
   onUpdateClassTime,
   onAddClass,
-  onAddTryoutClass,
+  onAddNewStudentClass,
   onBlockTime
 }: {
   bookings: Booking[];
@@ -1924,7 +1926,7 @@ function ClubAppView({
   onCoachComplete: (booking: Booking) => void;
   onUpdateClassTime: (booking: Booking, slot: CalendarSlot, durationMinutes: number) => void;
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
-  onAddTryoutClass: (input: { studentName: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
+  onAddNewStudentClass: (input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
 }) {
   const defaultExportStart = dateInputValue(startOfWeek(selectedSlot.date));
@@ -2242,8 +2244,8 @@ function ClubAppView({
             setSelectedAddStudent(null);
             setStudentQuery("");
           }}
-          onTryoutConfirm={async (input, durationMinutes, recurring, weeks) => {
-            await onAddTryoutClass(input, addCoach, recurring ? repeatedCalendarSlots(selectedSlot, weeks) : [selectedSlot], durationMinutes);
+          onNewStudentConfirm={async (input, durationMinutes, recurring, weeks) => {
+            await onAddNewStudentClass(input, addCoach, recurring ? repeatedCalendarSlots(selectedSlot, weeks) : [selectedSlot], durationMinutes);
             setShowAddClassModal(false);
             setSelectedAddStudent(null);
             setStudentQuery("");
@@ -2301,7 +2303,7 @@ function ClubAddClassModal({
   onStudentSelect,
   onCancel,
   onConfirm,
-  onTryoutConfirm,
+  onNewStudentConfirm,
   onBlockTime
 }: {
   language: Language;
@@ -2320,17 +2322,42 @@ function ClubAddClassModal({
   onStudentSelect: (value: ParentAccount) => void;
   onCancel: () => void;
   onConfirm: (durationMinutes: number, recurring: boolean, weeks: number) => void;
-  onTryoutConfirm: (input: { studentName: string; phone: string; note: string }, durationMinutes: number, recurring: boolean, weeks: number) => void;
+  onNewStudentConfirm: (input: { studentName: string; email: string; phone: string; note: string }, durationMinutes: number, recurring: boolean, weeks: number) => void;
   onBlockTime: (durationMinutes: number, recurring: boolean, weeks: number) => void;
 }) {
   const [mode, setMode] = useState<"class" | "block">("class");
-  const [studentMode, setStudentMode] = useState<"enrolled" | "tryout">("enrolled");
-  const [tryoutName, setTryoutName] = useState("");
-  const [tryoutPhone, setTryoutPhone] = useState("");
-  const [tryoutNote, setTryoutNote] = useState("");
+  const [studentMode, setStudentMode] = useState<"enrolled" | "new">("enrolled");
+  const [newStudentName, setNewStudentName] = useState("");
+  const [newStudentEmail, setNewStudentEmail] = useState("");
+  const [newStudentPhone, setNewStudentPhone] = useState("");
+  const [newStudentNote, setNewStudentNote] = useState("");
+  const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [weeks, setWeeks] = useState(4);
-  const canAddClass = studentMode === "enrolled" ? Boolean(selectedStudent) : tryoutName.trim().length > 0;
+  const enrolledQuery = studentQuery.trim().toLowerCase();
+  const enrolledResults = enrolledQuery
+    ? students.filter((student) =>
+        student.studentName.toLowerCase().includes(enrolledQuery) ||
+        student.email.toLowerCase().includes(enrolledQuery) ||
+        student.phone.toLowerCase().includes(enrolledQuery)
+      ).slice(0, 6)
+    : [];
+  const newNameKey = newStudentName.trim().toLowerCase();
+  const duplicateCandidates = newNameKey
+    ? students.filter((student) => {
+        const studentName = student.studentName.trim().toLowerCase();
+        const email = student.email.trim().toLowerCase();
+        const phone = student.phone.trim();
+        return (
+          studentName === newNameKey ||
+          studentName.includes(newNameKey) ||
+          newNameKey.includes(studentName) ||
+          (newStudentEmail.trim() && email === newStudentEmail.trim().toLowerCase()) ||
+          (newStudentPhone.trim() && phone === newStudentPhone.trim())
+        );
+      }).slice(0, 5)
+    : [];
+  const canAddClass = studentMode === "enrolled" ? Boolean(selectedStudent) : newStudentName.trim().length > 0 && (duplicateCandidates.length === 0 || duplicateConfirmed);
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-add-class-title">
@@ -2397,10 +2424,10 @@ function ClubAddClassModal({
           <div className="modal-student-search">
             <div className="mode-switch modal-mode-switch" aria-label="Student type">
               <button type="button" className={studentMode === "enrolled" ? "selected" : ""} onClick={() => setStudentMode("enrolled")}>
-                {copy(language, "Enrolled", "已注册")}
+                {copy(language, "Existing student", "现有学生")}
               </button>
-              <button type="button" className={studentMode === "tryout" ? "selected" : ""} onClick={() => setStudentMode("tryout")}>
-                {copy(language, "Tryout", "体验课")}
+              <button type="button" className={studentMode === "new" ? "selected" : ""} onClick={() => setStudentMode("new")}>
+                {copy(language, "New student", "新学生")}
               </button>
             </div>
             {studentMode === "enrolled" ? (
@@ -2413,10 +2440,12 @@ function ClubAddClassModal({
               </div>
             </label>
             <div className="student-results modal-results">
-              {students.length === 0 ? (
+              {!enrolledQuery ? (
+                <p className="empty-state">{copy(language, "Search student name to start.", "输入学生姓名开始搜索。")}</p>
+              ) : enrolledResults.length === 0 ? (
                 <p className="empty-state">{copy(language, "No enrolled students found.", "未找到已注册学生。")}</p>
               ) : (
-                students.slice(0, 6).map((student) => (
+                enrolledResults.map((student) => (
                   <button
                     type="button"
                     className={selectedStudent?.id === student.id ? "student-result selected" : "student-result"}
@@ -2425,7 +2454,7 @@ function ClubAddClassModal({
                   >
                     <span>
                       <strong>{student.studentName}</strong>
-                      <em>{student.email || student.phone}</em>
+                      <em>{student.email || student.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
                     </span>
                     <Check size={17} />
                   </button>
@@ -2437,16 +2466,44 @@ function ClubAddClassModal({
               <div className="tryout-fields">
                 <label>
                   <span>{copy(language, "Student name", "学生姓名")}</span>
-                  <input value={tryoutName} onChange={(event) => setTryoutName(event.target.value)} />
+                  <input value={newStudentName} onChange={(event) => { setNewStudentName(event.target.value); setDuplicateConfirmed(false); }} />
                 </label>
                 <label>
-                  <span>{copy(language, "Phone", "电话")}</span>
-                  <input value={tryoutPhone} onChange={(event) => setTryoutPhone(event.target.value)} />
+                  <span>{copy(language, "Email optional", "邮箱（可选）")}</span>
+                  <input value={newStudentEmail} onChange={(event) => { setNewStudentEmail(event.target.value); setDuplicateConfirmed(false); }} />
+                </label>
+                <label>
+                  <span>{copy(language, "Phone optional", "电话（可选）")}</span>
+                  <input value={newStudentPhone} onChange={(event) => { setNewStudentPhone(event.target.value); setDuplicateConfirmed(false); }} />
                 </label>
                 <label>
                   <span>{copy(language, "Note", "备注")}</span>
-                  <textarea value={tryoutNote} onChange={(event) => setTryoutNote(event.target.value)} />
+                  <textarea value={newStudentNote} onChange={(event) => setNewStudentNote(event.target.value)} />
                 </label>
+                {duplicateCandidates.length > 0 ? (
+                  <div className="action-confirm-panel duplicate-student-panel">
+                    <strong>{copy(language, "Possible existing student", "可能已有学生")}</strong>
+                    <p>{copy(language, "Check before creating a new account.", "创建新账号前请确认。")}</p>
+                    <div className="student-results modal-results">
+                      {duplicateCandidates.map((student) => (
+                        <button type="button" className="student-result" key={student.id} onClick={() => { onStudentSelect(student); onStudentQueryChange(student.studentName); setStudentMode("enrolled"); }}>
+                          <span>
+                            <strong>{student.studentName}</strong>
+                            <em>{student.email || student.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
+                          </span>
+                          <Check size={17} />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="modal-actions">
+                      <button className="filter-button" type="button" onClick={() => { onStudentQueryChange(newStudentName); setStudentMode("enrolled"); }}>{copy(language, "Use existing", "使用现有学生")}</button>
+                      <button className="primary-button" type="button" onClick={() => setDuplicateConfirmed(true)}>{copy(language, "Create new anyway", "仍然创建新学生")}</button>
+                    </div>
+                  </div>
+                ) : null}
+                {newStudentName.trim() && (!newStudentEmail.includes("@") || newStudentPhone.trim().length < 7) ? (
+                  <p className="modal-info">{copy(language, "Missing email or phone: student will finish profile after first login.", "缺少邮箱或电话：学生首次登录后需要完善资料。")}</p>
+                ) : null}
               </div>
             )}
           </div>
@@ -2475,8 +2532,8 @@ function ClubAddClassModal({
             onClick={() =>
               mode === "block"
                 ? onBlockTime(durationMinutes, recurring, weeks)
-                : studentMode === "tryout"
-                  ? onTryoutConfirm({ studentName: tryoutName, phone: tryoutPhone, note: tryoutNote }, durationMinutes, recurring, weeks)
+                : studentMode === "new"
+                  ? onNewStudentConfirm({ studentName: newStudentName, email: newStudentEmail, phone: newStudentPhone, note: newStudentNote }, durationMinutes, recurring, weeks)
                   : onConfirm(durationMinutes, recurring, weeks)
             }
             disabled={saving || unavailable || (mode === "class" && !canAddClass)}

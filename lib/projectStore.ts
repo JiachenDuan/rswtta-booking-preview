@@ -595,6 +595,54 @@ export async function listParentAccounts() {
   return uniqueAccountRowsByStudentName(rows).map(accountFromRow).sort((left, right) => left.studentName.localeCompare(right.studentName));
 }
 
+export async function createClubStudentAccount(input: { studentName: string; email?: string; phone?: string }) {
+  const studentName = input.studentName.trim();
+  const email = String(input.email ?? "").trim().toLowerCase();
+  const phone = String(input.phone ?? "").trim();
+  if (!studentName) throw new Error("Student name is required");
+
+  const password = await hashPassword(preregisteredPasswordTemplate);
+  const values: AccountValues = {
+    id: "",
+    studentName,
+    email,
+    phone,
+    passwordHash: password.hash,
+    passwordSalt: password.salt,
+    confirmationCode: "",
+    confirmed: true,
+    profileSetupRequired: !email.includes("@") || phone.length < 7,
+    createdAt: ""
+  };
+
+  const row = await withLocalFallback(
+    async () => {
+      const rows = await listRows<AccountValues>("parent_accounts");
+      const nameKey = studentNameKey(studentName);
+      const existing = rows.find((item) =>
+        studentNameKey(item.values.studentName) === nameKey ||
+        (email && String(item.values.email ?? "").trim().toLowerCase() === email) ||
+        (phone && String(item.values.phone ?? "").trim() === phone)
+      );
+      if (existing) return existing;
+      return createRow<AccountValues>("parent_accounts", values);
+    },
+    () => {
+      const rows = localRows<AccountValues>("parent_accounts");
+      const nameKey = studentNameKey(studentName);
+      const existing = rows.find((item) =>
+        studentNameKey(item.values.studentName) === nameKey ||
+        (email && String(item.values.email ?? "").trim().toLowerCase() === email) ||
+        (phone && String(item.values.phone ?? "").trim() === phone)
+      );
+      if (existing) return existing;
+      return createLocalRow<AccountValues>("parent_accounts", values);
+    }
+  );
+
+  return accountFromRow(row);
+}
+
 export async function resetPasswordForEmail(email: string) {
   const redirectTo = isBrowser() ? `${window.location.origin}${window.location.pathname}` : undefined;
   const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase(), {
