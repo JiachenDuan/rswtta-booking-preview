@@ -694,31 +694,40 @@ export function ClubApp() {
     }
   }
 
-  async function addGroupDropIn(groupClass: Booking, student: ParentAccount) {
+  async function addGroupDropIn(groupClass: Booking, selectedStudents: ParentAccount[]) {
+    if (selectedStudents.length === 0) {
+      setNotice(copy(language, "Select at least one student.", "请选择至少一名学生。"));
+      return false;
+    }
     const coach = groupClass.assignedCoach || groupClass.requestedCoach;
     setSaving(true);
-    setNotice(copy(language, "Adding drop-in student...", "正在添加临时学生..."));
+    const enrollmentStatus: BookingStatus = Date.now() >= new Date(groupClass.startsAt).getTime() ? "coach_confirmed" : "club_confirmed";
+    setNotice(copy(language, "Adding students...", "正在添加学生..."));
     try {
-      const booking = await createBooking({
-        studentName: student.studentName,
-        familyName: student.studentName,
-        studentEmail: student.email,
-        phone: student.phone,
-        requestedCoach: coach,
-        assignedCoach: coach,
-        program: "Group lesson",
-        dateLabel: groupClass.dateLabel,
-        timeLabel: groupClass.timeLabel,
-        startsAt: groupClass.startsAt,
-        priceCents: 7500,
-        parentNote: "Added as group class drop-in by club."
-      });
-      await updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach });
+      await Promise.all(
+        selectedStudents.map(async (student) => {
+          const booking = await createBooking({
+            studentName: student.studentName,
+            familyName: student.studentName,
+            studentEmail: student.email,
+            phone: student.phone,
+            requestedCoach: coach,
+            assignedCoach: coach,
+            program: "Group lesson",
+            dateLabel: groupClass.dateLabel,
+            timeLabel: groupClass.timeLabel,
+            startsAt: groupClass.startsAt,
+            priceCents: 7500,
+            parentNote: "Added to group class by club."
+          });
+          await updateStoredBooking(booking.id, { status: enrollmentStatus, assignedCoach: coach });
+        })
+      );
       await loadAll();
-      setNotice(copy(language, `Added ${student.studentName} to group class.`, `已添加 ${student.studentName} 到团体课。`));
+      setNotice(copy(language, `Added ${selectedStudents.length} student${selectedStudents.length === 1 ? "" : "s"} to group class.`, `已添加 ${selectedStudents.length} 名学生到团体课。`));
       return true;
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : copy(language, "Could not add drop-in student.", "无法添加临时学生。"));
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not add students.", "无法添加学生。"));
       return false;
     } finally {
       setSaving(false);
@@ -2055,7 +2064,7 @@ function ClubAppView({
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onAddNewStudentClass: (input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
-  onAddGroupDropIn: (groupClass: Booking, student: ParentAccount) => Promise<boolean>;
+  onAddGroupDropIn: (groupClass: Booking, students: ParentAccount[]) => Promise<boolean>;
 }) {
   const defaultExportStart = dateInputValue(startOfWeek(selectedSlot.date));
   const defaultExportEnd = dateInputValue(addDays(startOfWeek(selectedSlot.date), 6));
@@ -2803,7 +2812,7 @@ function ClubBookingActionModal({
   onConfirmEnrollment: (booking: Booking) => void;
   onRejectEnrollment: (booking: Booking) => void;
   onCompleteEnrollment: (booking: Booking) => void;
-  onAddDropIn: (groupClass: Booking, student: ParentAccount) => Promise<boolean>;
+  onAddDropIn: (groupClass: Booking, students: ParentAccount[]) => Promise<boolean>;
   saving: boolean;
 }) {
   const bookingStart = new Date(booking.startsAt);
@@ -2826,16 +2835,17 @@ function ClubBookingActionModal({
   const confirmedGroupEnrollments = groupEnrollments.filter((item) => item.status === "club_confirmed");
   const completedGroupEnrollments = groupEnrollments.filter((item) => item.status === "coach_confirmed");
   const [dropInQuery, setDropInQuery] = useState("");
-  const [selectedDropInStudent, setSelectedDropInStudent] = useState<ParentAccount | null>(null);
+  const [selectedDropInStudents, setSelectedDropInStudents] = useState<ParentAccount[]>([]);
   const enrolledNames = new Set(groupEnrollments.map((item) => item.studentName.trim().toLowerCase()));
+  const selectedDropInNames = new Set(selectedDropInStudents.map((student) => student.studentName.trim().toLowerCase()));
   const dropInSearch = dropInQuery.trim().toLowerCase();
-  const selectedDropInLocked = Boolean(selectedDropInStudent && dropInQuery.trim() === selectedDropInStudent.studentName);
-  const dropInResults = dropInSearch && !selectedDropInLocked
+  const dropInResults = dropInSearch
     ? students
         .filter((student) => {
           const studentName = student.studentName.trim().toLowerCase();
           return (
             !enrolledNames.has(studentName) &&
+            !selectedDropInNames.has(studentName) &&
             (studentName.includes(dropInSearch) ||
               student.email.toLowerCase().includes(dropInSearch) ||
               student.phone.toLowerCase().includes(dropInSearch))
@@ -2900,48 +2910,52 @@ function ClubBookingActionModal({
           </div>
           <div className="group-dropin-panel">
             <label>
-              <span>{copy(language, "Add drop-in student", "添加临时学生")}</span>
+              <span>{copy(language, "Add students", "添加学生")}</span>
               <div className="input-shell">
                 <Search size={18} />
                 <input
                   value={dropInQuery}
-                  onChange={(event) => {
-                    setDropInQuery(event.target.value);
-                    if (selectedDropInStudent && event.target.value !== selectedDropInStudent.studentName) setSelectedDropInStudent(null);
-                  }}
-                  placeholder={copy(language, "Search enrolled student", "搜索已注册学生")}
+                  onChange={(event) => setDropInQuery(event.target.value)}
+                  placeholder={copy(language, "Search enrolled students", "搜索已注册学生")}
                 />
               </div>
             </label>
             <div className="student-results modal-results group-dropin-results">
-              {selectedDropInLocked && selectedDropInStudent ? (
-                <div className="student-result selected locked-selection">
-                  <span>
-                    <strong>{selectedDropInStudent.studentName}</strong>
-                    <em>{selectedDropInStudent.email || selectedDropInStudent.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
-                  </span>
-                  <Check size={17} />
+              {selectedDropInStudents.length > 0 ? (
+                <div className="group-dropin-selected-list">
+                  {selectedDropInStudents.map((student) => (
+                    <button
+                      type="button"
+                      className="group-dropin-selected"
+                      key={student.id}
+                      onClick={() => setSelectedDropInStudents((current) => current.filter((item) => item.id !== student.id))}
+                    >
+                      <span>{student.studentName}</span>
+                      <X size={14} />
+                    </button>
+                  ))}
                 </div>
-              ) : !dropInSearch ? (
-                <p className="empty-state">{copy(language, "Search student name to add drop-in.", "输入学生姓名添加临时学生。")}</p>
+              ) : null}
+              {!dropInSearch ? (
+                <p className="empty-state">{copy(language, "Search student name to add students.", "输入学生姓名添加学生。")}</p>
               ) : dropInResults.length === 0 ? (
-                <p className="empty-state">{copy(language, "No enrolled students found, or student is already in this group class.", "未找到已注册学生，或学生已在本节团体课中。")}</p>
+                <p className="empty-state">{copy(language, "No enrolled students found, or students are already selected/in this group class.", "未找到已注册学生，或学生已选择/已在本节团体课中。")}</p>
               ) : (
                 dropInResults.map((student) => (
                   <button
                     type="button"
-                    className={selectedDropInStudent?.id === student.id ? "student-result selected" : "student-result"}
+                    className="student-result"
                     key={student.id}
                     onClick={() => {
-                      setSelectedDropInStudent(student);
-                      setDropInQuery(student.studentName);
+                      setSelectedDropInStudents((current) => [...current, student]);
+                      setDropInQuery("");
                     }}
                   >
                     <span>
                       <strong>{student.studentName}</strong>
                       <em>{student.email || student.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
                     </span>
-                    <Check size={17} />
+                    <Plus size={17} />
                   </button>
                 ))
               )}
@@ -2949,18 +2963,17 @@ function ClubBookingActionModal({
             <button
               className="primary-button"
               type="button"
-              disabled={saving || !selectedDropInStudent}
+              disabled={saving || selectedDropInStudents.length === 0}
               onClick={async () => {
-                if (!selectedDropInStudent) return;
-                const saved = await onAddDropIn(booking, selectedDropInStudent);
+                const saved = await onAddDropIn(booking, selectedDropInStudents);
                 if (saved) {
-                  setSelectedDropInStudent(null);
+                  setSelectedDropInStudents([]);
                   setDropInQuery("");
                 }
               }}
             >
               <Plus size={17} />
-              {copy(language, "Add drop-in", "添加临时学生")}
+              {copy(language, selectedDropInStudents.length > 1 ? `Add ${selectedDropInStudents.length} students` : "Add students", selectedDropInStudents.length > 1 ? `添加 ${selectedDropInStudents.length} 名学生` : "添加学生")}
             </button>
           </div>
         </section>

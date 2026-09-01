@@ -1922,6 +1922,31 @@ button.student-result.selected {
   grid-column: 1 / -1;
 }
 
+.group-dropin-selected-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.group-dropin-selected {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid rgba(139, 92, 246, 0.5);
+  border-radius: 999px;
+  background: rgba(139, 92, 246, 0.22);
+  color: #dfd2ff;
+  font-weight: 900;
+}
+
+.group-dropin-selected span {
+  color: inherit;
+  font-size: 0.78rem;
+}
+
 .group-dropin-panel label {
   display: grid;
   gap: 6px;
