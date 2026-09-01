@@ -1076,6 +1076,33 @@ p {
   box-shadow: none;
 }
 
+.calendar-tabs button span {
+  display: inline-grid;
+  min-width: 18px;
+  min-height: 18px;
+  margin-left: 5px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  font-size: 0.68rem;
+}
+
+.compact-tabs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 10px;
+}
+
+.class-filter-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.parent-date-filter {
+  margin-bottom: 0;
+}
+
 .week-calendar {
   --calendar-hour-height: 74px;
   display: grid;

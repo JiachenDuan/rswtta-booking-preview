@@ -1494,6 +1494,37 @@ function ParentApp({
   onComplete: (booking: Booking) => void;
 }) {
   const [selectedParentBooking, setSelectedParentBooking] = useState<Booking | null>(null);
+  const [classStatusFilter, setClassStatusFilter] = useState<"requested" | "club_confirmed" | "coach_confirmed" | "cancelled">("requested");
+  const [classStartDate, setClassStartDate] = useState(() => dateInputValue(calendarDays[0]?.date ?? new Date()));
+  const [classEndDate, setClassEndDate] = useState(() => dateInputValue(calendarDays[calendarDays.length - 1]?.date ?? addDays(new Date(), 6)));
+  const classFilterTabs: Array<{ key: "requested" | "club_confirmed" | "coach_confirmed" | "cancelled"; label: string; zh: string }> = [
+    { key: "requested", label: "Request", zh: "请求" },
+    { key: "club_confirmed", label: "Confirmed", zh: "已确认" },
+    { key: "coach_confirmed", label: "Complete", zh: "完成" },
+    { key: "cancelled", label: "Canceled", zh: "已取消" }
+  ];
+  const filteredClassBookings = bookings.filter((booking) => {
+    const bookingTime = new Date(booking.startsAt).getTime();
+    const startTime = classStartDate ? new Date(`${classStartDate}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
+    const endTime = classEndDate ? new Date(`${classEndDate}T23:59:59.999`).getTime() : Number.POSITIVE_INFINITY;
+    const matchesStatus =
+      classStatusFilter === "requested"
+        ? booking.status === "requested" || booking.status === "change_requested"
+        : booking.status === classStatusFilter;
+    return matchesStatus && bookingTime >= startTime && bookingTime <= endTime;
+  });
+  const classCounts = Object.fromEntries(
+    classFilterTabs.map((tab) => [
+      tab.key,
+      bookings.filter((booking) => {
+        const bookingTime = new Date(booking.startsAt).getTime();
+        const startTime = classStartDate ? new Date(`${classStartDate}T00:00:00`).getTime() : Number.NEGATIVE_INFINITY;
+        const endTime = classEndDate ? new Date(`${classEndDate}T23:59:59.999`).getTime() : Number.POSITIVE_INFINITY;
+        const matchesStatus = tab.key === "requested" ? booking.status === "requested" || booking.status === "change_requested" : booking.status === tab.key;
+        return matchesStatus && bookingTime >= startTime && bookingTime <= endTime;
+      }).length
+    ])
+  ) as Record<typeof classFilterTabs[number]["key"], number>;
   const studentInfoChanged =
     studentName.trim() !== savedStudentName.trim() ||
     studentEmail.trim().toLowerCase() !== savedStudentEmail.trim().toLowerCase() ||
@@ -1598,21 +1629,29 @@ function ParentApp({
               <p className="section-subtitle">{copy(language, "Cancel more than 12 hours before class. Inside 12 hours sends a club approval request.", "超过 12 小时可取消；12 小时内会发送请求给 club 确认。")}</p>
             </div>
           </div>
-          <div className="mini-ledger">
-            <div>
-              <span>{copy(language, "Requested", "已请求")}</span>
-              <strong>{bookings.filter((booking) => booking.status === "requested" || booking.status === "change_requested").length}</strong>
+          <div className="class-filter-panel">
+            <div className="calendar-tabs compact-tabs" aria-label="Class status filter">
+              {classFilterTabs.map((tab) => (
+                <button key={tab.key} className={classStatusFilter === tab.key ? "selected" : ""} onClick={() => setClassStatusFilter(tab.key)}>
+                  {copy(language, tab.label, tab.zh)} <span>{classCounts[tab.key]}</span>
+                </button>
+              ))}
             </div>
-            <div>
-              <span>{copy(language, "Confirmed", "已确认")}</span>
-              <strong>{bookings.filter((booking) => booking.status === "club_confirmed").length}</strong>
+            <div className="export-date-grid parent-date-filter">
+              <label>
+                <span>{copy(language, "Start date", "开始日期")}</span>
+                <input className="modal-input" type="date" value={classStartDate} onChange={(event) => setClassStartDate(event.target.value)} />
+              </label>
+              <label>
+                <span>{copy(language, "End date", "结束日期")}</span>
+                <input className="modal-input" type="date" value={classEndDate} onChange={(event) => setClassEndDate(event.target.value)} />
+              </label>
             </div>
-            <div>
-              <span>{copy(language, "Complete", "完成")}</span>
-              <strong>{bookings.filter((booking) => booking.status === "coach_confirmed").length}</strong>
-            </div>
+            <p className="section-subtitle">
+              {copy(language, "Showing", "显示")} {filteredClassBookings.length} {copy(language, "classes", "节课")}
+            </p>
           </div>
-          <BookingList bookings={bookings} parentActions language={language} onChangeRequest={onChangeRequest} onCancel={onCancel} onComplete={onComplete} />
+          <BookingList bookings={filteredClassBookings} parentActions language={language} onChangeRequest={onChangeRequest} onCancel={onCancel} onComplete={onComplete} />
           {selectedParentBooking ? (
             <ParentClassCompleteModal
               booking={selectedParentBooking}
