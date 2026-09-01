@@ -39,7 +39,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
-const coaches = ["Coach Tian Ye", "Coach Jorden", "Coach A", "Coach B"] as const;
+const coaches = ["Coach Tian Ye", "Coach Jorden", "National Level Coach A", "National Coach B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
 const calendarTimes = [
   "7 AM",
@@ -130,11 +130,11 @@ function isCancellationRequest(booking: Booking) {
 }
 
 function lessonProgram(coach: string) {
-  return coach === "Coach A" || coach === "Coach Tian Ye" ? "Private lesson" : "Group lesson";
+  return coach === "National Level Coach A" || coach === "Coach Tian Ye" ? "Private lesson" : "Group lesson";
 }
 
 function lessonPriceCents(coach: string) {
-  return coach === "Coach A" || coach === "Coach Tian Ye" ? 15000 : 7500;
+  return coach === "National Level Coach A" || coach === "Coach Tian Ye" ? 15000 : 7500;
 }
 
 function coachTabText(tab: ClubCalendarTab, language: Language) {

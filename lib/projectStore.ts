@@ -302,6 +302,13 @@ function uniqueAccountRowsByStudentName(rows: Array<ProjectRow<AccountValues>>) 
   return [...byName.values()];
 }
 
+function normalizeCoachName(value: unknown) {
+  const coach = String(value ?? "Coach A");
+  if (coach === "Coach A") return "National Level Coach A";
+  if (coach === "Coach B") return "National Coach B";
+  return coach;
+}
+
 function accountFromRow(row: ProjectRow<ParentAccount & { passwordHash: string; passwordSalt: string; confirmationCode: string }>): ParentAccount {
   return {
     id: row.id,
@@ -321,8 +328,8 @@ function bookingFromRow(row: ProjectRow<Booking>): Booking {
     familyName: String(row.values.familyName ?? row.values.studentName ?? "Student"),
     studentEmail: String(row.values.studentEmail ?? ""),
     phone: String(row.values.phone ?? ""),
-    requestedCoach: String(row.values.requestedCoach ?? row.values.assignedCoach ?? "Coach A"),
-    assignedCoach: String(row.values.assignedCoach ?? row.values.requestedCoach ?? "Coach A"),
+    requestedCoach: normalizeCoachName(row.values.requestedCoach ?? row.values.assignedCoach ?? "National Level Coach A"),
+    assignedCoach: normalizeCoachName(row.values.assignedCoach ?? row.values.requestedCoach ?? "National Level Coach A"),
     program: String(row.values.program ?? "Private lesson"),
     dateLabel: String(row.values.dateLabel ?? "Today"),
     timeLabel: String(row.values.timeLabel ?? "4:30 PM"),
