@@ -115,6 +115,17 @@ function statusText(status: BookingStatus, language: Language = "en") {
   return labels[status][language];
 }
 
+function calendarStatusText(status: BookingStatus, language: Language = "en") {
+  const labels: Record<BookingStatus, { en: string; zh: string }> = {
+    requested: { en: "Request", zh: "请求" },
+    club_confirmed: { en: "Confirmed", zh: "已确认" },
+    change_requested: { en: "Request", zh: "请求" },
+    cancelled: { en: "Cancelled", zh: "已取消" },
+    coach_confirmed: { en: "Complete", zh: "完成" }
+  };
+  return labels[status][language];
+}
+
 function isMoreThan12HoursBeforeClass(booking: Booking) {
   const starts = new Date(booking.startsAt).getTime();
   return starts - Date.now() > 12 * 60 * 60 * 1000;
@@ -1798,6 +1809,9 @@ function ClubCalendar({
                         onBookingSelect(booking);
                       }}
                     >
+                      <span className={`calendar-status-badge ${booking.status}`}>
+                        {isBlockedTime(booking) ? copy(language, "Blocked", "不可用") : calendarStatusText(booking.status, language)}
+                      </span>
                       <strong>{isBlockedTime(booking) ? copy(language, "Not working", "不可用") : booking.studentName}</strong>
                       <small>{isBlockedTime(booking) ? compactTimeRange(booking.timeLabel) : compactTimeRange(booking.timeLabel)}</small>
                       <em>{isBlockedTime(booking) ? copy(language, "Blocked time", "不可预约时间") : statusText(booking.status, language)}</em>

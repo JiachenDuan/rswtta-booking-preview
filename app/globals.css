@@ -1376,6 +1376,39 @@ p {
   display: block;
 }
 
+.calendar-status-badge {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 0 4px;
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.58rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.calendar-status-badge.requested,
+.calendar-status-badge.change_requested {
+  background: rgba(244, 201, 93, 0.24);
+  color: #ffe6a3;
+}
+
+.calendar-status-badge.club_confirmed {
+  background: rgba(78, 189, 116, 0.24);
+  color: #c7ffd8;
+}
+
+.calendar-status-badge.coach_confirmed {
+  background: rgba(108, 165, 255, 0.24);
+  color: #d8e8ff;
+}
+
 .calendar-booking strong {
   font-size: 0.78rem;
 }
@@ -1401,6 +1434,12 @@ p {
 .calendar-booking.coach-lane small,
 .calendar-booking.coach-lane em {
   font-size: 0.62rem;
+}
+
+.calendar-booking.coach-lane .calendar-status-badge {
+  margin-bottom: 3px;
+  padding: 1px 4px;
+  font-size: 0.5rem;
 }
 
 .request-stack {
