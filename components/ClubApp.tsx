@@ -1884,7 +1884,7 @@ function ClubAppView({
   const [selectedAddStudent, setSelectedAddStudent] = useState<ParentAccount | null>(null);
   const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
   const visibleBookings = bookings.filter((booking) => activeCalendarTab === "Combined" || bookingMatchesCoach(booking, activeCalendarTab));
-  const requested = visibleBookings.filter((booking) => !isBlockedTime(booking) && (booking.status === "requested" || booking.status === "change_requested"));
+  const requested = bookings.filter((booking) => !isBlockedTime(booking) && (booking.status === "requested" || booking.status === "change_requested"));
   const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed" && !isBlockedTime(booking));
   const studentDirectory = useMemo(() => {
     const byName = new Map<string, ParentAccount>();
