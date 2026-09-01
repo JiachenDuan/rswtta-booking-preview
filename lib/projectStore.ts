@@ -816,9 +816,17 @@ function nextDateForDay(start: Date, day: number) {
 function bookingNaturalKey(values: Partial<Booking>) {
   return [
     String(values.studentName ?? "").trim().toLowerCase(),
-    normalizeCoachName(values.assignedCoach ?? values.requestedCoach ?? ""),
-    String(values.startsAt ?? "")
+    normalizeCoachName(values.assignedCoach ?? values.requestedCoach ?? "").trim().toLowerCase(),
+    String(values.startsAt ?? "").trim()
   ].join("|");
+}
+
+function isActiveBooking(values: Partial<Booking>) {
+  return values.status !== "cancelled";
+}
+
+function sameBookingNaturalKey(left: Partial<Booking>, right: Partial<Booking>) {
+  return bookingNaturalKey(left) === bookingNaturalKey(right);
 }
 
 function tianRecurringKey(values: Partial<Booking>) {
@@ -952,6 +960,24 @@ export async function listBookings() {
     .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime());
 }
 
+async function findExistingActiveBooking(values: Partial<Booking>) {
+  const tables = await ensureSchema();
+  const startsAt = String(values.startsAt ?? "").trim();
+  if (!startsAt) return null;
+
+  const response = await supabase
+    .from("project_rows")
+    .select("id, project_table_id, values, created_at, updated_at")
+    .eq("project_table_id", tables.bookings)
+    .eq("values->>startsAt", startsAt)
+    .limit(1000);
+
+  if (response.error) throw setupError(response.error.message);
+
+  const rows = (response.data ?? []) as Array<ProjectRow<Booking>>;
+  return rows.find((row) => isActiveBooking(row.values) && sameBookingNaturalKey(row.values, values)) ?? null;
+}
+
 export async function createBooking(input: Omit<Booking, "id" | "status" | "createdAt" | "updatedAt">) {
   const values = {
     ...input,
@@ -961,9 +987,7 @@ export async function createBooking(input: Omit<Booking, "id" | "status" | "crea
     updatedAt: ""
   };
   try {
-    const rows = await listRows<Booking>("bookings");
-    const newKey = bookingNaturalKey(values);
-    const existing = rows.find((row) => bookingNaturalKey(row.values) === newKey && row.values.status !== "cancelled");
+    const existing = await findExistingActiveBooking(values);
     if (existing) return bookingFromRow(existing);
 
     const row = await createRow<Booking>("bookings", values);
