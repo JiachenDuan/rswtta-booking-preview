@@ -1839,10 +1839,10 @@ button.student-result.selected {
 
 .group-roster-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 1fr;
   gap: 12px;
-  align-items: center;
-  padding: 10px;
+  align-items: stretch;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(139, 92, 246, 0.08);
@@ -1859,18 +1859,39 @@ button.student-result.selected {
 }
 
 .group-attendance-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-content: stretch;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
 }
 
-.group-attendance-actions button {
-  min-height: 32px;
-  padding: 7px 10px;
-  border-radius: 8px;
-  font-size: 0.76rem;
+.group-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.82rem;
   font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.group-action-button.accept {
+  background: rgba(244, 201, 93, 0.16);
+  color: var(--gold-soft);
+}
+
+.group-action-button.decline {
+  background: rgba(220, 38, 38, 0.16);
+  color: #fca5a5;
 }
 
 .group-dropin-panel {
@@ -1901,7 +1922,16 @@ button.student-result.selected {
   }
 
   .group-attendance-actions {
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .group-action-button,
+  .group-attendance-actions .class-type-badge {
+    width: 100%;
+    min-width: 0;
   }
 }
 
@@ -2066,29 +2096,6 @@ button.student-result.selected {
 .row-actions button:last-child {
   background: rgba(220, 38, 38, 0.16);
   color: #fca5a5;
-}
-
-.group-attendance-actions button {
-  width: auto;
-  min-width: 92px;
-  padding-inline: 12px;
-  white-space: nowrap;
-}
-
-@media (max-width: 760px) {
-  .group-attendance-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-  }
-
-  .group-attendance-actions button,
-  .group-attendance-actions .primary-button,
-  .group-attendance-actions .class-type-badge {
-    width: 100%;
-    min-width: 0;
-    justify-content: center;
-  }
 }
 
 .mini-ledger {

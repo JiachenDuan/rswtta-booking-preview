@@ -2865,22 +2865,22 @@ function ClubBookingActionModal({
                     <strong>{studentBooking.studentName}</strong>
                     <span>{statusText(studentBooking.status, language)}</span>
                   </div>
-                  <div className="row-actions group-attendance-actions">
+                  <div className="group-attendance-actions">
                     {studentBooking.status === "requested" || studentBooking.status === "change_requested" ? (
                       <>
-                        <button className="accept" type="button" onClick={() => onConfirmEnrollment(studentBooking)}>{copy(language, "Confirm", "确认")}</button>
-                        <button className="decline" type="button" onClick={() => onRejectEnrollment(studentBooking)}>{copy(language, "Reject", "拒绝")}</button>
+                        <button className="group-action-button accept" type="button" onClick={() => onConfirmEnrollment(studentBooking)}>{copy(language, "Confirm", "确认")}</button>
+                        <button className="group-action-button decline" type="button" onClick={() => onRejectEnrollment(studentBooking)}>{copy(language, "Reject", "拒绝")}</button>
                       </>
                     ) : null}
                     {studentBooking.status === "club_confirmed" ? (
-                      <button className="primary-button" type="button" onClick={() => onCompleteEnrollment(studentBooking)}>
+                      <button className="group-action-button primary-button" type="button" onClick={() => onCompleteEnrollment(studentBooking)}>
                         <Check size={16} />
                         {copy(language, "Attended", "已出勤")}
                       </button>
                     ) : null}
                     {studentBooking.status === "coach_confirmed" ? <span className="class-type-badge group">{copy(language, "Attended", "已出勤")}</span> : null}
                     {studentBooking.status !== "requested" && studentBooking.status !== "change_requested" ? (
-                      <button className="decline" type="button" onClick={() => onRejectEnrollment(studentBooking)}>{copy(language, "Cancel", "取消")}</button>
+                      <button className="group-action-button decline" type="button" onClick={() => onRejectEnrollment(studentBooking)}>{copy(language, "Cancel", "取消")}</button>
                     ) : null}
                   </div>
                 </article>
