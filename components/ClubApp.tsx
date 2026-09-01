@@ -1901,14 +1901,7 @@ function ClubCalendar({
                     <span>{new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(currentTime)}</span>
                   </span>
                 ) : null}
-                {privacyMode && unavailableDisplayBooking ? (
-                  <span className="calendar-booking unavailable-private spanning-event" style={calendarEventStyle(unavailableDisplayBooking, false, cellStart)}>
-                    <strong>{blockedUnavailable ? copy(language, "Time unavailable", "时间不可用") : copy(language, "Time unavailable", "时间不可用")}</strong>
-                    <small>{blockedUnavailable ? compactTimeRange(blockedUnavailable.timeLabel) : compactTimeRange(unavailableDisplayBooking.timeLabel)}</small>
-                  </span>
-                ) : slotBookings.length === 0 ? (
-                  <span className="open-slot" aria-hidden="true" />
-                ) : (
+                {slotBookings.length > 0 ? (
                   [...slotBookings]
                     .sort(
                       (left, right) => coachLaneIndex(left) - coachLaneIndex(right)
@@ -1932,6 +1925,13 @@ function ClubCalendar({
                       <em>{calendarBookingSubtitle(booking, language)}</em>
                     </span>
                   ))
+                ) : privacyMode && unavailableDisplayBooking ? (
+                  <span className="calendar-booking unavailable-private spanning-event" style={calendarEventStyle(unavailableDisplayBooking, false, cellStart)}>
+                    <strong>{copy(language, "Time unavailable", "时间不可用")}</strong>
+                    <small>{blockedUnavailable ? compactTimeRange(blockedUnavailable.timeLabel) : compactTimeRange(unavailableDisplayBooking.timeLabel)}</small>
+                  </span>
+                ) : (
+                  <span className="open-slot" aria-hidden="true" />
                 )}
               </button>
             );
