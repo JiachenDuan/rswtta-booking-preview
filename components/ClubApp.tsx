@@ -2045,7 +2045,7 @@ function ClubAppView({
     }
 
     const summaryRows = [
-      ["Student", "Confirmed not completed", "Coach completed", "Total classes", "Completed amount"],
+      ["Student", "Confirmed not completed", "Coach completed", "Total classes"],
       ...[...studentsByKey.values()]
         .sort((left, right) => left.studentName.localeCompare(right.studentName))
         .map((student) => {
@@ -2055,8 +2055,7 @@ function ClubAppView({
             student.studentName,
             confirmedCount,
             completed.length,
-            student.bookings.length,
-            dollars(completed.reduce((sum, booking) => sum + booking.priceCents, 0))
+            student.bookings.length
           ];
         })
     ];
@@ -2064,13 +2063,12 @@ function ClubAppView({
     const studentDetailRows = [...studentsByKey.values()]
       .sort((left, right) => left.studentName.localeCompare(right.studentName))
       .flatMap((student) => {
-        const completed = student.bookings.filter((booking) => booking.status === "coach_confirmed");
         const rows = [
           [],
           ["========================================"],
           [`STUDENT: ${student.studentName}`],
           ["========================================"],
-          ["Date", "Time", "Coach", "Status", "Price", "Parent note"],
+          ["Date", "Time", "Coach", "Status", "Parent note"],
           ...student.bookings
             .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
             .map((booking) => [
@@ -2078,10 +2076,8 @@ function ClubAppView({
               booking.timeLabel,
               booking.assignedCoach,
               statusText(booking.status),
-              dollars(booking.priceCents),
               booking.parentNote
-            ]),
-          ["Student total", "", "", "", dollars(completed.reduce((sum, booking) => sum + booking.priceCents, 0)), ""]
+            ])
         ];
         return rows;
       });
