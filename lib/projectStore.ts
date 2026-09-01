@@ -281,6 +281,27 @@ async function ensureSchema() {
   return schemaPromise;
 }
 
+function studentNameKey(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function uniqueAccountRowsByStudentName(rows: Array<ProjectRow<AccountValues>>) {
+  const byName = new Map<string, ProjectRow<AccountValues>>();
+  for (const row of rows) {
+    const key = studentNameKey(row.values.studentName);
+    if (!key) continue;
+    const existing = byName.get(key);
+    if (!existing) {
+      byName.set(key, row);
+      continue;
+    }
+    const existingHasContact = Boolean(String(existing.values.email ?? "") || String(existing.values.phone ?? ""));
+    const rowHasContact = Boolean(String(row.values.email ?? "") || String(row.values.phone ?? ""));
+    if (!existingHasContact && rowHasContact) byName.set(key, row);
+  }
+  return [...byName.values()];
+}
+
 function accountFromRow(row: ProjectRow<ParentAccount & { passwordHash: string; passwordSalt: string; confirmationCode: string }>): ParentAccount {
   return {
     id: row.id,
@@ -442,6 +463,9 @@ export async function registerParentAccount(input: { studentName: string; email:
       }
 
       const rows = await listRows<AccountValues>("parent_accounts");
+      const nameKey = studentNameKey(input.studentName);
+      const duplicateName = rows.find((row) => studentNameKey(row.values.studentName) === nameKey && String(row.values.email ?? "").toLowerCase() !== email);
+      if (duplicateName) throw new Error("Student name already has an account");
       const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
       if (existing) {
         if (!existing.values.confirmed) {
@@ -467,6 +491,9 @@ export async function registerParentAccount(input: { studentName: string; email:
     async () => {
       const email = input.email.toLowerCase();
       const rows = localRows<AccountValues>("parent_accounts");
+      const nameKey = studentNameKey(input.studentName);
+      const duplicateName = rows.find((row) => studentNameKey(row.values.studentName) === nameKey && String(row.values.email ?? "").toLowerCase() !== email);
+      if (duplicateName) throw new Error("Student name already has an account");
       const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
       if (existing) {
         const updated = updateLocalRow("parent_accounts", existing.id, { ...existing.values, confirmed: true });
@@ -548,7 +575,7 @@ export async function loginParentAccount(identifier: string, password: string) {
 
 export async function listParentAccounts() {
   const rows = await listAccountRowsWithSeeds();
-  return rows.map(accountFromRow).sort((left, right) => left.studentName.localeCompare(right.studentName));
+  return uniqueAccountRowsByStudentName(rows).map(accountFromRow).sort((left, right) => left.studentName.localeCompare(right.studentName));
 }
 
 export async function resetPasswordForEmail(email: string) {
@@ -623,6 +650,8 @@ export async function updateParentAccount(input: { accountId: string; studentNam
           String(item.values.email ?? "").toLowerCase() === normalizedEmail
       );
       if (duplicate) throw new Error("Email already used by another student");
+      const duplicateName = rows.find((item) => item.id !== input.accountId && studentNameKey(item.values.studentName) === studentNameKey(normalizedStudentName));
+      if (duplicateName) throw new Error("Student name already has an account");
       return updateRow("parent_accounts", input.accountId, { ...existing.values, ...values });
     },
     () => {
@@ -636,6 +665,8 @@ export async function updateParentAccount(input: { accountId: string; studentNam
           String(item.values.email ?? "").toLowerCase() === normalizedEmail
       );
       if (duplicate) throw new Error("Email already used by another student");
+      const duplicateName = rows.find((item) => item.id !== input.accountId && studentNameKey(item.values.studentName) === studentNameKey(normalizedStudentName));
+      if (duplicateName) throw new Error("Student name already has an account");
       return updateLocalRow("parent_accounts", input.accountId, { ...existing.values, ...values });
     }
   );

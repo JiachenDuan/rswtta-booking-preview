@@ -1887,15 +1887,23 @@ function ClubAppView({
   const requested = visibleBookings.filter((booking) => !isBlockedTime(booking) && (booking.status === "requested" || booking.status === "change_requested"));
   const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed" && !isBlockedTime(booking));
   const studentDirectory = useMemo(() => {
-    const byKey = new Map<string, ParentAccount>();
-    for (const student of students) {
-      byKey.set(student.email || student.phone || student.id, student);
-    }
+    const byName = new Map<string, ParentAccount>();
+    const rememberStudent = (student: ParentAccount) => {
+      const key = student.studentName.trim().toLowerCase();
+      if (!key) return;
+      const existing = byName.get(key);
+      if (!existing) {
+        byName.set(key, student);
+        return;
+      }
+      const existingHasContact = Boolean(existing.email || existing.phone);
+      const nextHasContact = Boolean(student.email || student.phone);
+      if (!existingHasContact && nextHasContact) byName.set(key, student);
+    };
+    for (const student of students) rememberStudent(student);
     for (const booking of bookings) {
-      const key = booking.studentEmail || booking.phone || booking.studentName;
-      if (byKey.has(key)) continue;
-      byKey.set(key, {
-        id: key,
+      rememberStudent({
+        id: booking.studentName,
         studentName: booking.studentName,
         email: booking.studentEmail,
         phone: booking.phone,
@@ -1904,7 +1912,7 @@ function ClubAppView({
         createdAt: booking.createdAt
       });
     }
-    return [...byKey.values()].sort((left, right) => left.studentName.localeCompare(right.studentName));
+    return [...byName.values()].sort((left, right) => left.studentName.localeCompare(right.studentName));
   }, [bookings, students]);
   const filteredStudents = studentDirectory.filter((student) => {
     const query = studentQuery.trim().toLowerCase();
