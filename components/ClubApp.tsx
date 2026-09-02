@@ -2207,52 +2207,84 @@ function ClubAppView({
       studentsByKey.set(key, existing);
     }
 
+    const sortedStudents = [...studentsByKey.values()].sort((left, right) => left.studentName.localeCompare(right.studentName));
+
+    function hoursText(hours: number) {
+      return Number.isInteger(hours) ? String(hours) : hours.toFixed(2).replace(/\.?0+$/, "");
+    }
+
+    function bookingsByCoachRows(bookingsToSummarize: Booking[], typeLabel: string) {
+      const byCoach = new Map<string, { classes: number; hours: number }>();
+      for (const booking of bookingsToSummarize) {
+        const coach = booking.assignedCoach || booking.requestedCoach;
+        const existing = byCoach.get(coach) ?? { classes: 0, hours: 0 };
+        existing.classes += 1;
+        existing.hours += bookingDurationHours(booking);
+        byCoach.set(coach, existing);
+      }
+      return [...byCoach.entries()]
+        .sort(([leftCoach], [rightCoach]) => leftCoach.localeCompare(rightCoach))
+        .map(([coach, item]) => [typeLabel, coach, item.classes, hoursText(item.hours)]);
+    }
+
     const summaryRows = [
-      ["Student", "Private classes", "Private hours", "Group classes", "Group hours", "Total classes"],
-      ...[...studentsByKey.values()]
-        .sort((left, right) => left.studentName.localeCompare(right.studentName))
-        .map((student) => {
-          const groupBookings = student.bookings.filter((booking) => isGroupClassJoinRequest(booking));
-          const privateBookings = student.bookings.filter((booking) => !isGroupClassJoinRequest(booking));
-          const privateHours = privateBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
-          const groupHours = groupBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
-          return [
-            student.studentName,
-            privateBookings.length,
-            Number.isInteger(privateHours) ? String(privateHours) : String(privateHours),
-            groupBookings.length,
-            Number.isInteger(groupHours) ? String(groupHours) : String(groupHours),
-            student.bookings.length
-          ];
-        })
+      ["Student", "Type", "Coach", "Classes", "Hours"],
+      ...sortedStudents.flatMap((student) => {
+        const groupBookings = student.bookings.filter((booking) => isGroupClassJoinRequest(booking));
+        const privateBookings = student.bookings.filter((booking) => !isGroupClassJoinRequest(booking));
+        const privateHours = privateBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
+        const groupHours = groupBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
+        const totalHours = privateHours + groupHours;
+        return [
+          [student.studentName, "Private total", "All coaches", privateBookings.length, hoursText(privateHours)],
+          [student.studentName, "Group total", "All coaches", groupBookings.length, hoursText(groupHours)],
+          ...bookingsByCoachRows(privateBookings, "Private by coach").map((row) => [student.studentName, ...row]),
+          ...bookingsByCoachRows(groupBookings, "Group by coach").map((row) => [student.studentName, ...row]),
+          [student.studentName, "Student total", "All coaches", student.bookings.length, hoursText(totalHours)]
+        ];
+      })
     ];
 
-    const studentDetailRows = [...studentsByKey.values()]
-      .sort((left, right) => left.studentName.localeCompare(right.studentName))
-      .flatMap((student) => {
-        const totalHours = student.bookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
-        const totalHoursLabel = Number.isInteger(totalHours) ? String(totalHours) : String(totalHours);
-        const rows = [
-          [],
-          ["========================================"],
-          [`STUDENT: ${student.studentName}`],
-          ["========================================"],
-          ["Date", "Time", "Type", "Hours", "Coach", "Status", "Parent note"],
-          ...student.bookings
-            .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
-            .map((booking) => [
-              booking.dateLabel,
-              booking.timeLabel,
-              classTypeText(booking),
-              bookingHoursLabel(booking),
-              booking.assignedCoach,
-              statusText(booking.status),
-              booking.parentNote
-            ]),
-          ["Student total hours", "", "", totalHoursLabel, "", "", ""]
-        ];
-        return rows;
-      });
+    function classSectionRows(title: string, sectionBookings: Booking[]) {
+      const totalHours = sectionBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
+      return [
+        [title],
+        ["Coach summary"],
+        ["Type", "Coach", "Classes", "Hours"],
+        ...bookingsByCoachRows(sectionBookings, title.replace(" CLASSES", " by coach")),
+        [`${title} total`, "", sectionBookings.length, hoursText(totalHours)],
+        [],
+        ["Class details"],
+        ["Date", "Time", "Hours", "Coach", "Status", "Parent note"],
+        ...sectionBookings
+          .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
+          .map((booking) => [
+            booking.dateLabel,
+            booking.timeLabel,
+            bookingHoursLabel(booking),
+            booking.assignedCoach || booking.requestedCoach,
+            statusText(booking.status),
+            booking.parentNote
+          ])
+      ];
+    }
+
+    const studentDetailRows = sortedStudents.flatMap((student) => {
+      const groupBookings = student.bookings.filter((booking) => isGroupClassJoinRequest(booking));
+      const privateBookings = student.bookings.filter((booking) => !isGroupClassJoinRequest(booking));
+      const totalHours = student.bookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
+      return [
+        [],
+        ["========================================"],
+        [`STUDENT: ${student.studentName}`],
+        ["========================================"],
+        ...classSectionRows("PRIVATE CLASSES", privateBookings),
+        [],
+        ...classSectionRows("GROUP CLASSES", groupBookings),
+        [],
+        ["Student total", "", student.bookings.length, hoursText(totalHours)]
+      ];
+    });
 
     const csv = [
       ["RSWTTA class report", periodTitle],
