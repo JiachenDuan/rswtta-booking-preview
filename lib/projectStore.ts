@@ -830,6 +830,12 @@ export async function completeParentProfileSetup(input: { accountId: string; ema
       const rows = await listRows<AccountValues>("parent_accounts");
       const existing = rows.find((item) => item.id === input.accountId);
       if (!existing) throw new Error("Account not found");
+      const bookingRows = await listRows<Booking>("bookings");
+      const duplicateFirstNames = uniqueFirstNameRosterMatches(
+        rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
+        String(existing.values.studentName ?? "")
+      );
+      if (duplicateFirstNames.size > 1) throw new Error("More than one student has this first name. Please log out and log in with email.");
       const duplicate = rows.find(
         (item) =>
           item.id !== input.accountId &&
@@ -843,6 +849,12 @@ export async function completeParentProfileSetup(input: { accountId: string; ema
       const rows = localRows<AccountValues>("parent_accounts");
       const existing = rows.find((item) => item.id === input.accountId);
       if (!existing) throw new Error("Account not found");
+      const bookingRows = localRows<Booking>("bookings");
+      const duplicateFirstNames = uniqueFirstNameRosterMatches(
+        rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
+        String(existing.values.studentName ?? "")
+      );
+      if (duplicateFirstNames.size > 1) throw new Error("More than one student has this first name. Please log out and log in with email.");
       const duplicate = rows.find(
         (item) =>
           item.id !== input.accountId &&
