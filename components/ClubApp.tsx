@@ -327,6 +327,18 @@ function typedTimeDurationMinutes(dateValue: string, startTime: string, endTime:
   return minutes > 0 ? minutes : null;
 }
 
+function slotWithNewClockTime(booking: Booking, sourceSlot: CalendarSlot) {
+  const sourceDate = new Date(sourceSlot.startsAt);
+  const targetDate = new Date(booking.startsAt);
+  targetDate.setHours(sourceDate.getHours(), sourceDate.getMinutes(), 0, 0);
+  const dayIndex = (targetDate.getDay() + 6) % 7;
+  return {
+    ...makeCalendarDay(targetDate, dayIndex),
+    timeLabel: sourceSlot.timeLabel,
+    startsAt: targetDate.toISOString()
+  };
+}
+
 function rangeEndLabel(slot: CalendarSlot, durationMinutes: number) {
   return timeLabel(addMinutes(new Date(slot.startsAt), durationMinutes));
 }
@@ -929,6 +941,56 @@ export function ClubApp() {
     }
   }
 
+  async function updateClassTime(booking: Booking, slot: CalendarSlot, durationMinutes: number, recurring: boolean) {
+    const originalStartsAt = new Date(booking.startsAt).getTime();
+    const sameClass = (item: Booking) =>
+      item.id === booking.id ||
+      (item.status !== "cancelled" &&
+        item.status !== "coach_confirmed" &&
+        item.studentName.trim().toLowerCase() === booking.studentName.trim().toLowerCase() &&
+        (item.assignedCoach || item.requestedCoach) === (booking.assignedCoach || booking.requestedCoach) &&
+        item.timeLabel === booking.timeLabel &&
+        item.program === booking.program &&
+        new Date(item.startsAt).getTime() >= originalStartsAt);
+    const targets = recurring ? bookings.filter(sameClass) : [booking];
+    const targetIds = new Set(targets.map((item) => item.id));
+    const hasConflict = targets.some((item) => {
+      const nextSlot = item.id === booking.id ? slot : slotWithNewClockTime(item, slot);
+      return isRangeUnavailable(
+        bookings.filter((candidate) => !targetIds.has(candidate.id)),
+        item.assignedCoach || item.requestedCoach,
+        nextSlot,
+        durationMinutes
+      );
+    });
+    if (hasConflict) {
+      setNotice(copy(language, "One of the future classes conflicts with another booking.", "其中一节未来课程与其他预约冲突。"));
+      return;
+    }
+    setSaving(true);
+    setNotice(copy(language, recurring ? `Updating ${targets.length} future classes...` : "Updating class time...", recurring ? `正在更新 ${targets.length} 节未来课程...` : "正在更新课程时间..."));
+    try {
+      await Promise.all(
+        targets.map((item) => {
+          const nextSlot = item.id === booking.id ? slot : slotWithNewClockTime(item, slot);
+          return updateStoredBooking(item.id, {
+            status: "club_confirmed",
+            assignedCoach: item.assignedCoach || item.requestedCoach,
+            dateLabel: nextSlot.dateLabel,
+            timeLabel: rangeLabel(nextSlot, durationMinutes),
+            startsAt: nextSlot.startsAt
+          });
+        })
+      );
+      await loadAll();
+      setNotice(copy(language, recurring ? `Updated ${targets.length} future classes.` : "Class time updated.", recurring ? `已更新 ${targets.length} 节未来课程。` : "课程时间已更新。"));
+    } catch {
+      setNotice(copy(language, "Could not update class time.", "无法更新课程时间。"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function completeParentClass(booking: Booking) {
     setNotice(copy(language, "Marking class complete...", "正在标记课程完成..."));
     try {
@@ -1219,13 +1281,7 @@ export function ClubApp() {
             onApproveCancel={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCancelClass={(booking) => updateBooking(booking.id, "cancelled", booking.assignedCoach)}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
-            onUpdateClassTime={(booking, slot, durationMinutes) =>
-              updateBooking(booking.id, "club_confirmed", booking.assignedCoach, {
-                dateLabel: slot.dateLabel,
-                timeLabel: rangeLabel(slot, durationMinutes),
-                startsAt: slot.startsAt
-              })
-            }
+            onUpdateClassTime={updateClassTime}
             onAddClass={addClubClass}
             onAddNewStudentClass={addClubNewStudentClass}
             onBlockTime={blockCoachTime}
@@ -2141,7 +2197,7 @@ function ClubAppView({
   onApproveCancel: (booking: Booking) => void;
   onCancelClass: (booking: Booking) => void;
   onCoachComplete: (booking: Booking) => void;
-  onUpdateClassTime: (booking: Booking, slot: CalendarSlot, durationMinutes: number) => void;
+  onUpdateClassTime: (booking: Booking, slot: CalendarSlot, durationMinutes: number, recurring: boolean) => void;
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onAddNewStudentClass: (input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
@@ -2594,8 +2650,8 @@ function ClubAppView({
                 }
               : undefined
           }
-          onUpdateTime={(slot, durationMinutes) => {
-            onUpdateClassTime(selectedClubBooking, slot, durationMinutes);
+          onUpdateTime={(slot, durationMinutes, recurring) => {
+            onUpdateClassTime(selectedClubBooking, slot, durationMinutes, recurring);
             setSelectedClubBooking(null);
           }}
         />
@@ -2898,7 +2954,7 @@ function ClubBookingActionModal({
   onClose: () => void;
   onCancel: () => void;
   onComplete?: () => void;
-  onUpdateTime: (slot: CalendarSlot, durationMinutes: number) => void;
+  onUpdateTime: (slot: CalendarSlot, durationMinutes: number, recurring: boolean) => void;
   onConfirmEnrollment: (booking: Booking) => void;
   onRejectEnrollment: (booking: Booking) => void;
   onCompleteEnrollment: (booking: Booking) => void;
@@ -2911,6 +2967,7 @@ function ClubBookingActionModal({
   const [dateValue, setDateValue] = useState(dateInputValue(bookingStart));
   const [startTime, setStartTime] = useState(initialStartTime || timeLabel(bookingStart));
   const [endTime, setEndTime] = useState(initialEndTime || timeLabel(bookingEndDate(booking)));
+  const [updateRecurring, setUpdateRecurring] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"update" | "cancel" | null>(null);
   const typedEditSlot = makeSlotFromTypedInput(dateValue, startTime);
   const typedDurationMinutes = typedTimeDurationMinutes(dateValue, startTime, endTime);
@@ -3122,6 +3179,10 @@ function ClubBookingActionModal({
               <span>{copy(language, "End time", "结束时间")}</span>
               <input className="modal-input" value={endTime} onChange={(event) => setEndTime(event.target.value)} placeholder="5:25 PM" />
             </label>
+            <label className="checkbox-line modal-checkbox">
+              <input type="checkbox" checked={updateRecurring} onChange={(event) => setUpdateRecurring(event.target.checked)} />
+              <span>{copy(language, "Update future same class", "更新未来相同课程")}</span>
+            </label>
             <p className={!timeInputValid || unavailable ? "modal-warning" : "modal-info"}>
               {!timeInputValid
                 ? copy(language, "Type a valid start and end time, for example 4:10 PM and 5:25 PM.", "请输入有效的开始和结束时间，例如 4:10 PM 和 5:25 PM。")
@@ -3158,7 +3219,7 @@ function ClubBookingActionModal({
             </strong>
             <p>
               {confirmAction === "update"
-                ? `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`
+                ? `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}${updateRecurring ? ` (${copy(language, "future same classes too", "也更新未来相同课程")})` : ""}`
                 : copy(language, isBlockedTime(booking) ? "Remove this blocked time." : "Cancel this class.", isBlockedTime(booking) ? "移除这个不可用时间。" : "取消这节课。")}
             </p>
             <div className="modal-actions">
@@ -3170,7 +3231,7 @@ function ClubBookingActionModal({
                 type="button"
                 onClick={() => {
                   if (confirmAction === "update") {
-                    onUpdateTime(editSlot, durationMinutes);
+                    onUpdateTime(editSlot, durationMinutes, updateRecurring);
                     return;
                   }
                   onCancel();
