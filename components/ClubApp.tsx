@@ -1414,7 +1414,6 @@ function UnifiedAuth({
             <button type="button" className="text-button auth-submit" disabled={busy} onClick={() => setAuthMode("login")}>
               {copy(language, "Back to login", "返回登录")}
             </button>
-            <p className="helper-line">{copy(language, "MVP can use the default Supabase email. Production needs custom SMTP in Supabase Auth.", "MVP 可以使用 Supabase 默认邮件；生产环境需要在 Supabase Auth 配置 custom SMTP。")}</p>
           </div>
         ) : null}
 
