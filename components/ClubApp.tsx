@@ -338,9 +338,10 @@ function isGroupClassBlock(booking: Booking) {
 
 function isGroupClassJoinRequest(booking: Booking) {
   return (
-    booking.program === "Group lesson" &&
-    (booking.parentNote.includes("Parent requested to join group class") ||
-      booking.parentNote.includes("Added to group class by club"))
+    booking.program === "Group enrollment" ||
+    (booking.program === "Group lesson" &&
+      (booking.parentNote.includes("Parent requested to join group class") ||
+        booking.parentNote.includes("Added to group class by club")))
   );
 }
 
@@ -680,7 +681,7 @@ export function ClubApp() {
         phone,
         requestedCoach: coach,
         assignedCoach: coach,
-        program: "Group lesson",
+        program: "Group enrollment",
         dateLabel: groupClass.dateLabel,
         timeLabel: groupClass.timeLabel,
         startsAt: groupClass.startsAt,
@@ -716,7 +717,7 @@ export function ClubApp() {
           phone: student.phone,
           requestedCoach: coach,
           assignedCoach: coach,
-          program: "Group lesson",
+          program: "Group enrollment",
           dateLabel: groupClass.dateLabel,
           timeLabel: groupClass.timeLabel,
           startsAt: groupClass.startsAt,
