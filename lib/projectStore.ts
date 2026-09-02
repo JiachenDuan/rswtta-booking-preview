@@ -644,7 +644,7 @@ export async function createClubStudentAccount(input: { studentName: string; ema
 }
 
 export async function resetPasswordForEmail(email: string) {
-  const redirectTo = "https://jiachenduan.github.io/rswtta-booking-preview/";
+  const redirectTo = "https://rswtta-booking-preview.vercel.app/";
   const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase(), {
     redirectTo
   });
