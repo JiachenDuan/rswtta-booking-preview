@@ -2,7 +2,6 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bell,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -1018,9 +1017,6 @@ export function ClubApp() {
                 中文
               </button>
             </div>
-            <button className="icon-button" aria-label="Notifications">
-              <Bell size={19} />
-            </button>
             {mode === "parent" && parentSession ? (
               <button
                 className="filter-button"
