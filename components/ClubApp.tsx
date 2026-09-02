@@ -1285,8 +1285,9 @@ function UnifiedAuth({
     try {
       await onRequestPasswordReset(email);
       setNotice(copy(language, "Password reset email sent. Check the Supabase email.", "重置邮件已发送。请查看 Supabase 邮件。"));
-    } catch {
-      setNotice(copy(language, "Could not send password reset email.", "无法发送重置邮件。"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : copy(language, "Could not send password reset email.", "无法发送重置邮件。");
+      setNotice(copy(language, `Could not send password reset email: ${message}`, `无法发送重置邮件：${message}`));
     } finally {
       setBusy(false);
     }
