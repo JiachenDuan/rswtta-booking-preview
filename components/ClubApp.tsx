@@ -405,9 +405,13 @@ function classTypeText(booking: Booking, language: Language = "en") {
   return isGroupClassJoinRequest(booking) ? copy(language, "Group", "团体") : copy(language, "Private", "私教");
 }
 
+function isCsvGroupClass(booking: Booking) {
+  return isGroupClassJoinRequest(booking) || booking.program === "Group lesson" || booking.program === "Group enrollment";
+}
+
 function shouldIncludeInClassExport(booking: Booking) {
   if (isBlockedTime(booking) || isGroupClassBlock(booking)) return false;
-  if (isGroupClassJoinRequest(booking)) return booking.status === "coach_confirmed";
+  if (isCsvGroupClass(booking)) return booking.status === "club_confirmed" || booking.status === "coach_confirmed";
   return booking.status === "club_confirmed" || booking.status === "coach_confirmed";
 }
 
@@ -2252,8 +2256,8 @@ function ClubAppView({
     }
 
     const studentDetailRows = sortedStudents.flatMap((student) => {
-      const groupBookings = student.bookings.filter((booking) => isGroupClassJoinRequest(booking));
-      const privateBookings = student.bookings.filter((booking) => !isGroupClassJoinRequest(booking));
+      const groupBookings = student.bookings.filter((booking) => isCsvGroupClass(booking));
+      const privateBookings = student.bookings.filter((booking) => !isCsvGroupClass(booking));
       const totalHours = student.bookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
       return [
         [],
