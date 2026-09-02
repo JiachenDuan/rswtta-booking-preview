@@ -401,12 +401,16 @@ function bookingHoursLabel(booking: Booking) {
   return Number.isInteger(hours) ? String(hours) : String(hours);
 }
 
+function isGroupClassType(booking: Booking) {
+  return isGroupClassBlock(booking) || isGroupClassJoinRequest(booking) || booking.program === "Group lesson" || booking.program === "Group enrollment";
+}
+
 function classTypeText(booking: Booking, language: Language = "en") {
-  return isGroupClassJoinRequest(booking) ? copy(language, "Group", "团体") : copy(language, "Private", "私教");
+  return isGroupClassType(booking) ? copy(language, "Group", "团体") : copy(language, "Private", "私教");
 }
 
 function isCsvGroupClass(booking: Booking) {
-  return isGroupClassJoinRequest(booking) || booking.program === "Group lesson" || booking.program === "Group enrollment";
+  return isGroupClassType(booking);
 }
 
 function shouldIncludeInClassExport(booking: Booking) {
