@@ -708,25 +708,23 @@ export function ClubApp() {
     const enrollmentStatus: BookingStatus = Date.now() >= new Date(groupClass.startsAt).getTime() ? "coach_confirmed" : "club_confirmed";
     setNotice(copy(language, "Adding students...", "正在添加学生..."));
     try {
-      await Promise.all(
-        selectedStudents.map(async (student) => {
-          const booking = await createBooking({
-            studentName: student.studentName,
-            familyName: student.studentName,
-            studentEmail: student.email,
-            phone: student.phone,
-            requestedCoach: coach,
-            assignedCoach: coach,
-            program: "Group lesson",
-            dateLabel: groupClass.dateLabel,
-            timeLabel: groupClass.timeLabel,
-            startsAt: groupClass.startsAt,
-            priceCents: 7500,
-            parentNote: "Added to group class by club."
-          });
-          await updateStoredBooking(booking.id, { status: enrollmentStatus, assignedCoach: coach });
-        })
-      );
+      for (const student of selectedStudents) {
+        const booking = await createBooking({
+          studentName: student.studentName,
+          familyName: student.studentName,
+          studentEmail: student.email,
+          phone: student.phone,
+          requestedCoach: coach,
+          assignedCoach: coach,
+          program: "Group lesson",
+          dateLabel: groupClass.dateLabel,
+          timeLabel: groupClass.timeLabel,
+          startsAt: groupClass.startsAt,
+          priceCents: 7500,
+          parentNote: "Added to group class by club."
+        });
+        await updateStoredBooking(booking.id, { status: enrollmentStatus, assignedCoach: coach });
+      }
       await loadAll();
       setNotice(copy(language, `Added ${selectedStudents.length} student${selectedStudents.length === 1 ? "" : "s"} to group class.`, `已添加 ${selectedStudents.length} 名学生到团体课。`));
       return true;
@@ -2844,20 +2842,17 @@ function ClubBookingActionModal({
   const enrolledNames = new Set(groupEnrollments.map((item) => item.studentName.trim().toLowerCase()));
   const selectedDropInNames = new Set(selectedDropInStudents.map((student) => student.studentName.trim().toLowerCase()));
   const dropInSearch = dropInQuery.trim().toLowerCase();
-  const dropInResults = dropInSearch
-    ? students
-        .filter((student) => {
-          const studentName = student.studentName.trim().toLowerCase();
-          return (
-            !enrolledNames.has(studentName) &&
-            !selectedDropInNames.has(studentName) &&
-            (studentName.includes(dropInSearch) ||
-              student.email.toLowerCase().includes(dropInSearch) ||
-              student.phone.toLowerCase().includes(dropInSearch))
-          );
-        })
-        .slice(0, 6)
-    : [];
+  const dropInResults = students
+    .filter((student) => {
+      const studentName = student.studentName.trim().toLowerCase();
+      const matchesSearch =
+        !dropInSearch ||
+        studentName.includes(dropInSearch) ||
+        student.email.toLowerCase().includes(dropInSearch) ||
+        student.phone.toLowerCase().includes(dropInSearch);
+      return !enrolledNames.has(studentName) && !selectedDropInNames.has(studentName) && matchesSearch;
+    })
+    .slice(0, dropInSearch ? 8 : 12);
 
   if (isGroupClassBlock(booking)) {
     return (
@@ -2941,9 +2936,8 @@ function ClubBookingActionModal({
                   ))}
                 </div>
               ) : null}
-              {!dropInSearch ? (
-                <p className="empty-state">{copy(language, "Search student name to add students.", "输入学生姓名添加学生。")}</p>
-              ) : dropInResults.length === 0 ? (
+              <p className="modal-info">{copy(language, "Tap multiple students, then press Add students once.", "可选择多名学生，然后点击一次添加学生。")}</p>
+              {dropInResults.length === 0 ? (
                 <p className="empty-state">{copy(language, "No enrolled students found, or students are already selected/in this group class.", "未找到已注册学生，或学生已选择/已在本节团体课中。")}</p>
               ) : (
                 dropInResults.map((student) => (
