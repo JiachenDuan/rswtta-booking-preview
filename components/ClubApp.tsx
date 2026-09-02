@@ -244,6 +244,30 @@ function parseClockLabel(label: string) {
   return [hours, minutes] as const;
 }
 
+function parseTypedClockLabel(label: string) {
+  const value = label.trim();
+  const twelveHour = value.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (twelveHour) {
+    let hours = Number(twelveHour[1]);
+    const minutes = Number(twelveHour[2] ?? "0");
+    if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) return null;
+    const meridiem = twelveHour[3].toUpperCase();
+    if (meridiem === "PM" && hours !== 12) hours += 12;
+    if (meridiem === "AM" && hours === 12) hours = 0;
+    return [hours, minutes] as const;
+  }
+
+  const twentyFourHour = value.match(/^(\d{1,2})(?::(\d{2}))$/);
+  if (twentyFourHour) {
+    const hours = Number(twentyFourHour[1]);
+    const minutes = Number(twentyFourHour[2] ?? "0");
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+    return [hours, minutes] as const;
+  }
+
+  return null;
+}
+
 function dateZh(date: Date) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
@@ -278,6 +302,29 @@ function makeSlotFromInput(dateValue: string, timeValue: string): CalendarSlot {
   const date = dateFromInputValue(dateValue);
   const dayIndex = (date.getDay() + 6) % 7;
   return makeCalendarSlot(makeCalendarDay(date, dayIndex), timeValue);
+}
+
+function makeSlotFromTypedInput(dateValue: string, timeValue: string): CalendarSlot | null {
+  const parsedTime = parseTypedClockLabel(timeValue);
+  if (!parsedTime) return null;
+  const date = dateFromInputValue(dateValue);
+  date.setHours(parsedTime[0], parsedTime[1], 0, 0);
+  const dayIndex = (date.getDay() + 6) % 7;
+  return {
+    ...makeCalendarDay(date, dayIndex),
+    timeLabel: timeValue.trim(),
+    startsAt: date.toISOString()
+  };
+}
+
+function typedTimeDurationMinutes(dateValue: string, startTime: string, endTime: string) {
+  const start = makeSlotFromTypedInput(dateValue, startTime);
+  const parsedEnd = parseTypedClockLabel(endTime);
+  if (!start || !parsedEnd) return null;
+  const end = dateFromInputValue(dateValue);
+  end.setHours(parsedEnd[0], parsedEnd[1], 0, 0);
+  const minutes = Math.round((end.getTime() - new Date(start.startsAt).getTime()) / 60000);
+  return minutes > 0 ? minutes : null;
 }
 
 function rangeEndLabel(slot: CalendarSlot, durationMinutes: number) {
@@ -2859,18 +2906,23 @@ function ClubBookingActionModal({
   saving: boolean;
 }) {
   const bookingStart = new Date(booking.startsAt);
-  const [initialStartTime] = booking.timeLabel.split(" - ");
+  const [initialStartTime, initialEndTime] = booking.timeLabel.split(" - ");
   const initialDurationMinutes = Math.max(30, Math.round((bookingEndDate(booking).getTime() - bookingStart.getTime()) / 60000));
   const [dateValue, setDateValue] = useState(dateInputValue(bookingStart));
   const [startTime, setStartTime] = useState(initialStartTime || timeLabel(bookingStart));
-  const [durationMinutes, setDurationMinutes] = useState(initialDurationMinutes);
+  const [endTime, setEndTime] = useState(initialEndTime || timeLabel(bookingEndDate(booking)));
   const [confirmAction, setConfirmAction] = useState<"update" | "cancel" | null>(null);
-  const editSlot = makeSlotFromInput(dateValue, startTime);
+  const typedEditSlot = makeSlotFromTypedInput(dateValue, startTime);
+  const typedDurationMinutes = typedTimeDurationMinutes(dateValue, startTime, endTime);
+  const editSlot = typedEditSlot ?? makeSlotFromInput(dateValue, initialStartTime || timeLabel(bookingStart));
+  const durationMinutes = typedDurationMinutes ?? initialDurationMinutes;
+  const timeInputValid = Boolean(typedEditSlot && typedDurationMinutes);
   const isFutureClass = !isBlockedTime(booking) && booking.status !== "cancelled" && booking.status !== "coach_confirmed" && bookingStart.getTime() > Date.now();
-  const unavailable = isRangeUnavailableExceptBooking(bookings, booking.assignedCoach, editSlot, durationMinutes, booking.id);
+  const unavailable = timeInputValid && isRangeUnavailableExceptBooking(bookings, booking.assignedCoach, editSlot, durationMinutes, booking.id);
   const updateChanged =
-    editSlot.startsAt !== booking.startsAt ||
-    rangeLabel(editSlot, durationMinutes) !== booking.timeLabel;
+    timeInputValid &&
+    (editSlot.startsAt !== booking.startsAt ||
+      rangeLabel(editSlot, durationMinutes) !== booking.timeLabel);
   const groupEnrollments = bookings
     .filter((item) => item.id !== booking.id && item.status !== "cancelled" && isGroupClassJoinRequest(item) && sameGroupClassTime(item, booking))
     .sort((left, right) => left.studentName.localeCompare(right.studentName));
@@ -3063,33 +3115,19 @@ function ClubBookingActionModal({
               </label>
               <label>
                 <span>{copy(language, "Start time", "开始时间")}</span>
-                <select className="modal-select" value={startTime} onChange={(event) => {
-                  const nextStart = event.target.value;
-                  setStartTime(nextStart);
-                  const nextSlot = makeSlotFromInput(dateValue, nextStart);
-                  const firstEnd = endTimeOptions(nextSlot)[0];
-                  if (firstEnd) setDurationMinutes(firstEnd.duration);
-                }}>
-                  {modalTimeOptions.slice(0, -1).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                <input className="modal-input" value={startTime} onChange={(event) => setStartTime(event.target.value)} placeholder="4:10 PM" />
               </label>
             </div>
             <label className="modal-duration-picker">
               <span>{copy(language, "End time", "结束时间")}</span>
-              <select className="modal-select" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}>
-                {endTimeOptions(editSlot).map((option) => (
-                  <option key={option.duration} value={option.duration}>{option.label}</option>
-                ))}
-              </select>
+              <input className="modal-input" value={endTime} onChange={(event) => setEndTime(event.target.value)} placeholder="5:25 PM" />
             </label>
-            <p className={unavailable ? "modal-warning" : "modal-info"}>
-              {unavailable
-                ? copy(language, "That coach already has something at the new time.", "该教练新时间已有安排。")
-                : `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`}
+            <p className={!timeInputValid || unavailable ? "modal-warning" : "modal-info"}>
+              {!timeInputValid
+                ? copy(language, "Type a valid start and end time, for example 4:10 PM and 5:25 PM.", "请输入有效的开始和结束时间，例如 4:10 PM 和 5:25 PM。")
+                : unavailable
+                  ? copy(language, "That coach already has something at the new time.", "该教练新时间已有安排。")
+                  : `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`}
             </p>
           </div>
         ) : null}
@@ -3101,7 +3139,7 @@ function ClubBookingActionModal({
         ) : null}
         <div className="modal-actions class-secondary-actions">
           {isFutureClass ? (
-            <button className="primary-button secondary-red-button" disabled={unavailable || !updateChanged} onClick={() => setConfirmAction("update")}>
+            <button className="primary-button secondary-red-button" disabled={!timeInputValid || unavailable || !updateChanged} onClick={() => setConfirmAction("update")}>
               <Check size={18} />
               {copy(language, "Update", "更新")}
             </button>
