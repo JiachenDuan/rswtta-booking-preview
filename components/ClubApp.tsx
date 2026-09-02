@@ -1341,7 +1341,7 @@ function UnifiedAuth({
               <span>{copy(language, "Student name", "学生名字")}</span>
               <div className="input-shell">
                 <UserRound size={18} />
-                <input value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder={copy(language, "Student first name", "学生名字")} />
+                <input value={studentName} onChange={(event) => setStudentName(event.target.value)} />
               </div>
             </label>
             <label>
