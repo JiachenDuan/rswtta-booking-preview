@@ -626,9 +626,10 @@ function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier
 
   const matches = findPreregisteredNameMatches(rows, normalizedIdentifier);
   if (matches.length === 0) throw new Error("Invalid login");
-  if (matches.length > 1) throw new Error("More than one student has this first name. Please log in with email.");
+  const uniqueMatchNames = new Set(matches.map((item) => normalizedRosterName(item.values.studentName)).filter(Boolean));
+  if (uniqueMatchNames.size > 1) throw new Error("More than one student has this first name. Please log in with email.");
 
-  const row = matches[0];
+  const row = matches.find((item) => item.values.profileSetupRequired || !String(item.values.email ?? "").includes("@")) ?? matches[0];
   if (!row.values.profileSetupRequired && String(row.values.email ?? "").includes("@")) {
     throw new Error("This account is already set up. Please log in with email and password.");
   }
