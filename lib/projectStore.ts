@@ -562,6 +562,25 @@ function findPreregisteredNameMatches(rows: Array<ProjectRow<AccountValues>>, id
   });
 }
 
+function uniqueFirstNameRosterMatches(names: string[], identifier: string) {
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  const identifierFirstName = accountNameTokens(normalizedIdentifier)[0] ?? "";
+  const matches = new Set<string>();
+  if (!identifierFirstName) return matches;
+  for (const name of names) {
+    const normalizedName = name.trim().toLowerCase();
+    if (!normalizedName || normalizedName === "group class") continue;
+    const firstName = accountNameTokens(normalizedName)[0] ?? "";
+    if (normalizedName === normalizedIdentifier || firstName === identifierFirstName) matches.add(normalizedName);
+  }
+  return matches;
+}
+
+function assertUniquePreregisteredRosterName(names: string[], identifier: string) {
+  const matches = uniqueFirstNameRosterMatches(names, identifier);
+  if (matches.size > 1) throw new Error("More than one student has this first name. Please log in with email.");
+}
+
 function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier: string, allowPreregisteredName: boolean) {
   const normalizedIdentifier = identifier.trim().toLowerCase();
   const isEmail = normalizedIdentifier.includes("@");
@@ -601,6 +620,13 @@ export async function loginParentAccount(identifier: string, password: string, o
       }
 
       const rows = await listAccountRowsWithSeeds();
+      if (!isEmail && options.allowPreregisteredName) {
+        const bookingRows = await listRows<Booking>("bookings");
+        assertUniquePreregisteredRosterName(
+          rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
+          normalizedIdentifier
+        );
+      }
       const row = selectParentLoginRow(rows, normalizedIdentifier, Boolean(options.allowPreregisteredName));
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
       if (!ok) throw authError ?? new Error("Invalid login");
@@ -613,6 +639,14 @@ export async function loginParentAccount(identifier: string, password: string, o
     async () => {
       const rows = await seedPreregisteredAccounts(localRows<AccountValues>("parent_accounts"), (values) => createLocalRow("parent_accounts", values));
       const normalizedIdentifier = identifier.trim().toLowerCase();
+      const isEmail = normalizedIdentifier.includes("@");
+      if (!isEmail && options.allowPreregisteredName) {
+        const bookingRows = localRows<Booking>("bookings");
+        assertUniquePreregisteredRosterName(
+          rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
+          normalizedIdentifier
+        );
+      }
       const row = selectParentLoginRow(rows, normalizedIdentifier, Boolean(options.allowPreregisteredName));
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
       if (!ok) throw new Error("Invalid login");
