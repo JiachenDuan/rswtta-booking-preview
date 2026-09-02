@@ -644,7 +644,7 @@ export async function createClubStudentAccount(input: { studentName: string; ema
 }
 
 export async function resetPasswordForEmail(email: string) {
-  const redirectTo = isBrowser() ? `${window.location.origin}${window.location.pathname}` : undefined;
+  const redirectTo = "https://jiachenduan.github.io/rswtta-booking-preview/";
   const { error } = await supabase.auth.resetPasswordForEmail(email.toLowerCase(), {
     redirectTo
   });
