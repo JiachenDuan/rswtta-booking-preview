@@ -397,7 +397,13 @@ function bookingHoursLabel(booking: Booking) {
 }
 
 function classTypeText(booking: Booking, language: Language = "en") {
-  return isGroupClassJoinRequest(booking) || booking.program === "Group lesson" ? copy(language, "Group", "团体") : copy(language, "Private", "私教");
+  return isGroupClassJoinRequest(booking) ? copy(language, "Group", "团体") : copy(language, "Private", "私教");
+}
+
+function shouldIncludeInClassExport(booking: Booking) {
+  if (isBlockedTime(booking) || isGroupClassBlock(booking)) return false;
+  if (isGroupClassJoinRequest(booking)) return booking.status === "coach_confirmed";
+  return booking.status === "club_confirmed" || booking.status === "coach_confirmed";
 }
 
 function eventHeightStyle(hours: number) {
@@ -2160,9 +2166,7 @@ function ClubAppView({
         startsAt >= periodStart &&
         startsAt <= periodEnd &&
         matchesStudent &&
-        !isBlockedTime(booking) &&
-        !isGroupClassBlock(booking) &&
-        (booking.status === "club_confirmed" || booking.status === "coach_confirmed")
+        shouldIncludeInClassExport(booking)
       );
     });
 
@@ -3334,8 +3338,8 @@ function BookingList({
             </p>
           </div>
           <div className="class-sign-stack">
-            <span className={isGroupClassJoinRequest(booking) || booking.program === "Group lesson" ? "class-type-badge group" : "class-type-badge private"}>
-              {isGroupClassJoinRequest(booking) || booking.program === "Group lesson" ? copy(language, "Group", "团体") : copy(language, "Private", "私教")}
+            <span className={isGroupClassJoinRequest(booking) ? "class-type-badge group" : "class-type-badge private"}>
+              {isGroupClassJoinRequest(booking) ? copy(language, "Group", "团体") : copy(language, "Private", "私教")}
             </span>
             <strong className={booking.status}>{statusText(booking.status, language)}</strong>
           </div>
