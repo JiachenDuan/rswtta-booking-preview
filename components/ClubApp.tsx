@@ -1262,8 +1262,8 @@ function UnifiedAuth({
     try {
       await onRegister({ studentName, email, phone, password });
       setNotice(copy(language, "Registration complete.", "注册完成。"));
-    } catch {
-      setNotice(copy(language, "Registration failed.", "注册失败。"));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Registration failed.", "注册失败。"));
     } finally {
       setBusy(false);
     }

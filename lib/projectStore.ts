@@ -480,6 +480,11 @@ export async function registerParentAccount(input: { studentName: string; email:
       }
 
       const rows = await listRows<AccountValues>("parent_accounts");
+      const bookingRows = await listRows<Booking>("bookings");
+      assertNoDuplicateFirstNameForNewAccount(
+        rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
+        input.studentName
+      );
       const nameKey = studentNameKey(input.studentName);
       const duplicateName = rows.find((row) => studentNameKey(row.values.studentName) === nameKey && String(row.values.email ?? "").toLowerCase() !== email);
       if (duplicateName) throw new Error("Student name already has an account");
@@ -508,6 +513,11 @@ export async function registerParentAccount(input: { studentName: string; email:
     async () => {
       const email = input.email.toLowerCase();
       const rows = localRows<AccountValues>("parent_accounts");
+      const bookingRows = localRows<Booking>("bookings");
+      assertNoDuplicateFirstNameForNewAccount(
+        rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
+        input.studentName
+      );
       const nameKey = studentNameKey(input.studentName);
       const duplicateName = rows.find((row) => studentNameKey(row.values.studentName) === nameKey && String(row.values.email ?? "").toLowerCase() !== email);
       if (duplicateName) throw new Error("Student name already has an account");
@@ -579,6 +589,11 @@ function uniqueFirstNameRosterMatches(names: string[], identifier: string) {
 function assertUniquePreregisteredRosterName(names: string[], identifier: string) {
   const matches = uniqueFirstNameRosterMatches(names, identifier);
   if (matches.size > 1) throw new Error("More than one student has this first name. Please log in with email.");
+}
+
+function assertNoDuplicateFirstNameForNewAccount(names: string[], studentName: string) {
+  const matches = uniqueFirstNameRosterMatches(names, studentName);
+  if (matches.size > 0) throw new Error("A student with this first name already exists. Please use the existing account or log in with email.");
 }
 
 function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier: string, allowPreregisteredName: boolean) {
