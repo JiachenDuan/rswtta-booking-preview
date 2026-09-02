@@ -2227,24 +2227,6 @@ function ClubAppView({
         .map(([coach, item]) => [typeLabel, coach, item.classes, hoursText(item.hours)]);
     }
 
-    const summaryRows = [
-      ["Student", "Type", "Coach", "Classes", "Hours"],
-      ...sortedStudents.flatMap((student) => {
-        const groupBookings = student.bookings.filter((booking) => isGroupClassJoinRequest(booking));
-        const privateBookings = student.bookings.filter((booking) => !isGroupClassJoinRequest(booking));
-        const privateHours = privateBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
-        const groupHours = groupBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
-        const totalHours = privateHours + groupHours;
-        return [
-          [student.studentName, "Private total", "All coaches", privateBookings.length, hoursText(privateHours)],
-          [student.studentName, "Group total", "All coaches", groupBookings.length, hoursText(groupHours)],
-          ...bookingsByCoachRows(privateBookings, "Private by coach").map((row) => [student.studentName, ...row]),
-          ...bookingsByCoachRows(groupBookings, "Group by coach").map((row) => [student.studentName, ...row]),
-          [student.studentName, "Student total", "All coaches", student.bookings.length, hoursText(totalHours)]
-        ];
-      })
-    ];
-
     function classSectionRows(title: string, sectionBookings: Booking[]) {
       const totalHours = sectionBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
       return [
@@ -2290,9 +2272,6 @@ function ClubAppView({
       ["RSWTTA class report", periodTitle],
       ["Date range", `${exportStartDate} to ${exportEndDate}`],
       ["Student filter", selectedExportStudent?.studentName || exportStudentQuery.trim() || "All students"],
-      [],
-      ["Student summary"],
-      ...summaryRows,
       [],
       ["Class details by student"],
       ...studentDetailRows
