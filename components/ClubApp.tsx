@@ -1380,12 +1380,12 @@ function UnifiedAuth({
             </label>
             <label>
               <span>{copy(language, "Password", "密码")}</span>
-              <PasswordField value={password} onChange={setPassword} placeholder={preregisteredLogin ? "rswtta" : copy(language, "Password", "密码")} />
+              <PasswordField value={password} onChange={setPassword} placeholder={copy(language, "Password", "密码")} />
             </label>
             {intent === "parent" ? (
               <label className="checkbox-line auth-checkbox">
                 <input type="checkbox" checked={preregisteredLogin} onChange={(event) => setPreregisteredLogin(event.target.checked)} />
-                <span>{copy(language, "Pre-registered student: use student first name and temporary password rswtta", "预注册学生：使用学生名字和临时密码 rswtta")}</span>
+                <span>{copy(language, "Pre-registered student", "预注册学生")}</span>
               </label>
             ) : null}
             <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
@@ -1401,7 +1401,7 @@ function UnifiedAuth({
               {intent === "club"
                 ? copy(language, "Login opens Club App.", "登录后进入 Club App。")
                 : preregisteredLogin
-                  ? copy(language, "If the same first name exists for multiple students, use email login.", "如果有多个学生同名，请使用邮箱登录。")
+                  ? copy(language, "Use the student first name and the password provided by the club. If the same first name exists for multiple students, use email login.", "请使用学生名字和俱乐部提供的密码。如果有多个学生同名，请使用邮箱登录。")
                   : copy(language, "Use email and password. Check the box only for first-time preregistered students.", "请使用邮箱和密码登录。只有首次预注册学生才勾选。") }
             </p>
           </div>
@@ -1539,7 +1539,7 @@ function FirstLoginSetup({
           <button type="button" className="text-button auth-submit" disabled={busy} onClick={onLogout}>
             {copy(language, "Logout", "退出")}
           </button>
-          <p className="helper-line">{copy(language, "Password must be at least 6 characters and cannot stay as the temporary password.", "密码至少 6 位，不能继续使用临时密码。")}</p>
+          <p className="helper-line">{copy(language, "Password must be at least 6 characters and must be a new password.", "密码至少 6 位，并且必须是新密码。")}</p>
         </div>
         <p className="system-note">{notice}</p>
       </div>
