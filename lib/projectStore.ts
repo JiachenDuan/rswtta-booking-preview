@@ -572,28 +572,26 @@ function findPreregisteredNameMatches(rows: Array<ProjectRow<AccountValues>>, id
   });
 }
 
-function uniqueFirstNameRosterMatches(names: string[], identifier: string) {
+function firstNameRosterMatchCount(names: string[], identifier: string) {
   const normalizedIdentifier = identifier.trim().toLowerCase();
   const identifierFirstName = accountNameTokens(normalizedIdentifier)[0] ?? "";
-  const matches = new Set<string>();
-  if (!identifierFirstName) return matches;
-  for (const name of names) {
+  if (!identifierFirstName) return 0;
+  return names.filter((name) => {
     const normalizedName = name.trim().toLowerCase();
-    if (!normalizedName || normalizedName === "group class") continue;
+    if (!normalizedName || normalizedName === "group class") return false;
     const firstName = accountNameTokens(normalizedName)[0] ?? "";
-    if (normalizedName === normalizedIdentifier || firstName === identifierFirstName) matches.add(normalizedName);
-  }
-  return matches;
+    return normalizedName === normalizedIdentifier || firstName === identifierFirstName;
+  }).length;
 }
 
 function assertUniquePreregisteredRosterName(names: string[], identifier: string) {
-  const matches = uniqueFirstNameRosterMatches(names, identifier);
-  if (matches.size > 1) throw new Error("More than one student has this first name. Please log in with email.");
+  const matchCount = firstNameRosterMatchCount(names, identifier);
+  if (matchCount > 1) throw new Error("More than one student has this first name. Please log in with email.");
 }
 
 function assertNoDuplicateFirstNameForNewAccount(names: string[], studentName: string) {
-  const matches = uniqueFirstNameRosterMatches(names, studentName);
-  if (matches.size > 0) throw new Error("A student with this first name already exists. Please use the existing account or log in with email.");
+  const matchCount = firstNameRosterMatchCount(names, studentName);
+  if (matchCount > 0) throw new Error("A student with this first name already exists. Please use the existing account or log in with email.");
 }
 
 function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier: string, allowPreregisteredName: boolean) {
@@ -846,11 +844,11 @@ export async function completeParentProfileSetup(input: { accountId: string; ema
       const existing = rows.find((item) => item.id === input.accountId);
       if (!existing) throw new Error("Account not found");
       const bookingRows = await listRows<Booking>("bookings");
-      const duplicateFirstNames = uniqueFirstNameRosterMatches(
+      const duplicateFirstNameCount = firstNameRosterMatchCount(
         rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
         String(existing.values.studentName ?? "")
       );
-      if (duplicateFirstNames.size > 1) throw new Error("More than one student has this first name. Please log out and log in with email.");
+      if (duplicateFirstNameCount > 1) throw new Error("More than one student has this first name. Please log out and log in with email.");
       const duplicate = rows.find(
         (item) =>
           item.id !== input.accountId &&
@@ -865,11 +863,11 @@ export async function completeParentProfileSetup(input: { accountId: string; ema
       const existing = rows.find((item) => item.id === input.accountId);
       if (!existing) throw new Error("Account not found");
       const bookingRows = localRows<Booking>("bookings");
-      const duplicateFirstNames = uniqueFirstNameRosterMatches(
+      const duplicateFirstNameCount = firstNameRosterMatchCount(
         rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
         String(existing.values.studentName ?? "")
       );
-      if (duplicateFirstNames.size > 1) throw new Error("More than one student has this first name. Please log out and log in with email.");
+      if (duplicateFirstNameCount > 1) throw new Error("More than one student has this first name. Please log out and log in with email.");
       const duplicate = rows.find(
         (item) =>
           item.id !== input.accountId &&
