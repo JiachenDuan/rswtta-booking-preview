@@ -1375,7 +1375,7 @@ function UnifiedAuth({
               <span>{intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "Username", "用户名")}</span>
               <div className="input-shell">
                 <Mail size={18} />
-                <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : preregisteredLogin ? copy(language, "Student first name", "学生名字") : copy(language, "Email", "邮箱")} />
+                <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : preregisteredLogin ? "" : copy(language, "Email", "邮箱")} />
               </div>
             </label>
             <label>
