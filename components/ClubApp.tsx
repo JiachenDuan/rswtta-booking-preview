@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bell,
   Check,
@@ -512,6 +512,7 @@ export function ClubApp() {
   const [showRequestConfirm, setShowRequestConfirm] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [saving, setSaving] = useState(false);
+  const realtimeRefreshTimer = useRef<number | null>(null);
   const calendarDays = useMemo(() => weekDays(visibleWeekStart), [visibleWeekStart]);
   const canGoPrevious = addDays(visibleWeekStart, -7) >= startOfWeek(minCalendarDate);
   const canGoNext = addDays(visibleWeekStart, 7) <= startOfWeek(maxCalendarDate);
@@ -959,10 +960,21 @@ export function ClubApp() {
       setMode("club");
     }
     loadAll();
-    const interval = window.setInterval(loadAll, 30000);
+    const refreshFromPush = () => {
+      if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
+      realtimeRefreshTimer.current = window.setTimeout(() => {
+        realtimeRefreshTimer.current = null;
+        loadAll();
+      }, 250);
+    };
+    const realtimeChannel = supabase
+      .channel("rswtta-project-rows-push")
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_rows" }, refreshFromPush)
+      .subscribe();
     const clock = window.setInterval(() => setCurrentTime(new Date()), 60000);
     return () => {
-      window.clearInterval(interval);
+      if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
+      supabase.removeChannel(realtimeChannel);
       window.clearInterval(clock);
     };
   }, []);
