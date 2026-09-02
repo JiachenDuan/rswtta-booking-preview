@@ -551,8 +551,8 @@ export function ClubApp() {
     setMode("parent");
   }
 
-  async function loginParent(identifier: string, password: string) {
-    const account = await loginParentAccount(identifier, password);
+  async function loginParent(identifier: string, password: string, allowPreregisteredName = false) {
+    const account = await loginParentAccount(identifier, password, { allowPreregisteredName });
     applyParentSession(account);
   }
 
@@ -622,12 +622,12 @@ export function ClubApp() {
     setMode("club");
   }
 
-  async function loginUnified(identifier: string, password: string) {
+  async function loginUnified(identifier: string, password: string, allowPreregisteredName = false) {
     if (identifier.trim().toLowerCase() === clubEmail) {
       await loginClub(identifier, password);
       return;
     }
-    await loginParent(identifier, password);
+    await loginParent(identifier, password, allowPreregisteredName);
     setMode("parent");
   }
 
@@ -1219,7 +1219,7 @@ function UnifiedAuth({
   intent: "parent" | "club";
   language: Language;
   onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<void>;
-  onLogin: (identifier: string, password: string) => Promise<void>;
+  onLogin: (identifier: string, password: string, allowPreregisteredName?: boolean) => Promise<void>;
   onRequestPasswordReset: (email: string) => Promise<void>;
   onUpdatePassword: (password: string) => Promise<void>;
 }) {
@@ -1230,6 +1230,7 @@ function UnifiedAuth({
   const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [identifier, setIdentifier] = useState("");
+  const [preregisteredLogin, setPreregisteredLogin] = useState(false);
   const [notice, setNotice] = useState(
     intent === "club"
       ? copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。")
@@ -1271,10 +1272,10 @@ function UnifiedAuth({
   async function handleLogin() {
     setBusy(true);
     try {
-      await onLogin(identifier, password);
+      await onLogin(identifier, password, intent === "parent" && preregisteredLogin);
       setNotice(copy(language, "Login successful.", "登录成功。"));
-    } catch {
-      setNotice(copy(language, "Login failed.", "登录失败。"));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Login failed.", "登录失败。"));
     } finally {
       setBusy(false);
     }
@@ -1374,13 +1375,19 @@ function UnifiedAuth({
               <span>{intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "Username", "用户名")}</span>
               <div className="input-shell">
                 <Mail size={18} />
-                <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "First name or email", "名字或邮箱")} />
+                <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : preregisteredLogin ? copy(language, "Student first name", "学生名字") : copy(language, "Email", "邮箱")} />
               </div>
             </label>
             <label>
               <span>{copy(language, "Password", "密码")}</span>
-              <PasswordField value={password} onChange={setPassword} placeholder={copy(language, "Password", "密码")} />
+              <PasswordField value={password} onChange={setPassword} placeholder={preregisteredLogin ? "rswtta" : copy(language, "Password", "密码")} />
             </label>
+            {intent === "parent" ? (
+              <label className="checkbox-line auth-checkbox">
+                <input type="checkbox" checked={preregisteredLogin} onChange={(event) => setPreregisteredLogin(event.target.checked)} />
+                <span>{copy(language, "Pre-registered student: use student first name and temporary password rswtta", "预注册学生：使用学生名字和临时密码 rswtta")}</span>
+              </label>
+            ) : null}
             <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
               <LogIn size={18} />
               {copy(language, "Login", "登录")}
@@ -1393,7 +1400,9 @@ function UnifiedAuth({
             <p className="helper-line">
               {intent === "club"
                 ? copy(language, "Login opens Club App.", "登录后进入 Club App。")
-                : copy(language, "For preregistered students, username is the student name from the roster.", "预注册学生的用户名就是名单里的学生名字。")}
+                : preregisteredLogin
+                  ? copy(language, "If the same first name exists for multiple students, use email login.", "如果有多个学生同名，请使用邮箱登录。")
+                  : copy(language, "Use email and password. Check the box only for first-time preregistered students.", "请使用邮箱和密码登录。只有首次预注册学生才勾选。") }
             </p>
           </div>
         ) : null}

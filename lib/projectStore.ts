@@ -543,10 +543,53 @@ export async function confirmParentAccount(email: string, confirmationCode: stri
   return accountFromRow(updated);
 }
 
-export async function loginParentAccount(identifier: string, password: string) {
+function accountNameTokens(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function findPreregisteredNameMatches(rows: Array<ProjectRow<AccountValues>>, identifier: string) {
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  const identifierFirstName = accountNameTokens(normalizedIdentifier)[0] ?? "";
+  if (!identifierFirstName) return [];
+  return rows.filter((item) => {
+    const studentName = String(item.values.studentName ?? "").trim().toLowerCase();
+    const firstName = accountNameTokens(studentName)[0] ?? "";
+    return studentName === normalizedIdentifier || firstName === identifierFirstName;
+  });
+}
+
+function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier: string, allowPreregisteredName: boolean) {
+  const normalizedIdentifier = identifier.trim().toLowerCase();
+  const isEmail = normalizedIdentifier.includes("@");
+  if (isEmail) {
+    const row = rows.find((item) => String(item.values.email ?? "").trim().toLowerCase() === normalizedIdentifier);
+    if (!row) throw new Error("Invalid login");
+    return row;
+  }
+
+  if (!allowPreregisteredName) {
+    throw new Error("Use email/password, or check Pre-registered student to use student name.");
+  }
+
+  const matches = findPreregisteredNameMatches(rows, normalizedIdentifier);
+  if (matches.length === 0) throw new Error("Invalid login");
+  if (matches.length > 1) throw new Error("More than one student has this first name. Please log in with email.");
+
+  const row = matches[0];
+  if (!row.values.profileSetupRequired && String(row.values.email ?? "").includes("@")) {
+    throw new Error("This account is already set up. Please log in with email and password.");
+  }
+  return row;
+}
+
+export async function loginParentAccount(identifier: string, password: string, options: { allowPreregisteredName?: boolean } = {}) {
   return withLocalFallback(
     async () => {
-      const normalizedIdentifier = identifier.toLowerCase();
+      const normalizedIdentifier = identifier.trim().toLowerCase();
       const isEmail = normalizedIdentifier.includes("@");
       let authError: Error | null = null;
       if (isEmail) {
@@ -558,14 +601,9 @@ export async function loginParentAccount(identifier: string, password: string) {
       }
 
       const rows = await listAccountRowsWithSeeds();
-      const row = rows.find(
-        (item) => String(item.values.studentName ?? "").trim().toLowerCase() === normalizedIdentifier
-      );
-      if (!row) throw authError ?? new Error("Invalid login");
-      if (!isEmail || authError) {
-        const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
-        if (!ok) throw new Error("Invalid login");
-      }
+      const row = selectParentLoginRow(rows, normalizedIdentifier, Boolean(options.allowPreregisteredName));
+      const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
+      if (!ok) throw authError ?? new Error("Invalid login");
       if (!row.values.confirmed) {
         const updated = await updateRow("parent_accounts", row.id, { ...row.values, confirmed: true });
         return accountFromRow(updated);
@@ -574,11 +612,8 @@ export async function loginParentAccount(identifier: string, password: string) {
     },
     async () => {
       const rows = await seedPreregisteredAccounts(localRows<AccountValues>("parent_accounts"), (values) => createLocalRow("parent_accounts", values));
-      const normalizedIdentifier = identifier.toLowerCase();
-      const row = rows.find(
-        (item) => String(item.values.studentName ?? "").trim().toLowerCase() === normalizedIdentifier
-      );
-      if (!row) throw new Error("Invalid login");
+      const normalizedIdentifier = identifier.trim().toLowerCase();
+      const row = selectParentLoginRow(rows, normalizedIdentifier, Boolean(options.allowPreregisteredName));
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
       if (!ok) throw new Error("Invalid login");
       if (!row.values.confirmed) {

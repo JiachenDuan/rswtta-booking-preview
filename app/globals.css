@@ -931,6 +931,22 @@ p {
   grid-column: 1 / -1;
 }
 
+.auth-checkbox {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.auth-checkbox input {
+  margin-top: 2px;
+  accent-color: var(--gold);
+}
+
 .text-button {
   min-height: 36px;
   border: 0;
