@@ -337,11 +337,15 @@ function isGroupClassBlock(booking: Booking) {
 }
 
 function isGroupClassJoinRequest(booking: Booking) {
-  return booking.program === "Group lesson";
+  return (
+    booking.program === "Group lesson" &&
+    (booking.parentNote.includes("Parent requested to join group class") ||
+      booking.parentNote.includes("Added to group class by club"))
+  );
 }
 
 function isGroupClassCalendarItem(booking: Booking) {
-  return isGroupClassBlock(booking) || isGroupClassJoinRequest(booking);
+  return isGroupClassBlock(booking);
 }
 
 function sameGroupClassTime(left: Booking, right: Booking) {
@@ -1899,6 +1903,7 @@ function ClubCalendar({
             const cellEnd = addMinutes(cellStart, (nextHour * 60 + nextMinute) - (startHour * 60 + startMinute));
             const slotBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
+              if (isGroupClassJoinRequest(booking)) return false;
               const matchesCoach =
                 visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
               const bookingStart = new Date(booking.startsAt);
