@@ -192,10 +192,23 @@ function updateLocalRow<T extends Record<string, unknown>>(tableSlug: keyof type
   return rows[index];
 }
 
+function shouldSkipLocalFallback(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("More than one student has this first name") ||
+    message.includes("A student with this first name already exists") ||
+    message.includes("This account is already set up") ||
+    message.includes("Use email/password") ||
+    message.includes("Email already used by another student") ||
+    message.includes("Student name already has an account")
+  );
+}
+
 async function withLocalFallback<T>(remoteAction: () => Promise<T>, localAction: () => T | Promise<T>) {
   try {
     return await remoteAction();
-  } catch {
+  } catch (error) {
+    if (shouldSkipLocalFallback(error)) throw error;
     return localAction();
   }
 }
