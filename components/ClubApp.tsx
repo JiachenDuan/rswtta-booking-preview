@@ -2842,17 +2842,20 @@ function ClubBookingActionModal({
   const enrolledNames = new Set(groupEnrollments.map((item) => item.studentName.trim().toLowerCase()));
   const selectedDropInNames = new Set(selectedDropInStudents.map((student) => student.studentName.trim().toLowerCase()));
   const dropInSearch = dropInQuery.trim().toLowerCase();
-  const dropInResults = students
-    .filter((student) => {
-      const studentName = student.studentName.trim().toLowerCase();
-      const matchesSearch =
-        !dropInSearch ||
-        studentName.includes(dropInSearch) ||
-        student.email.toLowerCase().includes(dropInSearch) ||
-        student.phone.toLowerCase().includes(dropInSearch);
-      return !enrolledNames.has(studentName) && !selectedDropInNames.has(studentName) && matchesSearch;
-    })
-    .slice(0, dropInSearch ? 8 : 12);
+  const dropInResults = dropInSearch
+    ? students
+        .filter((student) => {
+          const studentName = student.studentName.trim().toLowerCase();
+          return (
+            !enrolledNames.has(studentName) &&
+            !selectedDropInNames.has(studentName) &&
+            (studentName.includes(dropInSearch) ||
+              student.email.toLowerCase().includes(dropInSearch) ||
+              student.phone.toLowerCase().includes(dropInSearch))
+          );
+        })
+        .slice(0, 8)
+    : [];
 
   if (isGroupClassBlock(booking)) {
     return (
@@ -2936,8 +2939,10 @@ function ClubBookingActionModal({
                   ))}
                 </div>
               ) : null}
-              <p className="modal-info">{copy(language, "Tap multiple students, then press Add students once.", "可选择多名学生，然后点击一次添加学生。")}</p>
-              {dropInResults.length === 0 ? (
+              {selectedDropInStudents.length > 0 ? (
+                <p className="modal-info">{copy(language, "Selected students are shown above. Search again to add more, then press Add students once.", "已选择的学生显示在上方。继续搜索可添加更多学生，然后点击一次添加学生。")}</p>
+              ) : null}
+              {!dropInSearch ? null : dropInResults.length === 0 ? (
                 <p className="empty-state">{copy(language, "No enrolled students found, or students are already selected/in this group class.", "未找到已注册学生，或学生已选择/已在本节团体课中。")}</p>
               ) : (
                 dropInResults.map((student) => (
