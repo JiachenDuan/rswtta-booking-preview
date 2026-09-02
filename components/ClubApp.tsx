@@ -158,6 +158,10 @@ function csvValue(value: string | number) {
   return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
+function studentKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function downloadTextFile(filename: string, content: string, mimeType: string) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -166,8 +170,10 @@ function downloadTextFile(filename: string, content: string, mimeType: string) {
   link.download = filename;
   document.body.appendChild(link);
   link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 30000);
 }
 
 function addDays(date: Date, days: number) {
@@ -2150,12 +2156,12 @@ function ClubAppView({
     const periodStart = dateFromInputValue(exportStartDate);
     const periodEnd = endOfDay(dateFromInputValue(exportEndDate));
     const periodTitle = `${dateLabel(periodStart)} - ${dateLabel(periodEnd)}`;
-    const studentFilter = exportStudentQuery.trim().toLowerCase();
-    const selectedStudentName = selectedExportStudent?.studentName.trim().toLowerCase();
+    const studentFilter = studentKey(exportStudentQuery);
+    const selectedStudentName = selectedExportStudent ? studentKey(selectedExportStudent.studentName) : "";
 
     const inPeriod = bookings.filter((booking) => {
       const startsAt = new Date(booking.startsAt);
-      const bookingStudentName = booking.studentName.trim().toLowerCase();
+      const bookingStudentName = studentKey(booking.studentName);
       const matchesStudent = selectedStudentName
         ? bookingStudentName === selectedStudentName
         : !studentFilter ||
@@ -2179,7 +2185,7 @@ function ClubAppView({
     >();
 
     for (const booking of inPeriod) {
-      const key = `${booking.studentName}|${booking.studentEmail}|${booking.phone}`;
+      const key = studentKey(booking.studentName);
       const existing =
         studentsByKey.get(key) ??
         {
@@ -2196,8 +2202,8 @@ function ClubAppView({
       ...[...studentsByKey.values()]
         .sort((left, right) => left.studentName.localeCompare(right.studentName))
         .map((student) => {
-          const privateBookings = student.bookings.filter((booking) => classTypeText(booking) === "Private");
-          const groupBookings = student.bookings.filter((booking) => classTypeText(booking) === "Group");
+          const groupBookings = student.bookings.filter((booking) => isGroupClassJoinRequest(booking));
+          const privateBookings = student.bookings.filter((booking) => !isGroupClassJoinRequest(booking));
           const privateHours = privateBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
           const groupHours = groupBookings.reduce((sum, booking) => sum + bookingDurationHours(booking), 0);
           return [
