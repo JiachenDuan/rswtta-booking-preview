@@ -931,20 +931,32 @@ p {
   grid-column: 1 / -1;
 }
 
-.auth-checkbox {
+.simple-form .auth-checkbox {
   grid-column: 1 / -1;
+  justify-self: stretch;
   display: flex;
   align-items: flex-start;
+  justify-content: flex-start;
   gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 2px 0 4px;
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 800;
   line-height: 1.35;
+  text-align: left;
 }
 
-.auth-checkbox input {
-  margin-top: 2px;
+.simple-form .auth-checkbox input {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 2px 0 0;
   accent-color: var(--gold);
+}
+
+.simple-form .auth-checkbox span {
+  flex: 1;
 }
 
 .text-button {
