@@ -88,8 +88,8 @@ type Language = "en" | "zh";
 
 const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
-const clubEmail = "rswtta@gmail.com";
-const clubPassword = "rswtta888";
+const clubEmail = "rswtta";
+const clubPassword = "rswttatian";
 const preregisteredPasswordTemplate = ["rs", "wt", "ta"].join("");
 
 function copy(language: Language, english: string, chinese: string) {
