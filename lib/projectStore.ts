@@ -599,7 +599,7 @@ function assertUniquePreregisteredRosterName(accountRows: Array<ProjectRow<Accou
     bookingRows.map((item) => normalizedRosterName(item.values.studentName)).filter((name) => matchesFirstName(name, identifier))
   );
   const uniqueRosterNames = new Set([...uniqueAccountNames, ...uniqueBookingNames]);
-  if (accountMatches.length > 1 || uniqueRosterNames.size > 1) {
+  if (uniqueRosterNames.size > 1) {
     throw new Error("More than one student has this first name. Please log in with email.");
   }
 }
