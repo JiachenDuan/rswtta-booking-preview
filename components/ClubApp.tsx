@@ -499,10 +499,10 @@ export function ClubApp() {
   const [notice, setNotice] = useState("");
   const [parentSession, setParentSession] = useState<ParentAccount | null>(null);
   const [clubAuthenticated, setClubAuthenticated] = useState(false);
-  const [studentName, setStudentName] = useState("Ethan Chen");
-  const [familyName, setFamilyName] = useState("Chen Family");
-  const [studentEmail, setStudentEmail] = useState("parent@example.com");
-  const [phone, setPhone] = useState("(650) 555-0188");
+  const [studentName, setStudentName] = useState("");
+  const [familyName, setFamilyName] = useState("");
+  const [studentEmail, setStudentEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [requestedCoach, setRequestedCoach] = useState<string>(coaches[0]);
   const [clubCalendarTab, setClubCalendarTab] = useState<ClubCalendarTab>("Coach Tian Ye");
   const [visibleWeekStart, setVisibleWeekStart] = useState(initialWeekStart);
@@ -1212,12 +1212,12 @@ function UnifiedAuth({
   onUpdatePassword: (password: string) => Promise<void>;
 }) {
   const [authMode, setAuthMode] = useState<AuthMode>(initialAuthMode);
-  const [studentName, setStudentName] = useState("Ethan Chen");
-  const [email, setEmail] = useState("parent@example.com");
-  const [phone, setPhone] = useState("(650) 555-0188");
-  const [password, setPassword] = useState(intent === "club" ? clubPassword : "parent123");
+  const [studentName, setStudentName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [identifier, setIdentifier] = useState(intent === "club" ? clubEmail : "Ethan Chen");
+  const [identifier, setIdentifier] = useState("");
   const [notice, setNotice] = useState(
     intent === "club"
       ? copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。")
@@ -1230,8 +1230,6 @@ function UnifiedAuth({
       window.location.hash.includes("type=recovery") || window.location.search.includes("type=recovery");
     setAuthMode(isRecoveryLink && intent === "parent" ? "updatePassword" : initialAuthMode);
     if (intent === "club") {
-      setIdentifier(clubEmail);
-      setPassword(clubPassword);
       setNotice(copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。"));
     }
   }, [initialAuthMode, intent]);
@@ -1329,26 +1327,26 @@ function UnifiedAuth({
               <span>{copy(language, "Student name", "学生名字")}</span>
               <div className="input-shell">
                 <UserRound size={18} />
-                <input value={studentName} onChange={(event) => setStudentName(event.target.value)} />
+                <input value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder={copy(language, "Student first name", "学生名字")} />
               </div>
             </label>
             <label>
               <span>{copy(language, "Email", "邮箱")}</span>
               <div className="input-shell">
                 <Mail size={18} />
-                <input value={email} onChange={(event) => setEmail(event.target.value)} />
+                <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="student@example.com" />
               </div>
             </label>
             <label>
               <span>{copy(language, "Phone", "电话")}</span>
               <div className="input-shell">
                 <Phone size={18} />
-                <input value={phone} onChange={(event) => setPhone(event.target.value)} />
+                <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(650) 555-0000" />
               </div>
             </label>
             <label>
               <span>{copy(language, "Password", "密码")}</span>
-              <PasswordField value={password} onChange={setPassword} />
+              <PasswordField value={password} onChange={setPassword} placeholder={copy(language, "Password", "密码")} />
             </label>
             <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleRegister}>
               <UserPlus size={18} />
@@ -1363,12 +1361,12 @@ function UnifiedAuth({
               <span>{intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "Username", "用户名")}</span>
               <div className="input-shell">
                 <Mail size={18} />
-                <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} />
+                <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} placeholder={intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "First name or email", "名字或邮箱")} />
               </div>
             </label>
             <label>
               <span>{copy(language, "Password", "密码")}</span>
-              <PasswordField value={password} onChange={setPassword} />
+              <PasswordField value={password} onChange={setPassword} placeholder={copy(language, "Password", "密码")} />
             </label>
             <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
               <LogIn size={18} />
@@ -1411,7 +1409,7 @@ function UnifiedAuth({
           <div className="simple-form auth-form">
             <label>
               <span>{copy(language, "New password", "新密码")}</span>
-              <PasswordField value={newPassword} onChange={setNewPassword} />
+              <PasswordField value={newPassword} onChange={setNewPassword} placeholder={copy(language, "New password", "新密码")} />
             </label>
             <button type="button" className="primary-button auth-submit" disabled={busy || newPassword.length < 6} onClick={handleUpdatePassword}>
               <KeyRound size={18} />
@@ -1507,11 +1505,11 @@ function FirstLoginSetup({
           </label>
           <label>
             <span>{copy(language, "New password", "新密码")}</span>
-            <PasswordField value={password} onChange={setPassword} />
+            <PasswordField value={password} onChange={setPassword} placeholder={copy(language, "New password", "新密码")} />
           </label>
           <label>
             <span>{copy(language, "Confirm new password", "确认新密码")}</span>
-            <PasswordField value={confirmPassword} onChange={setConfirmPassword} />
+            <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder={copy(language, "Confirm password", "确认密码")} />
           </label>
           <button type="button" className="primary-button auth-submit" disabled={busy || !ready} onClick={handleComplete}>
             <Check size={18} />
@@ -1528,7 +1526,7 @@ function FirstLoginSetup({
   );
 }
 
-function PasswordField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function PasswordField({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder?: string }) {
   const [visible, setVisible] = useState(false);
 
   return (
@@ -1538,6 +1536,7 @@ function PasswordField({ value, onChange }: { value: string; onChange: (value: s
         type={visible ? "text" : "password"}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
       />
       <button
         className="password-toggle"
