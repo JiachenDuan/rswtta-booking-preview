@@ -494,10 +494,7 @@ export async function registerParentAccount(input: { studentName: string; email:
 
       const rows = await listRows<AccountValues>("parent_accounts");
       const bookingRows = await listRows<Booking>("bookings");
-      assertNoDuplicateFirstNameForNewAccount(
-        rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
-        input.studentName
-      );
+      assertNoDuplicateFirstNameForNewAccount(rows, bookingRows, input.studentName);
       const nameKey = studentNameKey(input.studentName);
       const duplicateName = rows.find((row) => studentNameKey(row.values.studentName) === nameKey && String(row.values.email ?? "").toLowerCase() !== email);
       if (duplicateName) throw new Error("Student name already has an account");
@@ -527,10 +524,7 @@ export async function registerParentAccount(input: { studentName: string; email:
       const email = input.email.toLowerCase();
       const rows = localRows<AccountValues>("parent_accounts");
       const bookingRows = localRows<Booking>("bookings");
-      assertNoDuplicateFirstNameForNewAccount(
-        rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
-        input.studentName
-      );
+      assertNoDuplicateFirstNameForNewAccount(rows, bookingRows, input.studentName);
       const nameKey = studentNameKey(input.studentName);
       const duplicateName = rows.find((row) => studentNameKey(row.values.studentName) === nameKey && String(row.values.email ?? "").toLowerCase() !== email);
       if (duplicateName) throw new Error("Student name already has an account");
@@ -585,26 +579,36 @@ function findPreregisteredNameMatches(rows: Array<ProjectRow<AccountValues>>, id
   });
 }
 
-function firstNameRosterMatchCount(names: string[], identifier: string) {
-  const normalizedIdentifier = identifier.trim().toLowerCase();
+function normalizedRosterName(value: unknown) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function matchesFirstName(name: unknown, identifier: string) {
+  const normalizedName = normalizedRosterName(name);
+  const normalizedIdentifier = normalizedRosterName(identifier);
+  if (!normalizedName || normalizedName === "group class") return false;
   const identifierFirstName = accountNameTokens(normalizedIdentifier)[0] ?? "";
-  if (!identifierFirstName) return 0;
-  return names.filter((name) => {
-    const normalizedName = name.trim().toLowerCase();
-    if (!normalizedName || normalizedName === "group class") return false;
-    const firstName = accountNameTokens(normalizedName)[0] ?? "";
-    return normalizedName === normalizedIdentifier || firstName === identifierFirstName;
-  }).length;
+  const firstName = accountNameTokens(normalizedName)[0] ?? "";
+  return Boolean(identifierFirstName) && (normalizedName === normalizedIdentifier || firstName === identifierFirstName);
 }
 
-function assertUniquePreregisteredRosterName(names: string[], identifier: string) {
-  const matchCount = firstNameRosterMatchCount(names, identifier);
-  if (matchCount > 1) throw new Error("More than one student has this first name. Please log in with email.");
+function assertUniquePreregisteredRosterName(accountRows: Array<ProjectRow<AccountValues>>, bookingRows: Array<ProjectRow<Booking>>, identifier: string) {
+  const accountMatches = accountRows.filter((item) => matchesFirstName(item.values.studentName, identifier));
+  const uniqueAccountNames = new Set(accountMatches.map((item) => normalizedRosterName(item.values.studentName)).filter(Boolean));
+  const uniqueBookingNames = new Set(
+    bookingRows.map((item) => normalizedRosterName(item.values.studentName)).filter((name) => matchesFirstName(name, identifier))
+  );
+  const uniqueRosterNames = new Set([...uniqueAccountNames, ...uniqueBookingNames]);
+  if (accountMatches.length > 1 || uniqueRosterNames.size > 1) {
+    throw new Error("More than one student has this first name. Please log in with email.");
+  }
 }
 
-function assertNoDuplicateFirstNameForNewAccount(names: string[], studentName: string) {
-  const matchCount = firstNameRosterMatchCount(names, studentName);
-  if (matchCount > 0) throw new Error("A student with this first name already exists. Please use the existing account or log in with email.");
+function assertNoDuplicateFirstNameForNewAccount(accountRows: Array<ProjectRow<AccountValues>>, bookingRows: Array<ProjectRow<Booking>>, studentName: string) {
+  const hasMatch =
+    accountRows.some((item) => matchesFirstName(item.values.studentName, studentName)) ||
+    bookingRows.some((item) => matchesFirstName(item.values.studentName, studentName));
+  if (hasMatch) throw new Error("A student with this first name already exists. Please use the existing account or log in with email.");
 }
 
 function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier: string, allowPreregisteredName: boolean) {
@@ -648,10 +652,7 @@ export async function loginParentAccount(identifier: string, password: string, o
       const rows = await listAccountRowsWithSeeds();
       if (!isEmail && options.allowPreregisteredName) {
         const bookingRows = await listRows<Booking>("bookings");
-        assertUniquePreregisteredRosterName(
-          rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
-          normalizedIdentifier
-        );
+        assertUniquePreregisteredRosterName(rows, bookingRows, normalizedIdentifier);
       }
       const row = selectParentLoginRow(rows, normalizedIdentifier, Boolean(options.allowPreregisteredName));
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
@@ -668,10 +669,7 @@ export async function loginParentAccount(identifier: string, password: string, o
       const isEmail = normalizedIdentifier.includes("@");
       if (!isEmail && options.allowPreregisteredName) {
         const bookingRows = localRows<Booking>("bookings");
-        assertUniquePreregisteredRosterName(
-          rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
-          normalizedIdentifier
-        );
+        assertUniquePreregisteredRosterName(rows, bookingRows, normalizedIdentifier);
       }
       const row = selectParentLoginRow(rows, normalizedIdentifier, Boolean(options.allowPreregisteredName));
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
@@ -857,11 +855,7 @@ export async function completeParentProfileSetup(input: { accountId: string; ema
       const existing = rows.find((item) => item.id === input.accountId);
       if (!existing) throw new Error("Account not found");
       const bookingRows = await listRows<Booking>("bookings");
-      const duplicateFirstNameCount = firstNameRosterMatchCount(
-        rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
-        String(existing.values.studentName ?? "")
-      );
-      if (duplicateFirstNameCount > 1) throw new Error("More than one student has this first name. Please log out and log in with email.");
+      assertUniquePreregisteredRosterName(rows, bookingRows, String(existing.values.studentName ?? ""));
       const duplicate = rows.find(
         (item) =>
           item.id !== input.accountId &&
@@ -876,11 +870,7 @@ export async function completeParentProfileSetup(input: { accountId: string; ema
       const existing = rows.find((item) => item.id === input.accountId);
       if (!existing) throw new Error("Account not found");
       const bookingRows = localRows<Booking>("bookings");
-      const duplicateFirstNameCount = firstNameRosterMatchCount(
-        rows.map((item) => String(item.values.studentName ?? "")).concat(bookingRows.map((item) => String(item.values.studentName ?? ""))),
-        String(existing.values.studentName ?? "")
-      );
-      if (duplicateFirstNameCount > 1) throw new Error("More than one student has this first name. Please log out and log in with email.");
+      assertUniquePreregisteredRosterName(rows, bookingRows, String(existing.values.studentName ?? ""));
       const duplicate = rows.find(
         (item) =>
           item.id !== input.accountId &&

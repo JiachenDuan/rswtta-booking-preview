@@ -1397,13 +1397,7 @@ function UnifiedAuth({
                 {copy(language, "Forgot password?", "忘记密码？")}
               </button>
             ) : null}
-            <p className="helper-line">
-              {intent === "club"
-                ? copy(language, "Login opens Club App.", "登录后进入 Club App。")
-                : preregisteredLogin
-                  ? copy(language, "Use the student first name and the password provided by the club. If the same first name exists for multiple students, use email login.", "请使用学生名字和俱乐部提供的密码。如果有多个学生同名，请使用邮箱登录。")
-                  : copy(language, "Use email and password. Check the box only for first-time preregistered students.", "请使用邮箱和密码登录。只有首次预注册学生才勾选。") }
-            </p>
+            {intent === "club" ? <p className="helper-line">{copy(language, "Login opens Club App.", "登录后进入 Club App。")}</p> : null}
           </div>
         ) : null}
 
