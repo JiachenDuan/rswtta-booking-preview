@@ -41,6 +41,7 @@ import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
+type ParentCalendarTab = "My calendar" | typeof coaches[number];
 const calendarTimes = [
   "7 AM",
   "8 AM",
@@ -570,6 +571,7 @@ export function ClubApp() {
   const [studentEmail, setStudentEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [requestedCoach, setRequestedCoach] = useState<string>(coaches[0]);
+  const [parentCalendarTab, setParentCalendarTab] = useState<ParentCalendarTab>("My calendar");
   const [clubCalendarTab, setClubCalendarTab] = useState<ClubCalendarTab>("Coach Tian Ye");
   const [visibleWeekStart, setVisibleWeekStart] = useState(initialWeekStart);
   const [selectedSlot, setSelectedSlot] = useState<CalendarSlot>(initialCalendarSlot);
@@ -1205,6 +1207,7 @@ export function ClubApp() {
             studentEmail={studentEmail}
             phone={phone}
             requestedCoach={requestedCoach}
+            parentCalendarTab={parentCalendarTab}
             selectedSlot={selectedSlot}
             selectedSlots={selectedSlots}
             selectedDurationMinutes={selectedDurationMinutes}
@@ -1226,6 +1229,10 @@ export function ClubApp() {
             savedStudentEmail={parentSession.email}
             savedPhone={parentSession.phone}
             onCoachChange={setRequestedCoach}
+            onParentCalendarTabChange={(tab) => {
+              setParentCalendarTab(tab);
+              if (tab !== "My calendar") setRequestedCoach(tab);
+            }}
             onSlotChange={(slot) => {
               selectSingleSlot(slot);
               setShowRequestConfirm(true);
@@ -1693,6 +1700,7 @@ function ParentApp({
   studentEmail,
   phone,
   requestedCoach,
+  parentCalendarTab,
   selectedSlot,
   selectedSlots,
   selectedDurationMinutes,
@@ -1711,6 +1719,7 @@ function ParentApp({
   savedStudentEmail,
   savedPhone,
   onCoachChange,
+  onParentCalendarTabChange,
   onSlotChange,
   onDurationChange,
   onPreviousWeek,
@@ -1729,6 +1738,7 @@ function ParentApp({
   studentEmail: string;
   phone: string;
   requestedCoach: string;
+  parentCalendarTab: ParentCalendarTab;
   selectedSlot: CalendarSlot;
   selectedSlots: CalendarSlot[];
   selectedDurationMinutes: number;
@@ -1747,6 +1757,7 @@ function ParentApp({
   savedStudentEmail: string;
   savedPhone: string;
   onCoachChange: (value: string) => void;
+  onParentCalendarTabChange: (value: ParentCalendarTab) => void;
   onSlotChange: (value: CalendarSlot) => void;
   onDurationChange: (value: number) => void;
   onPreviousWeek: () => void;
@@ -1815,9 +1826,10 @@ function ParentApp({
           onNextWeek={onNextWeek}
           onToday={onToday}
         />
-        <div className="calendar-tabs" aria-label="Coach calendar views">
+        <div className="calendar-tabs" aria-label="Parent calendar views">
+          <button className={parentCalendarTab === "My calendar" ? "selected" : ""} onClick={() => onParentCalendarTabChange("My calendar")}>{copy(language, "My calendar", "我的日历")}</button>
           {coaches.map((coach) => (
-            <button className={requestedCoach === coach ? "selected" : ""} key={coach} onClick={() => onCoachChange(coach)}>
+            <button className={parentCalendarTab === coach ? "selected" : ""} key={coach} onClick={() => onParentCalendarTabChange(coach)}>
               {coach.replace("Coach ", "")}
             </button>
           ))}
@@ -1829,13 +1841,14 @@ function ParentApp({
             selectedSlots={selectedSlots}
             selectionDurationMinutes={selectedDurationMinutes}
             requestedCoach={requestedCoach}
-            visibleCoachTab={requestedCoach as ClubCalendarTab}
+            visibleCoachTab={parentCalendarTab === "My calendar" ? "My calendar" : parentCalendarTab}
             calendarDays={calendarDays}
             currentTime={currentTime}
             language={language}
             ownBookings={bookings}
-            blockUnavailable
+            blockUnavailable={parentCalendarTab !== "My calendar"}
             privacyMode
+            parentMyCalendar={parentCalendarTab === "My calendar"}
             onSlotChange={onSlotChange}
             onBookingSelect={(booking) => {
               if (isGroupClassBlock(booking)) {
@@ -2009,6 +2022,7 @@ function ClubCalendar({
   ownBookings = [],
   blockUnavailable = false,
   privacyMode = false,
+  parentMyCalendar = false,
   onSlotChange,
   onBookingSelect
 }: {
@@ -2017,13 +2031,14 @@ function ClubCalendar({
   selectedSlots: CalendarSlot[];
   selectionDurationMinutes: number;
   requestedCoach: string;
-  visibleCoachTab?: ClubCalendarTab;
+  visibleCoachTab?: ClubCalendarTab | "My calendar";
   calendarDays: CalendarDay[];
   currentTime: Date;
   language: Language;
   ownBookings?: Booking[];
   blockUnavailable?: boolean;
   privacyMode?: boolean;
+  parentMyCalendar?: boolean;
   onSlotChange: (value: CalendarSlot) => void;
   onBookingSelect?: (booking: Booking) => void;
 }) {
@@ -2053,12 +2068,13 @@ function ClubCalendar({
             const cellEnd = addMinutes(cellStart, (nextHour * 60 + nextMinute) - (startHour * 60 + startMinute));
             const slotBookings = bookings.filter((booking) => {
               if (booking.status === "cancelled") return false;
-              if (isGroupClassJoinRequest(booking)) return false;
-              const matchesCoach =
-                visibleCoachTab === "Combined" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
-              const bookingStart = new Date(booking.startsAt);
               const isOwnBooking = ownBookingIds.has(booking.id);
-              const visibleToParent = !privacyMode || isOwnBooking || isGroupClassBlock(booking);
+              if (isGroupClassJoinRequest(booking) && !(parentMyCalendar && isOwnBooking)) return false;
+              if (parentMyCalendar && !isOwnBooking) return false;
+              const matchesCoach =
+                visibleCoachTab === "Combined" || visibleCoachTab === "My calendar" || booking.assignedCoach === visibleCoachTab || booking.requestedCoach === visibleCoachTab;
+              const bookingStart = new Date(booking.startsAt);
+              const visibleToParent = !privacyMode || isOwnBooking || (!parentMyCalendar && isGroupClassBlock(booking));
               return bookingStart >= cellStart && bookingStart < cellEnd && visibleToParent && (matchesCoach || isOwnBooking);
             });
             const overlappingBookings = bookings.filter((booking) => {
