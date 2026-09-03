@@ -2093,7 +2093,7 @@ function ClubCalendar({
             const slot = makeCalendarSlot(day, timeLabel);
             const hasVisibleBooking = slotBookings.length > 0;
             const selected = !parentMyCalendar && !hasVisibleBooking && selectedSlots.some((item) => item.startsAt === startsAt);
-            const unavailableBookings = overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
+            const unavailableBookings = parentMyCalendar ? [] : overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
             const unavailableDisplayBooking = unavailableBookings.find((booking) => {
               const bookingStart = new Date(booking.startsAt);
               return bookingStart >= cellStart && bookingStart < cellEnd;
