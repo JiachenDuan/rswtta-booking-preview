@@ -457,6 +457,26 @@ function isRangeUnavailableExceptBooking(bookings: Booking[], coach: string, slo
   return isRangeUnavailable(bookings.filter((booking) => booking.id !== bookingId), coach, slot, durationMinutes);
 }
 
+function findRangeConflict(bookings: Booking[], coach: string, slot: CalendarSlot, durationMinutes: number) {
+  const starts = new Date(slot.startsAt);
+  const ends = addMinutes(starts, durationMinutes);
+  return bookings.find((booking) => {
+    if (booking.status === "cancelled" || !bookingMatchesCoach(booking, coach)) return false;
+    return rangesOverlap(starts, ends, new Date(booking.startsAt), bookingEndDate(booking));
+  });
+}
+
+function classConflictMessage(conflict: Booking, slot: CalendarSlot, durationMinutes: number, coach: string, recurring: boolean, language: Language) {
+  const requestedTime = `${slot.dateLabel} ${rangeLabel(slot, durationMinutes)}`;
+  const conflictName = isBlockedTime(conflict) ? copy(language, "blocked time", "不可用时间") : conflict.studentName;
+  const conflictTime = `${conflict.dateLabel} ${conflict.timeLabel}`;
+  return copy(
+    language,
+    `${recurring ? "Recurring class failed" : "Class failed"}: ${coachDisplayName(coach, language)} already has ${conflictName} at ${conflictTime}, which conflicts with ${requestedTime}.`,
+    `${recurring ? "重复课程添加失败" : "课程添加失败"}：${coachDisplayName(coach, language)} 在 ${conflictTime} 已有 ${conflictName}，与 ${requestedTime} 冲突。`
+  );
+}
+
 function bookingDurationHours(booking: Booking) {
   const durationMinutes = Math.max(30, Math.round((bookingEndDate(booking).getTime() - new Date(booking.startsAt).getTime()) / 60000));
   return durationMinutes / 60;
@@ -837,9 +857,11 @@ export function ClubApp() {
   }
 
   async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) {
-    const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
-    if (unavailableSlot) {
-      setNotice(copy(language, "That coach already has a class at the selected time.", "该教练这个时间已有课程。"));
+    const conflict = slots
+      .map((slot) => ({ slot, booking: findRangeConflict(bookings, coach, slot, durationMinutes) }))
+      .find((item) => item.booking);
+    if (conflict?.booking) {
+      setNotice(classConflictMessage(conflict.booking, conflict.slot, durationMinutes, coach, slots.length > 1, language));
       return;
     }
     setSaving(true);
@@ -865,17 +887,19 @@ export function ClubApp() {
       );
       await loadAll();
       setNotice(copy(language, `Added ${slots.length} class${slots.length === 1 ? "" : "es"}.`, `已添加 ${slots.length} 节课。`));
-    } catch {
-      setNotice(copy(language, "Could not add class.", "无法添加课程。"));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not add class.", "无法添加课程。"));
     } finally {
       setSaving(false);
     }
   }
 
   async function addClubNewStudentClass(input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) {
-    const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
-    if (unavailableSlot) {
-      setNotice(copy(language, "That coach already has a class at the selected time.", "该教练这个时间已有课程。"));
+    const conflict = slots
+      .map((slot) => ({ slot, booking: findRangeConflict(bookings, coach, slot, durationMinutes) }))
+      .find((item) => item.booking);
+    if (conflict?.booking) {
+      setNotice(classConflictMessage(conflict.booking, conflict.slot, durationMinutes, coach, slots.length > 1, language));
       return;
     }
     setSaving(true);
@@ -902,17 +926,19 @@ export function ClubApp() {
       );
       await loadAll();
       setNotice(copy(language, `Added ${slots.length} class${slots.length === 1 ? "" : "es"} for ${account.studentName}.`, `已为 ${account.studentName} 添加 ${slots.length} 节课。`));
-    } catch {
-      setNotice(copy(language, "Could not create student or add class.", "无法创建学生或添加课程。"));
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not create student or add class.", "无法创建学生或添加课程。"));
     } finally {
       setSaving(false);
     }
   }
 
   async function blockCoachTime(coach: string, slots: CalendarSlot[], durationMinutes: number) {
-    const unavailableSlot = slots.find((slot) => isRangeUnavailable(bookings, coach, slot, durationMinutes));
-    if (unavailableSlot) {
-      setNotice(copy(language, "That coach already has a class or blocked time there.", "该教练这个时间已有课程或不可用时间。"));
+    const conflict = slots
+      .map((slot) => ({ slot, booking: findRangeConflict(bookings, coach, slot, durationMinutes) }))
+      .find((item) => item.booking);
+    if (conflict?.booking) {
+      setNotice(classConflictMessage(conflict.booking, conflict.slot, durationMinutes, coach, slots.length > 1, language));
       return;
     }
     setSaving(true);
