@@ -2251,7 +2251,7 @@ function ClubAppView({
     };
     for (const student of students) rememberStudent(student);
     for (const booking of bookings) {
-      if (isGroupClassBlock(booking) || isBlockedTime(booking)) continue;
+      if (booking.status === "cancelled" || isGroupClassBlock(booking) || isBlockedTime(booking)) continue;
       rememberStudent({
         id: booking.studentName,
         studentName: booking.studentName,
