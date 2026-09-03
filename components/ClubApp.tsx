@@ -503,7 +503,7 @@ function bookingHoursLabel(booking: Booking) {
 }
 
 function isGroupClassType(booking: Booking) {
-  return isGroupClassBlock(booking) || isGroupClassJoinRequest(booking) || booking.program === "Group lesson" || booking.program === "Group enrollment";
+  return isGroupClassBlock(booking);
 }
 
 function classTypeText(booking: Booking, language: Language = "en") {
