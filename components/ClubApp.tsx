@@ -1043,7 +1043,9 @@ export function ClubApp() {
   }
 
   async function cancelClubClass(booking: Booking, recurring: boolean) {
-    const targets = recurring ? futureSameClassBookings(bookings, booking) : [booking];
+    const selectedIsFutureActiveClass =
+      !isBlockedTime(booking) && booking.status !== "cancelled" && booking.status !== "coach_confirmed" && new Date(booking.startsAt).getTime() > Date.now();
+    const targets = recurring && selectedIsFutureActiveClass ? futureSameClassBookings(bookings, booking) : [booking];
     setSaving(true);
     setNotice(copy(language, recurring ? `Cancelling ${targets.length} future classes...` : "Cancelling class...", recurring ? `正在取消 ${targets.length} 节未来课程...` : "正在取消课程..."));
     try {
