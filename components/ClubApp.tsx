@@ -423,7 +423,7 @@ function sameGroupClassTime(left: Booking, right: Booking) {
 
 function calendarBookingTitle(booking: Booking, language: Language) {
   if (isBlockedTime(booking)) return copy(language, "Blocked time", "不可预约时间");
-  if (isGroupClassCalendarItem(booking)) return copy(language, "Group class", "团体课");
+  if (isGroupClassCalendarItem(booking) || isGroupClassJoinRequest(booking)) return copy(language, "Group class", "团体课");
   return booking.studentName;
 }
 
@@ -2092,7 +2092,7 @@ function ClubCalendar({
             const selectableBooking = slotBookings.find((booking) => booking.status !== "cancelled" && isGroupClassBlock(booking)) ?? slotBookings.find((booking) => booking.status !== "cancelled");
             const slot = makeCalendarSlot(day, timeLabel);
             const hasVisibleBooking = slotBookings.length > 0;
-            const selected = !hasVisibleBooking && selectedSlots.some((item) => item.startsAt === startsAt);
+            const selected = !parentMyCalendar && !hasVisibleBooking && selectedSlots.some((item) => item.startsAt === startsAt);
             const unavailableBookings = overlappingBookings.filter((booking) => !ownBookingIds.has(booking.id));
             const unavailableDisplayBooking = unavailableBookings.find((booking) => {
               const bookingStart = new Date(booking.startsAt);
@@ -2125,6 +2125,7 @@ function ClubCalendar({
                     onBookingSelect(selectableBooking);
                     return;
                   }
+                  if (parentMyCalendar) return;
                   onSlotChange(slot);
                 }}
               >
@@ -2150,7 +2151,7 @@ function ClubCalendar({
                       }}
                     >
                       <span className={`calendar-status-badge ${booking.status}`}>
-                        {isBlockedTime(booking) ? copy(language, "Blocked", "不可用") : isGroupClassCalendarItem(booking) ? copy(language, "Group", "团体") : calendarStatusText(booking.status, language)}
+                        {isBlockedTime(booking) ? copy(language, "Blocked", "不可用") : isGroupClassType(booking) ? copy(language, "Group", "团体") : calendarStatusText(booking.status, language)}
                       </span>
                       <strong>{calendarBookingTitle(booking, language)}</strong>
                       <small>{compactTimeRange(booking.timeLabel)}</small>
