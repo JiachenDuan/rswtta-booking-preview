@@ -750,6 +750,17 @@ export function ClubApp() {
 
   async function requestGroupClass(groupClass: Booking) {
     const coach = groupClass.assignedCoach || groupClass.requestedCoach;
+    const existingEnrollment = bookings.find(
+      (booking) =>
+        booking.status !== "cancelled" &&
+        booking.studentName.trim().toLowerCase() === studentName.trim().toLowerCase() &&
+        isGroupClassJoinRequest(booking) &&
+        sameGroupClassTime(booking, groupClass)
+    );
+    if (existingEnrollment) {
+      setNotice(copy(language, `Group class status: ${statusText(existingEnrollment.status, language)}.`, `团体课状态：${statusText(existingEnrollment.status, language)}。`));
+      return true;
+    }
     setSaving(true);
     setNotice(copy(language, "Saving group class request...", "正在保存团体课请求..."));
     try {
@@ -1926,6 +1937,13 @@ function ParentApp({
           {selectedGroupClass ? (
             <GroupClassRequestModal
               booking={selectedGroupClass}
+              existingEnrollment={bookings.find(
+                (booking) =>
+                  booking.status !== "cancelled" &&
+                  booking.studentName.trim().toLowerCase() === studentName.trim().toLowerCase() &&
+                  isGroupClassJoinRequest(booking) &&
+                  sameGroupClassTime(booking, selectedGroupClass)
+              )}
               studentName={studentName}
               language={language}
               saving={saving}
@@ -3357,6 +3375,7 @@ function ConfirmRequestModal({
 
 function GroupClassRequestModal({
   booking,
+  existingEnrollment,
   studentName,
   language,
   saving,
@@ -3364,35 +3383,40 @@ function GroupClassRequestModal({
   onConfirm
 }: {
   booking: Booking;
+  existingEnrollment?: Booking;
   studentName: string;
   language: Language;
   saving: boolean;
   onClose: () => void;
   onConfirm: () => void;
 }) {
+  const hasExistingEnrollment = Boolean(existingEnrollment);
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="group-class-request-title">
         <div className="section-head compact">
           <div>
             <p className="eyebrow">{copy(language, "Group class", "团体课")}</p>
-            <h2 id="group-class-request-title">{copy(language, "Request to join this group class?", "申请加入这节团体课？")}</h2>
-            <p className="section-subtitle">{copy(language, "Club will confirm or reject this request.", "Club 会确认或拒绝这个请求。")}</p>
+            <h2 id="group-class-request-title">{hasExistingEnrollment ? copy(language, "Group class request status", "团体课申请状态") : copy(language, "Request to join this group class?", "申请加入这节团体课？")}</h2>
+            <p className="section-subtitle">{hasExistingEnrollment ? copy(language, "You already have a request or enrollment for this group class.", "你已经有这节团体课的申请或报名记录。") : copy(language, "Club will confirm or reject this request.", "Club 会确认或拒绝这个请求。")}</p>
           </div>
-          <span className="status-chip club_confirmed">{copy(language, "Group", "团体")}</span>
+          <span className={`status-chip ${existingEnrollment?.status ?? "club_confirmed"}`}>{existingEnrollment ? statusText(existingEnrollment.status, language) : copy(language, "Group", "团体")}</span>
         </div>
         <dl className="confirm-summary">
           <div><dt>{copy(language, "Student", "学生")}</dt><dd>{studentName}</dd></div>
           <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{booking.assignedCoach || booking.requestedCoach}</dd></div>
           <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
+          {existingEnrollment ? <div><dt>{copy(language, "Status", "状态")}</dt><dd>{statusText(existingEnrollment.status, language)}</dd></div> : null}
         </dl>
         <div className="modal-actions">
-          <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, "Cancel", "取消")}</button>
-          <button className="primary-button" onClick={onConfirm} disabled={saving}>
-            <Check size={18} />
-            {saving ? copy(language, "Sending...", "发送中...") : copy(language, "Request to join", "申请加入")}
-          </button>
+          <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, hasExistingEnrollment ? "Close" : "Cancel", hasExistingEnrollment ? "关闭" : "取消")}</button>
+          {hasExistingEnrollment ? null : (
+            <button className="primary-button" onClick={onConfirm} disabled={saving}>
+              <Check size={18} />
+              {saving ? copy(language, "Sending...", "发送中...") : copy(language, "Request to join", "申请加入")}
+            </button>
+          )}
         </div>
       </section>
     </div>
