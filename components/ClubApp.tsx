@@ -562,6 +562,7 @@ const maxCalendarDate = new Date(2026, 11, 31);
 const initialWeekStart = today;
 const initialCalendarDay = makeCalendarDay(today, (today.getDay() + 6) % 7);
 const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7 PM");
+const parentPrivateClassRequestsEnabled = false;
 
 export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
@@ -1240,6 +1241,7 @@ export function ClubApp() {
               if (tab !== "My calendar") setRequestedCoach(tab);
             }}
             onSlotChange={(slot) => {
+              if (!parentPrivateClassRequestsEnabled) return;
               selectSingleSlot(slot);
               setShowRequestConfirm(true);
             }}
@@ -1312,7 +1314,7 @@ export function ClubApp() {
             onAddGroupDropIn={addGroupDropIn}
           />
         )}
-        {showRequestConfirm ? (
+        {showRequestConfirm && parentPrivateClassRequestsEnabled ? (
           <ConfirmRequestModal
             language={language}
             studentName={studentName}
@@ -1818,8 +1820,8 @@ function ParentApp({
         <div className="section-head">
           <div>
             <p className="eyebrow">{copy(language, "Club calendar", "俱乐部日历")}</p>
-            <h2>{copy(language, "Select a time and request class", "选择时间并请求上课")}</h2>
-            <p className="section-subtitle">{copy(language, "Pick a start time and duration for the selected coach.", "为所选教练选择开始时间和时长。")}</p>
+            <h2>{copy(language, "Class calendar", "课程日历")}</h2>
+            <p className="section-subtitle">{copy(language, "My calendar shows your classes. Coach tabs show availability and group classes.", "我的日历显示你的课程。教练标签显示可预约时间和团体课。")}</p>
           </div>
           <span className="status-chip good">{bookings.length} {copy(language, "classes", "课程")}</span>
         </div>
