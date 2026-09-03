@@ -149,8 +149,14 @@ function lessonPriceCents(coach: string) {
   return coach === "National A" || coach === "Coach Tian Ye" ? 15000 : 7500;
 }
 
+function coachDisplayName(coach: string, language: Language = "en") {
+  if (coach === "National A") return copy(language, "Debolina", "Debolina");
+  if (coach === "National B") return copy(language, "Diren", "Diren");
+  return coach.replace("Coach ", "");
+}
+
 function coachTabText(tab: ClubCalendarTab, language: Language) {
-  return tab === "Combined" ? copy(language, "Combined", "全部") : tab.replace("Coach ", "");
+  return tab === "Combined" ? copy(language, "Combined", "全部") : coachDisplayName(tab, language);
 }
 
 function csvValue(value: string | number) {
@@ -1830,7 +1836,7 @@ function ParentApp({
           <button className={parentCalendarTab === "My calendar" ? "selected" : ""} onClick={() => onParentCalendarTabChange("My calendar")}>{copy(language, "My calendar", "我的日历")}</button>
           {coaches.map((coach) => (
             <button className={parentCalendarTab === coach ? "selected" : ""} key={coach} onClick={() => onParentCalendarTabChange(coach)}>
-              {coach.replace("Coach ", "")}
+              {coachDisplayName(coach, language)}
             </button>
           ))}
         </div>
@@ -2370,7 +2376,7 @@ function ClubAppView({
       }
       return [...byCoach.entries()]
         .sort(([leftCoach], [rightCoach]) => leftCoach.localeCompare(rightCoach))
-        .map(([coach, item]) => [typeLabel, coach, item.classes, hoursText(item.hours)]);
+        .map(([coach, item]) => [typeLabel, coachDisplayName(coach), item.classes, hoursText(item.hours)]);
     }
 
     function classSectionRows(title: string, sectionBookings: Booking[]) {
@@ -2390,7 +2396,7 @@ function ClubAppView({
             booking.dateLabel,
             booking.timeLabel,
             bookingHoursLabel(booking),
-            booking.assignedCoach || booking.requestedCoach,
+            coachDisplayName(booking.assignedCoach || booking.requestedCoach),
             statusText(booking.status),
             booking.parentNote
           ])
@@ -2569,7 +2575,7 @@ function ClubAppView({
                   <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
                   <h3>{booking.studentName}</h3>
                   <p>
-                    {copy(language, "Wants", "请求")} {booking.requestedCoach}: {booking.dateLabel} {booking.timeLabel}
+                    {copy(language, "Wants", "请求")} {coachDisplayName(booking.requestedCoach, language)}: {booking.dateLabel} {booking.timeLabel}
                   </p>
                   {booking.parentNote ? <p>{booking.parentNote}</p> : null}
                 </div>
@@ -2603,7 +2609,7 @@ function ClubAppView({
                 <div>
                   <h3>{booking.studentName}</h3>
                   <p>
-                    {booking.assignedCoach}: {booking.dateLabel} {booking.timeLabel}
+                    {coachDisplayName(booking.assignedCoach, language)}: {booking.dateLabel} {booking.timeLabel}
                   </p>
                 </div>
                 <button className="primary-button" onClick={() => onCoachComplete(booking)}>
@@ -2792,7 +2798,7 @@ function ClubAddClassModal({
               <select className="modal-select" value={coach} onChange={(event) => onCoachChange(event.target.value)}>
                 {coaches.map((coachOption) => (
                   <option key={coachOption} value={coachOption}>
-                    {coachOption}
+                    {coachDisplayName(coachOption, language)}
                   </option>
                 ))}
               </select>
@@ -3051,7 +3057,7 @@ function ClubBookingActionModal({
           <div className="section-head compact class-action-head">
             <div>
               <p className="eyebrow">{copy(language, "Group class", "团体课")}</p>
-              <h2 id="club-group-class-title">{booking.assignedCoach}</h2>
+              <h2 id="club-group-class-title">{coachDisplayName(booking.assignedCoach, language)}</h2>
               <p className="section-subtitle">{copy(language, "View requests and mark attendance for this date.", "查看申请并标记当天出勤。")}</p>
             </div>
             <span className="status-chip club_confirmed">{copy(language, "Group", "团体")}</span>
@@ -3178,7 +3184,7 @@ function ClubBookingActionModal({
         <div className="section-head compact class-action-head">
           <div>
             <p className="eyebrow">{copy(language, isBlockedTime(booking) ? "Blocked time" : "Class actions", isBlockedTime(booking) ? "不可用时间" : "课程操作")}</p>
-            <h2 id="club-booking-actions-title">{isBlockedTime(booking) ? booking.assignedCoach : booking.studentName}</h2>
+            <h2 id="club-booking-actions-title">{isBlockedTime(booking) ? coachDisplayName(booking.assignedCoach, language) : booking.studentName}</h2>
           </div>
           <span className={`status-chip ${booking.status}`}>
             {isBlockedTime(booking) ? copy(language, "Not bookable", "不可预约") : statusText(booking.status, language)}
@@ -3187,7 +3193,7 @@ function ClubBookingActionModal({
         <dl className="confirm-summary">
           <div>
             <dt>{copy(language, "Coach", "教练")}</dt>
-            <dd>{booking.assignedCoach}</dd>
+            <dd>{coachDisplayName(booking.assignedCoach, language)}</dd>
           </div>
           <div>
             <dt>{copy(language, "Date", "日期")}</dt>
@@ -3331,7 +3337,7 @@ function ConfirmRequestModal({
           </div>
           <div>
             <dt>{copy(language, "Coach", "教练")}</dt>
-            <dd>{coach}</dd>
+            <dd>{coachDisplayName(coach, language)}</dd>
           </div>
           <div>
             <dt>{copy(language, "Date", "日期")}</dt>
@@ -3421,7 +3427,7 @@ function GroupClassRequestModal({
         </div>
         <dl className="confirm-summary">
           <div><dt>{copy(language, "Student", "学生")}</dt><dd>{studentName}</dd></div>
-          <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{booking.assignedCoach || booking.requestedCoach}</dd></div>
+          <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{coachDisplayName(booking.assignedCoach || booking.requestedCoach, language)}</dd></div>
           <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
           {existingEnrollment ? <div><dt>{copy(language, "Status", "状态")}</dt><dd>{statusText(existingEnrollment.status, language)}</dd></div> : null}
@@ -3464,7 +3470,7 @@ function ParentClassCompleteModal({
           <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
         </div>
         <dl className="confirm-summary">
-          <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{booking.assignedCoach}</dd></div>
+          <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{coachDisplayName(booking.assignedCoach, language)}</dd></div>
           <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
         </dl>
@@ -3509,7 +3515,7 @@ function BookingList({
           <div>
             <h3>{booking.studentName}</h3>
             <p>
-              {booking.dateLabel} {booking.timeLabel} with {booking.assignedCoach}
+              {booking.dateLabel} {booking.timeLabel} with {coachDisplayName(booking.assignedCoach, language)}
             </p>
           </div>
           <div className="class-sign-stack">
