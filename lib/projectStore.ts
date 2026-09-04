@@ -864,16 +864,18 @@ export async function updateParentAccount(input: { accountId: string; studentNam
   return accountFromRow(row);
 }
 
-export async function completeParentProfileSetup(input: { accountId: string; parentName?: string; email: string; phone: string; password: string }) {
+export async function completeParentProfileSetup(input: { accountId: string; studentName?: string; parentName?: string; email: string; phone: string; password: string }) {
+  const normalizedStudentName = String(input.studentName ?? "").trim();
   const normalizedParentName = String(input.parentName ?? "").trim();
   const normalizedEmail = input.email.trim().toLowerCase();
   const normalizedPhone = input.phone.trim();
-  if (!normalizedEmail.includes("@") || normalizedPhone.length < 7 || input.password.length < 6 || input.password === preregisteredPasswordTemplate) {
-    throw new Error("Email, phone, and a new password are required");
+  if (!normalizedStudentName || !normalizedEmail.includes("@") || normalizedPhone.length < 7 || input.password.length < 6 || input.password === preregisteredPasswordTemplate) {
+    throw new Error("Student name, email, phone, and a new password are required");
   }
 
   const passwordParts = await hashPassword(input.password);
   const values = {
+    studentName: normalizedStudentName,
     parentName: normalizedParentName,
     email: normalizedEmail,
     phone: normalizedPhone,
@@ -890,6 +892,8 @@ export async function completeParentProfileSetup(input: { accountId: string; par
       if (!existing) throw new Error("Account not found");
       const bookingRows = await listRows<Booking>("bookings");
       assertUniquePreregisteredRosterName(rows, bookingRows, String(existing.values.studentName ?? ""));
+      const duplicateName = rows.find((item) => item.id !== input.accountId && studentNameKey(item.values.studentName) === studentNameKey(normalizedStudentName));
+      if (duplicateName) throw new Error("Student name already has an account");
       const duplicate = rows.find(
         (item) =>
           item.id !== input.accountId &&
@@ -905,6 +909,8 @@ export async function completeParentProfileSetup(input: { accountId: string; par
       if (!existing) throw new Error("Account not found");
       const bookingRows = localRows<Booking>("bookings");
       assertUniquePreregisteredRosterName(rows, bookingRows, String(existing.values.studentName ?? ""));
+      const duplicateName = rows.find((item) => item.id !== input.accountId && studentNameKey(item.values.studentName) === studentNameKey(normalizedStudentName));
+      if (duplicateName) throw new Error("Student name already has an account");
       const duplicate = rows.find(
         (item) =>
           item.id !== input.accountId &&

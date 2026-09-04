@@ -770,15 +770,30 @@ export function ClubApp() {
     }
   }
 
-  async function completeFirstLoginSetup(input: { parentName: string; email: string; phone: string; password: string }) {
+  async function completeFirstLoginSetup(input: { studentName: string; parentName: string; email: string; phone: string; password: string }) {
     if (!parentSession) return;
+    const oldStudentName = parentSession.studentName;
     const account = await completeParentProfileSetup({
       accountId: parentSession.id,
+      studentName: input.studentName,
       parentName: input.parentName,
       email: input.email,
       phone: input.phone,
       password: input.password
     });
+    const matchingBookings = bookings.filter(
+      (booking) => booking.studentName.trim().toLowerCase() === oldStudentName.trim().toLowerCase()
+    );
+    await Promise.all(
+      matchingBookings.map((booking) =>
+        updateStoredBooking(booking.id, {
+          studentName: account.studentName,
+          familyName: account.studentName,
+          studentEmail: account.email,
+          phone: account.phone
+        })
+      )
+    );
     applyParentSession(account);
     await loadAll();
     setNotice(copy(language, "Profile setup complete. You can now use the dashboard.", "资料设置完成。现在可以使用主页。"));
@@ -1777,9 +1792,10 @@ function FirstLoginSetup({
 }: {
   account: ParentAccount;
   language: Language;
-  onComplete: (input: { parentName: string; email: string; phone: string; password: string }) => Promise<void>;
+  onComplete: (input: { studentName: string; parentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogout: () => void;
 }) {
+  const [setupStudentName, setSetupStudentName] = useState(account.studentName);
   const [parentName, setParentName] = useState(account.parentName);
   const [email, setEmail] = useState(account.email);
   const [phone, setPhone] = useState(account.phone);
@@ -1787,19 +1803,20 @@ function FirstLoginSetup({
   const [confirmPassword, setConfirmPassword] = useState("");
   const [notice, setNotice] = useState(copy(language, "Please finish setup before opening the dashboard.", "请先完成资料设置，才能进入主页。"));
   const [busy, setBusy] = useState(false);
+  const studentNameReady = setupStudentName.trim().length > 0;
   const emailReady = email.trim().includes("@");
   const phoneReady = phone.trim().replace(/\D/g, "").length >= 7;
   const passwordReady = password.length >= 6 && password !== preregisteredPasswordTemplate && password === confirmPassword;
-  const ready = emailReady && phoneReady && passwordReady;
+  const ready = studentNameReady && emailReady && phoneReady && passwordReady;
 
   async function handleComplete() {
     if (!ready) {
-      setNotice(copy(language, "Email, phone, and matching new password are required.", "必须填写邮箱、电话，并输入一致的新密码。"));
+      setNotice(copy(language, "Student name, email, phone, and matching new password are required.", "必须填写学生姓名、邮箱、电话，并输入一致的新密码。"));
       return;
     }
     setBusy(true);
     try {
-      await onComplete({ parentName, email, phone, password });
+      await onComplete({ studentName: setupStudentName, parentName, email, phone, password });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : copy(language, "Could not save profile setup.", "无法保存资料设置。"));
     } finally {
@@ -1831,9 +1848,9 @@ function FirstLoginSetup({
             <span>{copy(language, "Student name", "学生名字")}</span>
             <div className="input-shell">
               <UserRound size={18} />
-              <input value={account.studentName} readOnly />
+              <input value={setupStudentName} onChange={(event) => setSetupStudentName(event.target.value)} placeholder={copy(language, "First and last name", "名和姓")} />
             </div>
-            <p className="helper-line">{copy(language, "If this is not the full first and last name, you can update it later in Student info.", "如果这里不是完整姓名，之后可以在学生资料中更新。")}</p>
+            <p className="helper-line">{copy(language, "Please enter the student's full first and last name when available.", "请尽量填写学生完整姓名（名和姓）。")}</p>
           </label>
           <label>
             <span>{copy(language, "Parent name optional", "家长姓名（可选）")}</span>
