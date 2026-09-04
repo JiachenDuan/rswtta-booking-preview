@@ -23,9 +23,11 @@ import {
 } from "lucide-react";
 import {
   completeParentProfileSetup,
+  createActivityLog,
   createBillNotification,
   createBooking,
   createClubStudentAccount,
+  listActivityLogs,
   listBillNotifications,
   listBookings,
   listParentAccounts,
@@ -37,7 +39,7 @@ import {
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { supabase } from "@/lib/supabase";
-import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
+import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
@@ -506,6 +508,45 @@ function futureSameClassBookings(bookings: Booking[], booking: Booking) {
   );
 }
 
+
+function activityTimeStamp(value: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function activitySummary(items: Booking[], fallback: Booking) {
+  const first = items[0] ?? fallback;
+  const coach = first.assignedCoach || first.requestedCoach;
+  const studentNames = [...new Set(items.map((item) => item.studentName || fallback.studentName).filter(Boolean))];
+  return {
+    studentName: studentNames.length === 1 ? studentNames[0] : `${studentNames.length} students`,
+    coach,
+    dateLabel: first.dateLabel || fallback.dateLabel,
+    timeLabel: first.timeLabel || fallback.timeLabel
+  };
+}
+
+function classActivityMessage(action: string, items: Booking[], fallback: Booking, language: Language) {
+  const summary = activitySummary(items, fallback);
+  const countText = items.length > 1 ? `${items.length} classes` : "1 class";
+  const zhCountText = items.length > 1 ? `${items.length} 节课` : "1 节课";
+  const coach = coachDisplayName(summary.coach, language);
+  if (action === "created") {
+    return copy(language, `Created ${countText} for ${summary.studentName} with ${coach}, starting ${summary.dateLabel} ${summary.timeLabel}.`, `已创建 ${summary.studentName} 与 ${coach} 的 ${zhCountText}，从 ${summary.dateLabel} ${summary.timeLabel} 开始。`);
+  }
+  if (action === "updated") {
+    return copy(language, `Updated time for ${countText}: ${summary.studentName} with ${coach}, starting ${summary.dateLabel} ${summary.timeLabel}.`, `已更新时间：${summary.studentName} 与 ${coach} 的 ${zhCountText}，从 ${summary.dateLabel} ${summary.timeLabel} 开始。`);
+  }
+  if (action === "cancelled") {
+    return copy(language, `Cancelled ${countText}: ${summary.studentName} with ${coach}, starting ${summary.dateLabel} ${summary.timeLabel}.`, `已取消 ${summary.studentName} 与 ${coach} 的 ${zhCountText}，从 ${summary.dateLabel} ${summary.timeLabel} 开始。`);
+  }
+  return copy(language, `${action}: ${summary.studentName} with ${coach}, ${summary.dateLabel} ${summary.timeLabel}.`, `${action}: ${summary.studentName} 与 ${coach}, ${summary.dateLabel} ${summary.timeLabel}.`);
+}
+
 function bookingDurationHours(booking: Booking) {
   const durationMinutes = Math.max(30, Math.round((bookingEndDate(booking).getTime() - new Date(booking.startsAt).getTime()) / 60000));
   return durationMinutes / 60;
@@ -618,6 +659,7 @@ export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [students, setStudents] = useState<ParentAccount[]>([]);
   const [language, setLanguage] = useState<Language>("en");
   const [notice, setNotice] = useState("");
@@ -762,13 +804,32 @@ export function ClubApp() {
 
   async function loadAll() {
     try {
-      const [nextBookings, nextBills, nextStudents] = await Promise.all([listBookings(), listBillNotifications(), listParentAccounts()]);
+      const [nextBookings, nextBills, nextStudents, nextActivityLogs] = await Promise.all([listBookings(), listBillNotifications(), listParentAccounts(), listActivityLogs()]);
       setBookings(nextBookings);
       setBills(nextBills);
       setStudents(nextStudents);
+      setActivityLogs(nextActivityLogs);
       setNotice(copy(language, "Supabase backend connected.", "Supabase 已连接。"));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : copy(language, "Database is not ready.", "数据库暂时不可用。"));
+    }
+  }
+
+  async function recordClassActivity(action: "created" | "updated" | "cancelled", items: Booking[], fallback: Booking) {
+    const summary = activitySummary(items, fallback);
+    try {
+      await createActivityLog({
+        action,
+        message: classActivityMessage(action, items, fallback, language),
+        studentName: summary.studentName,
+        coach: summary.coach,
+        dateLabel: summary.dateLabel,
+        timeLabel: summary.timeLabel,
+        count: Math.max(1, items.length)
+      });
+      setActivityLogs(await listActivityLogs());
+    } catch {
+      // Activity log should never block calendar updates.
     }
   }
 
@@ -901,7 +962,7 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, "Adding class...", "正在添加课程..."));
     try {
-      await Promise.all(
+      const created = await Promise.all(
         slots.map((slot) =>
           createBooking({
             studentName: student.studentName,
@@ -919,6 +980,7 @@ export function ClubApp() {
           }).then((booking) => updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach }))
         )
       );
+      await recordClassActivity("created", created, created[0]);
       await loadAll();
       setNotice(copy(language, `Added ${slots.length} class${slots.length === 1 ? "" : "es"}.`, `已添加 ${slots.length} 节课。`));
     } catch (error) {
@@ -940,7 +1002,7 @@ export function ClubApp() {
     setNotice(copy(language, "Creating student and adding class...", "正在创建学生并添加课程..."));
     try {
       const account = await createClubStudentAccount({ studentName: input.studentName, email: input.email, phone: input.phone });
-      await Promise.all(
+      const created = await Promise.all(
         slots.map((slot) =>
           createBooking({
             studentName: account.studentName,
@@ -958,6 +1020,7 @@ export function ClubApp() {
           }).then((booking) => updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach }))
         )
       );
+      await recordClassActivity("created", created, created[0]);
       await loadAll();
       setNotice(copy(language, `Added ${slots.length} class${slots.length === 1 ? "" : "es"} for ${account.studentName}.`, `已为 ${account.studentName} 添加 ${slots.length} 节课。`));
     } catch (error) {
@@ -1040,7 +1103,7 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, recurring ? `Updating ${targets.length} future classes...` : "Updating class time...", recurring ? `正在更新 ${targets.length} 节未来课程...` : "正在更新课程时间..."));
     try {
-      await Promise.all(
+      const updated = await Promise.all(
         targets.map((item) => {
           const nextSlot = item.id === booking.id ? slot : slotWithNewClockTime(item, slot);
           return updateStoredBooking(item.id, {
@@ -1052,6 +1115,7 @@ export function ClubApp() {
           });
         })
       );
+      await recordClassActivity("updated", updated, updated[0] ?? booking);
       await loadAll();
       setNotice(copy(language, recurring ? `Updated ${targets.length} future classes.` : "Class time updated.", recurring ? `已更新 ${targets.length} 节未来课程。` : "课程时间已更新。"));
     } catch {
@@ -1068,7 +1132,7 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, recurring ? `Cancelling ${targets.length} future classes...` : "Cancelling class...", recurring ? `正在取消 ${targets.length} 节未来课程...` : "正在取消课程..."));
     try {
-      await Promise.all(
+      const cancelled = await Promise.all(
         targets.map(async (item) => {
           const assignedCoach = item.assignedCoach || item.requestedCoach;
           if (item.id.startsWith("virtual-")) {
@@ -1086,12 +1150,12 @@ export function ClubApp() {
               priceCents: item.priceCents,
               parentNote: `${item.parentNote} Cancelled by club.`
             });
-            await updateStoredBooking(created.id, { status: "cancelled", assignedCoach });
-            return;
+            return updateStoredBooking(created.id, { status: "cancelled", assignedCoach });
           }
-          await updateStoredBooking(item.id, { status: "cancelled", assignedCoach });
+          return updateStoredBooking(item.id, { status: "cancelled", assignedCoach });
         })
       );
+      await recordClassActivity("cancelled", cancelled, cancelled[0] ?? booking);
       await loadAll();
       setNotice(copy(language, recurring ? `Cancelled ${targets.length} future classes.` : "Class cancelled.", recurring ? `已取消 ${targets.length} 节未来课程。` : "课程已取消。"));
     } catch (error) {
@@ -1375,6 +1439,7 @@ export function ClubApp() {
         ) : (
           <ClubAppView
             bookings={bookings}
+            activityLogs={activityLogs}
             students={students}
             selectedSlot={selectedSlot}
             selectedSlots={selectedSlots}
@@ -2329,6 +2394,7 @@ function ClubCalendar({
 
 function ClubAppView({
   bookings,
+  activityLogs,
   students,
   selectedSlot,
   selectedSlots,
@@ -2360,6 +2426,7 @@ function ClubAppView({
   onAddGroupDropIn
 }: {
   bookings: Booking[];
+  activityLogs: ActivityLog[];
   students: ParentAccount[];
   selectedSlot: CalendarSlot;
   selectedSlots: CalendarSlot[];
@@ -2767,6 +2834,33 @@ function ClubAppView({
             ))}
           </div>
         </section>
+
+        <section className="section-block activity-log-section">
+          <div className="section-head">
+            <div>
+              <p className="eyebrow">{copy(language, "Activity log", "活动记录")}</p>
+              <h2>{copy(language, "Class changes", "课程变更")}</h2>
+              <p className="section-subtitle">{copy(language, "Newest class creates, time updates, and cancellations.", "最新的课程创建、时间更新和取消记录。")}</p>
+            </div>
+            <span className="status-chip good">{activityLogs.length}</span>
+          </div>
+          <div className="activity-log-list">
+            {activityLogs.length === 0 ? (
+              <p className="empty-state">{copy(language, "No activity yet.", "暂无记录。")}</p>
+            ) : (
+              activityLogs.slice(0, 100).map((entry) => (
+                <article className="activity-log-row" key={entry.id}>
+                  <span className={`class-type-badge ${entry.action === "cancelled" ? "private" : "group"}`}>{entry.action}</span>
+                  <div>
+                    <strong>{activityTimeStamp(entry.createdAt)}</strong>
+                    <p>{entry.message}</p>
+                  </div>
+                </article>
+              ))
+            )}
+          </div>
+        </section>
+
       </section>
       {showAddClassModal ? (
         <ClubAddClassModal

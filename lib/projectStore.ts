@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import type { BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
+import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
 const projectName = "Rising Stars World Table Tennis Academy";
@@ -36,6 +36,15 @@ const tableDefinitions = {
     ["classCount", "number"],
     ["amountCents", "number"],
     ["message", "text"]
+  ],
+  activity_logs: [
+    ["action", "text"],
+    ["message", "text"],
+    ["studentName", "text"],
+    ["coach", "text"],
+    ["dateLabel", "text"],
+    ["timeLabel", "text"],
+    ["count", "number"]
   ]
 } as const;
 
@@ -125,13 +134,15 @@ type LocalRowMap = {
   bookings: Array<ProjectRow<Booking>>;
   parent_accounts: Array<ProjectRow<AccountValues>>;
   bill_notifications: Array<ProjectRow<BillNotification>>;
+  activity_logs: Array<ProjectRow<ActivityLog>>;
 };
 
 function emptyLocalStore(): LocalRowMap {
   return {
     bookings: [],
     parent_accounts: [],
-    bill_notifications: []
+    bill_notifications: [],
+    activity_logs: []
   };
 }
 
@@ -365,6 +376,20 @@ function billFromRow(row: ProjectRow<BillNotification>): BillNotification {
     classCount: Number(row.values.classCount ?? 0),
     amountCents: Number(row.values.amountCents ?? 0),
     message: String(row.values.message ?? ""),
+    createdAt: row.created_at
+  };
+}
+
+function activityLogFromRow(row: ProjectRow<ActivityLog>): ActivityLog {
+  return {
+    id: row.id,
+    action: String(row.values.action ?? "activity"),
+    message: String(row.values.message ?? ""),
+    studentName: String(row.values.studentName ?? ""),
+    coach: normalizeCoachName(row.values.coach ?? ""),
+    dateLabel: String(row.values.dateLabel ?? ""),
+    timeLabel: String(row.values.timeLabel ?? ""),
+    count: Number(row.values.count ?? 1),
     createdAt: row.created_at
   };
 }
@@ -1178,4 +1203,20 @@ export async function createBillNotification(input: Omit<BillNotification, "id" 
     () => createLocalRow("bill_notifications", input)
   );
   return billFromRow(row);
+}
+
+export async function listActivityLogs() {
+  const rows = await withLocalFallback(
+    () => listRows<ActivityLog>("activity_logs"),
+    () => localRows<ActivityLog>("activity_logs")
+  );
+  return rows.map(activityLogFromRow).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+}
+
+export async function createActivityLog(input: Omit<ActivityLog, "id" | "createdAt">) {
+  const row = await withLocalFallback(
+    () => createRow("activity_logs", input),
+    () => createLocalRow("activity_logs", input)
+  );
+  return activityLogFromRow(row);
 }

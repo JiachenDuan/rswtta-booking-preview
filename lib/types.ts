@@ -29,6 +29,18 @@ export type BillNotification = {
   createdAt: string;
 };
 
+export type ActivityLog = {
+  id: string;
+  action: string;
+  message: string;
+  studentName: string;
+  coach: string;
+  dateLabel: string;
+  timeLabel: string;
+  count: number;
+  createdAt: string;
+};
+
 export type ParentAccount = {
   id: string;
   studentName: string;
