@@ -913,7 +913,7 @@ export function ClubApp() {
     }
   }
 
-  async function addGroupDropIn(groupClass: Booking, selectedStudents: ParentAccount[]) {
+  async function addGroupDropIn(groupClass: Booking, selectedStudents: ParentAccount[], note = "") {
     if (selectedStudents.length === 0) {
       setNotice(copy(language, "Select at least one student.", "请选择至少一名学生。"));
       return false;
@@ -937,7 +937,7 @@ export function ClubApp() {
           timeLabel: groupClass.timeLabel,
           startsAt: groupClass.startsAt,
           priceCents: 7500,
-          parentNote: "Added to group class by club."
+          parentNote: note ? `Added to group class by club: ${note}` : "Added to group class by club."
         });
         createdBookings.push(await updateStoredBooking(booking.id, { status: enrollmentStatus, assignedCoach: coach }));
       }
@@ -953,9 +953,9 @@ export function ClubApp() {
     }
   }
 
-  async function addGroupNewStudent(groupClass: Booking, input: { studentName: string; email: string; phone: string }) {
+  async function addGroupNewStudent(groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) {
     const account = await createClubStudentAccount(input);
-    return addGroupDropIn(groupClass, [account]);
+    return addGroupDropIn(groupClass, [account], input.note);
   }
 
   async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) {
@@ -2465,7 +2465,7 @@ function ClubAppView({
   onAddNewStudentClass: (input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onAddGroupDropIn: (groupClass: Booking, students: ParentAccount[]) => Promise<boolean>;
-  onAddGroupNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string }) => Promise<boolean>;
+  onAddGroupNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) => Promise<boolean>;
 }) {
   const defaultExportStart = dateInputValue(startOfWeek(selectedSlot.date));
   const defaultExportEnd = dateInputValue(addDays(startOfWeek(selectedSlot.date), 6));
@@ -3252,7 +3252,7 @@ function ClubBookingActionModal({
   onRejectEnrollment: (booking: Booking) => void;
   onCompleteEnrollment: (booking: Booking) => void;
   onAddDropIn: (groupClass: Booking, students: ParentAccount[]) => Promise<boolean>;
-  onAddNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string }) => Promise<boolean>;
+  onAddNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) => Promise<boolean>;
   saving: boolean;
 }) {
   const bookingStart = new Date(booking.startsAt);
@@ -3287,6 +3287,7 @@ function ClubBookingActionModal({
   const [newGroupStudentName, setNewGroupStudentName] = useState("");
   const [newGroupStudentEmail, setNewGroupStudentEmail] = useState("");
   const [newGroupStudentPhone, setNewGroupStudentPhone] = useState("");
+  const [newGroupStudentNote, setNewGroupStudentNote] = useState("");
   const enrolledNames = new Set(groupEnrollments.map((item) => item.studentName.trim().toLowerCase()));
   const selectedDropInNames = new Set(selectedDropInStudents.map((student) => student.studentName.trim().toLowerCase()));
   const dropInSearch = dropInQuery.trim().toLowerCase();
@@ -3382,7 +3383,7 @@ function ClubBookingActionModal({
                 {copy(language, "Existing student", "现有学生")}
               </button>
               <button type="button" className={dropInMode === "new" ? "selected" : ""} onClick={() => setDropInMode("new")}>
-                {copy(language, "New pre-registered student", "新预注册学生")}
+                {copy(language, "New student", "新学生")}
               </button>
             </div>
             {dropInMode === "existing" ? (
@@ -3458,7 +3459,7 @@ function ClubBookingActionModal({
               </>
             ) : (
               <div className="tryout-fields">
-                <p className="modal-info">{copy(language, "Create a pre-registered student account, then add that student to this group class.", "创建预注册学生账号，并把学生加入这节团体课。")}</p>
+                <p className="modal-info">{copy(language, "Create a new pre-registered student account, then add that student to this group class.", "创建预注册学生账号，并把学生加入这节团体课。")}</p>
                 <label>
                   <span>{copy(language, "Student name", "学生姓名")}</span>
                   <input value={newGroupStudentName} onChange={(event) => setNewGroupStudentName(event.target.value)} />
@@ -3470,6 +3471,10 @@ function ClubBookingActionModal({
                 <label>
                   <span>{copy(language, "Phone optional", "电话（可选）")}</span>
                   <input value={newGroupStudentPhone} onChange={(event) => setNewGroupStudentPhone(event.target.value)} />
+                </label>
+                <label>
+                  <span>{copy(language, "Note optional", "备注（可选）")}</span>
+                  <textarea value={newGroupStudentNote} onChange={(event) => setNewGroupStudentNote(event.target.value)} />
                 </label>
                 {newGroupStudentAlreadyEnrolled ? (
                   <p className="modal-warning">{copy(language, "This student is already in this group class.", "这名学生已在这节团体课中。")}</p>
@@ -3490,6 +3495,7 @@ function ClubBookingActionModal({
                             setNewGroupStudentName("");
                             setNewGroupStudentEmail("");
                             setNewGroupStudentPhone("");
+                            setNewGroupStudentNote("");
                           }}
                         >
                           <span>
@@ -3510,11 +3516,12 @@ function ClubBookingActionModal({
                   type="button"
                   disabled={saving || !canCreateGroupStudent}
                   onClick={async () => {
-                    const saved = await onAddNewStudent(booking, { studentName: newGroupStudentName, email: newGroupStudentEmail, phone: newGroupStudentPhone });
+                    const saved = await onAddNewStudent(booking, { studentName: newGroupStudentName, email: newGroupStudentEmail, phone: newGroupStudentPhone, note: newGroupStudentNote });
                     if (saved) {
                       setNewGroupStudentName("");
                       setNewGroupStudentEmail("");
                       setNewGroupStudentPhone("");
+                      setNewGroupStudentNote("");
                       setDropInMode("existing");
                     }
                   }}
