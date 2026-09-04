@@ -168,6 +168,20 @@ function studentKey(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function studentFirstNameKey(value: string) {
+  return studentKey(value).split(" ")[0] ?? "";
+}
+
+function firstNameDuplicateStudents(students: ParentAccount[], identifier: string) {
+  const firstName = studentFirstNameKey(identifier);
+  if (!firstName || identifier.includes("@")) return [];
+  return students.filter((student) => studentFirstNameKey(student.studentName) === firstName);
+}
+
+function studentDisplayContact(student: ParentAccount, language: Language) {
+  return student.email || student.phone || copy(language, "Profile incomplete", "资料待完善");
+}
+
 function downloadTextFile(filename: string, content: string, mimeType: string) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
@@ -1236,6 +1250,7 @@ export function ClubApp() {
             initialAuthMode="login"
             intent="parent"
             language={language}
+            students={students}
             onRegister={registerParent}
             onLogin={loginUnified}
             onRequestPasswordReset={requestPasswordReset}
@@ -1391,6 +1406,7 @@ function UnifiedAuth({
   initialAuthMode,
   intent,
   language,
+  students = [],
   onRegister,
   onLogin,
   onRequestPasswordReset,
@@ -1399,6 +1415,7 @@ function UnifiedAuth({
   initialAuthMode: "login" | "register";
   intent: "parent" | "club";
   language: Language;
+  students?: ParentAccount[];
   onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogin: (identifier: string, password: string, allowPreregisteredName?: boolean) => Promise<void>;
   onRequestPasswordReset: (email: string) => Promise<void>;
@@ -1418,6 +1435,8 @@ function UnifiedAuth({
       : copy(language, "Login with username and password.", "请用用户名和密码登录。")
   );
   const [busy, setBusy] = useState(false);
+  const firstNameMatches = intent === "parent" && preregisteredLogin ? firstNameDuplicateStudents(students, identifier) : [];
+  const firstNameLoginBlocked = firstNameMatches.length > 1;
 
   useEffect(() => {
     const isRecoveryLink =
@@ -1451,6 +1470,10 @@ function UnifiedAuth({
   }
 
   async function handleLogin() {
+    if (firstNameLoginBlocked) {
+      setNotice(copy(language, "More than one student has this first name. Please log in with email so the calendar matches the correct student.", "多个学生使用这个名字。请用邮箱登录，这样日历会匹配正确学生。"));
+      return;
+    }
     setBusy(true);
     try {
       await onLogin(identifier, password, intent === "parent" && preregisteredLogin);
@@ -1569,7 +1592,23 @@ function UnifiedAuth({
                 <span>{copy(language, "Pre-registered student", "预注册学生")}</span>
               </label>
             ) : null}
-            <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleLogin}>
+            {firstNameLoginBlocked ? (
+              <div className="action-confirm-panel duplicate-student-panel">
+                <strong>{copy(language, "Use email to log in", "请使用邮箱登录")}</strong>
+                <p>{copy(language, "More than one student has this first name. Email login prevents opening the wrong calendar.", "多个学生使用这个名字。邮箱登录可以避免打开错误的日历。")}</p>
+                <div className="student-results modal-results">
+                  {firstNameMatches.slice(0, 5).map((student) => (
+                    <div className="student-result selected locked-selection" key={student.id}>
+                      <span>
+                        <strong>{student.studentName}</strong>
+                        <em>{studentDisplayContact(student, language)}</em>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <button type="button" className="primary-button auth-submit" disabled={busy || firstNameLoginBlocked} onClick={handleLogin}>
               <LogIn size={18} />
               {copy(language, "Login", "登录")}
             </button>
@@ -2585,7 +2624,7 @@ function ClubAppView({
                     >
                       <span>
                         <strong>{student.studentName}</strong>
-                        <em>{student.email || student.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
+                        <em>{studentDisplayContact(student, language)}</em>
                       </span>
                       <Check size={17} />
                     </button>
@@ -2796,7 +2835,6 @@ function ClubAddClassModal({
   const [newStudentEmail, setNewStudentEmail] = useState("");
   const [newStudentPhone, setNewStudentPhone] = useState("");
   const [newStudentNote, setNewStudentNote] = useState("");
-  const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [weeks, setWeeks] = useState(4);
   const enrolledQuery = studentQuery.trim().toLowerCase();
@@ -2823,7 +2861,8 @@ function ClubAddClassModal({
         );
       }).slice(0, 5)
     : [];
-  const canAddClass = studentMode === "enrolled" ? Boolean(selectedStudent) : newStudentName.trim().length > 0 && (duplicateCandidates.length === 0 || duplicateConfirmed);
+  const duplicateCreationBlocked = duplicateCandidates.length > 0;
+  const canAddClass = studentMode === "enrolled" ? Boolean(selectedStudent) : newStudentName.trim().length > 0 && !duplicateCreationBlocked;
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="club-add-class-title">
@@ -2928,7 +2967,7 @@ function ClubAddClassModal({
                   >
                     <span>
                       <strong>{student.studentName}</strong>
-                      <em>{student.email || student.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
+                      <em>{studentDisplayContact(student, language)}</em>
                     </span>
                     <Check size={17} />
                   </button>
@@ -2940,15 +2979,15 @@ function ClubAddClassModal({
               <div className="tryout-fields">
                 <label>
                   <span>{copy(language, "Student name", "学生姓名")}</span>
-                  <input value={newStudentName} onChange={(event) => { setNewStudentName(event.target.value); setDuplicateConfirmed(false); }} />
+                  <input value={newStudentName} onChange={(event) => setNewStudentName(event.target.value)} />
                 </label>
                 <label>
                   <span>{copy(language, "Email optional", "邮箱（可选）")}</span>
-                  <input value={newStudentEmail} onChange={(event) => { setNewStudentEmail(event.target.value); setDuplicateConfirmed(false); }} />
+                  <input value={newStudentEmail} onChange={(event) => setNewStudentEmail(event.target.value)} />
                 </label>
                 <label>
                   <span>{copy(language, "Phone optional", "电话（可选）")}</span>
-                  <input value={newStudentPhone} onChange={(event) => { setNewStudentPhone(event.target.value); setDuplicateConfirmed(false); }} />
+                  <input value={newStudentPhone} onChange={(event) => setNewStudentPhone(event.target.value)} />
                 </label>
                 <label>
                   <span>{copy(language, "Note", "备注")}</span>
@@ -2957,21 +2996,20 @@ function ClubAddClassModal({
                 {duplicateCandidates.length > 0 ? (
                   <div className="action-confirm-panel duplicate-student-panel">
                     <strong>{copy(language, "Possible existing student", "可能已有学生")}</strong>
-                    <p>{copy(language, "Check before creating a new account.", "创建新账号前请确认。")}</p>
+                    <p>{copy(language, "This looks like an existing student. Select the existing student instead of creating another account.", "这看起来像已有学生。请选择现有学生，不要创建重复账号。")}</p>
                     <div className="student-results modal-results">
                       {duplicateCandidates.map((student) => (
                         <button type="button" className="student-result" key={student.id} onClick={() => { onStudentSelect(student); onStudentQueryChange(student.studentName); setStudentMode("enrolled"); }}>
                           <span>
                             <strong>{student.studentName}</strong>
-                            <em>{student.email || student.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
+                            <em>{studentDisplayContact(student, language)}</em>
                           </span>
                           <Check size={17} />
                         </button>
                       ))}
                     </div>
                     <div className="modal-actions">
-                      <button className="filter-button" type="button" onClick={() => { onStudentQueryChange(newStudentName); setStudentMode("enrolled"); }}>{copy(language, "Use existing", "使用现有学生")}</button>
-                      <button className="primary-button" type="button" onClick={() => setDuplicateConfirmed(true)}>{copy(language, "Create new anyway", "仍然创建新学生")}</button>
+                      <button className="primary-button" type="button" onClick={() => { onStudentQueryChange(newStudentName); setStudentMode("enrolled"); }}>{copy(language, "Use existing student", "使用现有学生")}</button>
                     </div>
                   </div>
                 ) : null}
@@ -3155,6 +3193,7 @@ function ClubBookingActionModal({
           <div className="group-dropin-panel">
             <label>
               <span>{copy(language, "Add students", "添加学生")}</span>
+              <p className="modal-info">{copy(language, "Search and select registered students only.", "只能搜索并选择已注册学生。")}</p>
               <div className="input-shell">
                 <Search size={18} />
                 <input
@@ -3198,7 +3237,7 @@ function ClubBookingActionModal({
                   >
                     <span>
                       <strong>{student.studentName}</strong>
-                      <em>{student.email || student.phone || copy(language, "Profile incomplete", "资料待完善")}</em>
+                      <em>{studentDisplayContact(student, language)}</em>
                     </span>
                     <Plus size={17} />
                   </button>
