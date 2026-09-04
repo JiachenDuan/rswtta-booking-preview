@@ -625,6 +625,7 @@ export function ClubApp() {
   const [studentName, setStudentName] = useState("");
   const [familyName, setFamilyName] = useState("");
   const [studentEmail, setStudentEmail] = useState("");
+  const [parentName, setParentName] = useState("");
   const [phone, setPhone] = useState("");
   const [requestedCoach, setRequestedCoach] = useState<string>(coaches[0]);
   const [parentCalendarTab, setParentCalendarTab] = useState<ParentCalendarTab>("My calendar");
@@ -665,6 +666,7 @@ export function ClubApp() {
     setStudentName(account.studentName);
     setFamilyName(account.studentName);
     setStudentEmail(account.email);
+    setParentName(account.parentName);
     setPhone(account.phone);
     window.localStorage.setItem(parentSessionKey, JSON.stringify(account));
   }
@@ -689,7 +691,7 @@ export function ClubApp() {
   }
 
 
-  async function updateParentInfo(input: { studentName: string; email: string; phone: string }) {
+  async function updateParentInfo(input: { studentName: string; parentName: string; email: string; phone: string }) {
     if (!parentSession) return;
     setSaving(true);
     setNotice(copy(language, "Updating student info...", "正在更新学生信息..."));
@@ -698,6 +700,7 @@ export function ClubApp() {
       const account = await updateParentAccount({
         accountId: parentSession.id,
         studentName: input.studentName,
+        parentName: input.parentName,
         email: input.email,
         phone: input.phone
       });
@@ -724,10 +727,11 @@ export function ClubApp() {
     }
   }
 
-  async function completeFirstLoginSetup(input: { email: string; phone: string; password: string }) {
+  async function completeFirstLoginSetup(input: { parentName: string; email: string; phone: string; password: string }) {
     if (!parentSession) return;
     const account = await completeParentProfileSetup({
       accountId: parentSession.id,
+      parentName: input.parentName,
       email: input.email,
       phone: input.phone,
       password: input.password
@@ -1299,6 +1303,7 @@ export function ClubApp() {
             notice={notice}
             studentName={studentName}
             studentEmail={studentEmail}
+            parentName={parentName}
             phone={phone}
             requestedCoach={requestedCoach}
             parentCalendarTab={parentCalendarTab}
@@ -1317,10 +1322,12 @@ export function ClubApp() {
               setFamilyName(value);
             }}
             onStudentEmailChange={setStudentEmail}
+            onParentNameChange={setParentName}
             onPhoneChange={setPhone}
             onStudentInfoSave={updateParentInfo}
             savedStudentName={parentSession.studentName}
             savedStudentEmail={parentSession.email}
+            savedParentName={parentSession.parentName}
             savedPhone={parentSession.phone}
             onCoachChange={setRequestedCoach}
             onParentCalendarTabChange={(tab) => {
@@ -1692,9 +1699,10 @@ function FirstLoginSetup({
 }: {
   account: ParentAccount;
   language: Language;
-  onComplete: (input: { email: string; phone: string; password: string }) => Promise<void>;
+  onComplete: (input: { parentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogout: () => void;
 }) {
+  const [parentName, setParentName] = useState(account.parentName);
   const [email, setEmail] = useState(account.email);
   const [phone, setPhone] = useState(account.phone);
   const [password, setPassword] = useState("");
@@ -1713,7 +1721,7 @@ function FirstLoginSetup({
     }
     setBusy(true);
     try {
-      await onComplete({ email, phone, password });
+      await onComplete({ parentName, email, phone, password });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : copy(language, "Could not save profile setup.", "无法保存资料设置。"));
     } finally {
@@ -1746,6 +1754,13 @@ function FirstLoginSetup({
             <div className="input-shell">
               <UserRound size={18} />
               <input value={account.studentName} readOnly />
+            </div>
+          </label>
+          <label>
+            <span>{copy(language, "Parent name optional", "家长姓名（可选）")}</span>
+            <div className="input-shell">
+              <UserRound size={18} />
+              <input value={parentName} onChange={(event) => setParentName(event.target.value)} placeholder={copy(language, "Parent name", "家长姓名")} />
             </div>
           </label>
           <label>
@@ -1817,6 +1832,7 @@ function ParentApp({
   notice,
   studentName,
   studentEmail,
+  parentName,
   phone,
   requestedCoach,
   parentCalendarTab,
@@ -1832,10 +1848,12 @@ function ParentApp({
   language,
   onStudentNameChange,
   onStudentEmailChange,
+  onParentNameChange,
   onPhoneChange,
   onStudentInfoSave,
   savedStudentName,
   savedStudentEmail,
+  savedParentName,
   savedPhone,
   onCoachChange,
   onParentCalendarTabChange,
@@ -1855,6 +1873,7 @@ function ParentApp({
   notice: string;
   studentName: string;
   studentEmail: string;
+  parentName: string;
   phone: string;
   requestedCoach: string;
   parentCalendarTab: ParentCalendarTab;
@@ -1870,10 +1889,12 @@ function ParentApp({
   language: Language;
   onStudentNameChange: (value: string) => void;
   onStudentEmailChange: (value: string) => void;
+  onParentNameChange: (value: string) => void;
   onPhoneChange: (value: string) => void;
-  onStudentInfoSave: (input: { studentName: string; email: string; phone: string }) => void;
+  onStudentInfoSave: (input: { studentName: string; parentName: string; email: string; phone: string }) => void;
   savedStudentName: string;
   savedStudentEmail: string;
+  savedParentName: string;
   savedPhone: string;
   onCoachChange: (value: string) => void;
   onParentCalendarTabChange: (value: ParentCalendarTab) => void;
@@ -1922,6 +1943,7 @@ function ParentApp({
   ) as Record<typeof classFilterTabs[number]["key"], number>;
   const studentInfoChanged =
     studentName.trim() !== savedStudentName.trim() ||
+    parentName.trim() !== savedParentName.trim() ||
     studentEmail.trim().toLowerCase() !== savedStudentEmail.trim().toLowerCase() ||
     phone.trim() !== savedPhone.trim();
   const studentInfoReady = studentName.trim().length > 0 && studentEmail.includes("@") && phone.trim().length >= 7;
@@ -1987,7 +2009,7 @@ function ParentApp({
             <div>
               <p className="eyebrow">{copy(language, "Student info", "学生资料")}</p>
               <h2>{copy(language, "Basic login info", "基础登录信息")}</h2>
-              <p className="section-subtitle">{copy(language, "Email and phone", "邮箱和电话")}</p>
+              <p className="section-subtitle">{copy(language, "Parent name, email, and phone", "家长姓名、邮箱和电话")}</p>
             </div>
           </div>
           <div className="simple-form">
@@ -1996,6 +2018,13 @@ function ParentApp({
               <div className="input-shell">
                 <UserRound size={18} />
                 <input value={studentName} onChange={(event) => onStudentNameChange(event.target.value)} />
+              </div>
+            </label>
+            <label>
+              <span>{copy(language, "Parent name optional", "家长姓名（可选）")}</span>
+              <div className="input-shell">
+                <UserRound size={18} />
+                <input value={parentName} onChange={(event) => onParentNameChange(event.target.value)} />
               </div>
             </label>
             <label>
@@ -2016,7 +2045,7 @@ function ParentApp({
               type="button"
               className="primary-button wide-button"
               disabled={saving || !studentInfoChanged || !studentInfoReady}
-              onClick={() => onStudentInfoSave({ studentName, email: studentEmail, phone })}
+              onClick={() => onStudentInfoSave({ studentName, parentName, email: studentEmail, phone })}
             >
               <Check size={18} />
               {copy(language, "Update student info", "更新学生信息")}
@@ -2391,6 +2420,7 @@ function ClubAppView({
       rememberStudent({
         id: booking.studentName,
         studentName: booking.studentName,
+        parentName: "",
         email: booking.studentEmail,
         phone: booking.phone,
         confirmed: true,

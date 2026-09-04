@@ -32,6 +32,7 @@ export type BillNotification = {
 export type ParentAccount = {
   id: string;
   studentName: string;
+  parentName: string;
   email: string;
   phone: string;
   confirmed: boolean;

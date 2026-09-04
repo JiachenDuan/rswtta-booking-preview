@@ -21,6 +21,7 @@ const tableDefinitions = {
   ],
   parent_accounts: [
     ["studentName", "text"],
+    ["parentName", "text"],
     ["email", "text"],
     ["phone", "text"],
     ["passwordHash", "text"],
@@ -326,6 +327,7 @@ function accountFromRow(row: ProjectRow<ParentAccount & { passwordHash: string; 
   return {
     id: row.id,
     studentName: String(row.values.studentName ?? "Student"),
+    parentName: String(row.values.parentName ?? ""),
     email: String(row.values.email ?? ""),
     phone: String(row.values.phone ?? ""),
     confirmed: Boolean(row.values.confirmed),
@@ -445,6 +447,7 @@ async function seedPreregisteredAccounts(rows: Array<ProjectRow<AccountValues>>,
     const row = await create({
       id: "",
       studentName,
+      parentName: "",
       email: "",
       phone: "",
       passwordHash: password.hash,
@@ -699,6 +702,7 @@ export async function createClubStudentAccount(input: { studentName: string; ema
   const values: AccountValues = {
     id: "",
     studentName,
+    parentName: "",
     email,
     phone,
     passwordHash: password.hash,
@@ -783,8 +787,9 @@ export async function updateUserPassword(password: string) {
   }
 }
 
-export async function updateParentAccount(input: { accountId: string; studentName: string; email: string; phone: string }) {
+export async function updateParentAccount(input: { accountId: string; studentName: string; parentName?: string; email: string; phone: string }) {
   const normalizedStudentName = input.studentName.trim();
+  const normalizedParentName = String(input.parentName ?? "").trim();
   const normalizedEmail = input.email.trim().toLowerCase();
   const normalizedPhone = input.phone.trim();
   if (!normalizedStudentName || !normalizedEmail.includes("@") || normalizedPhone.length < 7) {
@@ -793,6 +798,7 @@ export async function updateParentAccount(input: { accountId: string; studentNam
 
   const values = {
     studentName: normalizedStudentName,
+    parentName: normalizedParentName,
     email: normalizedEmail,
     phone: normalizedPhone
   };
@@ -833,7 +839,8 @@ export async function updateParentAccount(input: { accountId: string; studentNam
   return accountFromRow(row);
 }
 
-export async function completeParentProfileSetup(input: { accountId: string; email: string; phone: string; password: string }) {
+export async function completeParentProfileSetup(input: { accountId: string; parentName?: string; email: string; phone: string; password: string }) {
+  const normalizedParentName = String(input.parentName ?? "").trim();
   const normalizedEmail = input.email.trim().toLowerCase();
   const normalizedPhone = input.phone.trim();
   if (!normalizedEmail.includes("@") || normalizedPhone.length < 7 || input.password.length < 6 || input.password === preregisteredPasswordTemplate) {
@@ -842,6 +849,7 @@ export async function completeParentProfileSetup(input: { accountId: string; ema
 
   const passwordParts = await hashPassword(input.password);
   const values = {
+    parentName: normalizedParentName,
     email: normalizedEmail,
     phone: normalizedPhone,
     passwordHash: passwordParts.hash,
