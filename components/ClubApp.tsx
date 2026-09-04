@@ -612,6 +612,7 @@ const initialWeekStart = today;
 const initialCalendarDay = makeCalendarDay(today, (today.getDay() + 6) % 7);
 const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7 PM");
 const parentPrivateClassRequestsEnabled = false;
+const parentSelfRegistrationEnabled = false;
 
 export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
@@ -1468,6 +1469,7 @@ function UnifiedAuth({
   const [busy, setBusy] = useState(false);
   const firstNameMatches = intent === "parent" && preregisteredLogin ? firstNameDuplicateStudents(students, identifier) : [];
   const firstNameLoginBlocked = firstNameMatches.length > 1;
+  const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;
 
   useEffect(() => {
     const isRecoveryLink =
@@ -1561,16 +1563,18 @@ function UnifiedAuth({
 
         {intent === "parent" ? (
           <div className="mode-switch auth-switch">
-            <button type="button" className={authMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
+            <button type="button" className={effectiveAuthMode === "login" ? "selected" : ""} onClick={() => setAuthMode("login")}>
               {copy(language, "Login", "登录")}
             </button>
-            <button type="button" className={authMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
-              {copy(language, "Register", "注册")}
-            </button>
+            {parentSelfRegistrationEnabled ? (
+              <button type="button" className={effectiveAuthMode === "register" ? "selected" : ""} onClick={() => setAuthMode("register")}>
+                {copy(language, "Register", "注册")}
+              </button>
+            ) : null}
           </div>
         ) : null}
 
-        {authMode === "register" && intent === "parent" ? (
+        {effectiveAuthMode === "register" && intent === "parent" && parentSelfRegistrationEnabled ? (
           <div className="simple-form auth-form">
             <label>
               <span>{copy(language, "Student name", "学生名字")}</span>
@@ -1604,7 +1608,7 @@ function UnifiedAuth({
           </div>
         ) : null}
 
-        {authMode === "login" ? (
+        {effectiveAuthMode === "login" ? (
           <div className="simple-form auth-form">
             <label>
               <span>{intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "Username", "用户名")}</span>
@@ -1652,7 +1656,7 @@ function UnifiedAuth({
           </div>
         ) : null}
 
-        {authMode === "forgot" && intent === "parent" ? (
+        {effectiveAuthMode === "forgot" && intent === "parent" ? (
           <div className="simple-form auth-form">
             <label>
               <span>{copy(language, "Email", "邮箱")}</span>
@@ -1671,7 +1675,7 @@ function UnifiedAuth({
           </div>
         ) : null}
 
-        {authMode === "updatePassword" && intent === "parent" ? (
+        {effectiveAuthMode === "updatePassword" && intent === "parent" ? (
           <div className="simple-form auth-form">
             <label>
               <span>{copy(language, "New password", "新密码")}</span>
