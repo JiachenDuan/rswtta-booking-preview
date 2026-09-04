@@ -1653,8 +1653,9 @@ function UnifiedAuth({
               <span>{copy(language, "Student name", "学生名字")}</span>
               <div className="input-shell">
                 <UserRound size={18} />
-                <input value={studentName} onChange={(event) => setStudentName(event.target.value)} />
+                <input value={studentName} onChange={(event) => setStudentName(event.target.value)} placeholder={copy(language, "First and last name", "名和姓")} />
               </div>
+              <p className="helper-line">{copy(language, "Please use the student's full first and last name when available.", "请尽量填写学生完整姓名（名和姓）。")}</p>
             </label>
             <label>
               <span>{copy(language, "Email", "邮箱")}</span>
@@ -1832,6 +1833,7 @@ function FirstLoginSetup({
               <UserRound size={18} />
               <input value={account.studentName} readOnly />
             </div>
+            <p className="helper-line">{copy(language, "If this is not the full first and last name, you can update it later in Student info.", "如果这里不是完整姓名，之后可以在学生资料中更新。")}</p>
           </label>
           <label>
             <span>{copy(language, "Parent name optional", "家长姓名（可选）")}</span>
@@ -2094,8 +2096,9 @@ function ParentApp({
               <span>{copy(language, "Student", "学生")}</span>
               <div className="input-shell">
                 <UserRound size={18} />
-                <input value={studentName} onChange={(event) => onStudentNameChange(event.target.value)} />
+                <input value={studentName} onChange={(event) => onStudentNameChange(event.target.value)} placeholder={copy(language, "First and last name", "名和姓")} />
               </div>
+              <p className="helper-line">{copy(language, "Use the student's full first and last name when available.", "请尽量使用学生完整姓名（名和姓）。")}</p>
             </label>
             <label>
               <span>{copy(language, "Parent name optional", "家长姓名（可选）")}</span>
@@ -3143,7 +3146,8 @@ function ClubAddClassModal({
               <div className="tryout-fields">
                 <label>
                   <span>{copy(language, "Student name", "学生姓名")}</span>
-                  <input value={newStudentName} onChange={(event) => { setNewStudentName(event.target.value); setDuplicateConfirmed(false); }} />
+                  <input value={newStudentName} onChange={(event) => { setNewStudentName(event.target.value); setDuplicateConfirmed(false); }} placeholder={copy(language, "First and last name", "名和姓")} />
+                  <p className="helper-line">{copy(language, "Use full first and last name when available to avoid duplicate accounts.", "请尽量填写完整姓名，避免重复账号。")}</p>
                 </label>
                 <label>
                   <span>{copy(language, "Email optional", "邮箱（可选）")}</span>
@@ -3466,7 +3470,8 @@ function ClubBookingActionModal({
                 <p className="modal-info">{copy(language, "Create a new pre-registered student account, then add that student to this group class.", "创建预注册学生账号，并把学生加入这节团体课。")}</p>
                 <label>
                   <span>{copy(language, "Student name", "学生姓名")}</span>
-                  <input value={newGroupStudentName} onChange={(event) => { setNewGroupStudentName(event.target.value); setNewGroupDuplicateConfirmed(false); }} />
+                  <input value={newGroupStudentName} onChange={(event) => { setNewGroupStudentName(event.target.value); setNewGroupDuplicateConfirmed(false); }} placeholder={copy(language, "First and last name", "名和姓")} />
+                  <p className="helper-line">{copy(language, "Use full first and last name when available to avoid duplicate accounts.", "请尽量填写完整姓名，避免重复账号。")}</p>
                 </label>
                 <label>
                   <span>{copy(language, "Email optional", "邮箱（可选）")}</span>
