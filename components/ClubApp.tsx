@@ -1063,11 +1063,35 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, recurring ? `Cancelling ${targets.length} future classes...` : "Cancelling class...", recurring ? `正在取消 ${targets.length} 节未来课程...` : "正在取消课程..."));
     try {
-      await Promise.all(targets.map((item) => updateStoredBooking(item.id, { status: "cancelled", assignedCoach: item.assignedCoach || item.requestedCoach })));
+      await Promise.all(
+        targets.map(async (item) => {
+          const assignedCoach = item.assignedCoach || item.requestedCoach;
+          if (item.id.startsWith("virtual-")) {
+            const created = await createBooking({
+              studentName: item.studentName,
+              familyName: item.familyName || item.studentName,
+              studentEmail: item.studentEmail,
+              phone: item.phone,
+              requestedCoach: item.requestedCoach || assignedCoach,
+              assignedCoach,
+              program: item.program,
+              dateLabel: item.dateLabel,
+              timeLabel: item.timeLabel,
+              startsAt: item.startsAt,
+              priceCents: item.priceCents,
+              parentNote: `${item.parentNote} Cancelled by club.`
+            });
+            await updateStoredBooking(created.id, { status: "cancelled", assignedCoach });
+            return;
+          }
+          await updateStoredBooking(item.id, { status: "cancelled", assignedCoach });
+        })
+      );
       await loadAll();
       setNotice(copy(language, recurring ? `Cancelled ${targets.length} future classes.` : "Class cancelled.", recurring ? `已取消 ${targets.length} 节未来课程。` : "课程已取消。"));
-    } catch {
-      setNotice(copy(language, "Could not cancel class.", "无法取消课程。"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : copy(language, "Could not cancel class.", "无法取消课程。");
+      setNotice(copy(language, `Could not cancel class: ${message}`, `无法取消课程：${message}`));
     } finally {
       setSaving(false);
     }
