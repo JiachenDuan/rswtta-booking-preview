@@ -2998,6 +2998,7 @@ function ClubAddClassModal({
   const [newStudentEmail, setNewStudentEmail] = useState("");
   const [newStudentPhone, setNewStudentPhone] = useState("");
   const [newStudentNote, setNewStudentNote] = useState("");
+  const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
   const [recurring, setRecurring] = useState(false);
   const [weeks, setWeeks] = useState(4);
   const enrolledQuery = studentQuery.trim().toLowerCase();
@@ -3024,7 +3025,7 @@ function ClubAddClassModal({
         );
       }).slice(0, 5)
     : [];
-  const duplicateCreationBlocked = duplicateCandidates.length > 0;
+  const duplicateCreationBlocked = duplicateCandidates.length > 0 && !duplicateConfirmed;
   const canAddClass = studentMode === "enrolled" ? Boolean(selectedStudent) : newStudentName.trim().length > 0 && !duplicateCreationBlocked;
   return (
     <div className="modal-backdrop" role="presentation">
@@ -3142,15 +3143,15 @@ function ClubAddClassModal({
               <div className="tryout-fields">
                 <label>
                   <span>{copy(language, "Student name", "学生姓名")}</span>
-                  <input value={newStudentName} onChange={(event) => setNewStudentName(event.target.value)} />
+                  <input value={newStudentName} onChange={(event) => { setNewStudentName(event.target.value); setDuplicateConfirmed(false); }} />
                 </label>
                 <label>
                   <span>{copy(language, "Email optional", "邮箱（可选）")}</span>
-                  <input value={newStudentEmail} onChange={(event) => setNewStudentEmail(event.target.value)} />
+                  <input value={newStudentEmail} onChange={(event) => { setNewStudentEmail(event.target.value); setDuplicateConfirmed(false); }} />
                 </label>
                 <label>
                   <span>{copy(language, "Phone optional", "电话（可选）")}</span>
-                  <input value={newStudentPhone} onChange={(event) => setNewStudentPhone(event.target.value)} />
+                  <input value={newStudentPhone} onChange={(event) => { setNewStudentPhone(event.target.value); setDuplicateConfirmed(false); }} />
                 </label>
                 <label>
                   <span>{copy(language, "Note", "备注")}</span>
@@ -3159,7 +3160,7 @@ function ClubAddClassModal({
                 {duplicateCandidates.length > 0 ? (
                   <div className="action-confirm-panel duplicate-student-panel">
                     <strong>{copy(language, "Possible existing student", "可能已有学生")}</strong>
-                    <p>{copy(language, "This looks like an existing student. Select the existing student instead of creating another account.", "这看起来像已有学生。请选择现有学生，不要创建重复账号。")}</p>
+                    <p>{copy(language, "This looks similar to an existing student. If it is the same student, select the existing student. If it is a different student, confirm below and create anyway.", "这看起来和已有学生相似。如果是同一名学生，请选择现有学生；如果是不同学生，请在下方确认后继续创建。")}</p>
                     <div className="student-results modal-results">
                       {duplicateCandidates.map((student) => (
                         <button type="button" className="student-result" key={student.id} onClick={() => { onStudentSelect(student); onStudentQueryChange(student.studentName); setStudentMode("enrolled"); }}>
@@ -3172,7 +3173,8 @@ function ClubAddClassModal({
                       ))}
                     </div>
                     <div className="modal-actions">
-                      <button className="primary-button" type="button" onClick={() => { onStudentQueryChange(newStudentName); setStudentMode("enrolled"); }}>{copy(language, "Use existing student", "使用现有学生")}</button>
+                      <button className="filter-button" type="button" onClick={() => { onStudentQueryChange(newStudentName); setStudentMode("enrolled"); }}>{copy(language, "Use existing student", "使用现有学生")}</button>
+                      <button className="primary-button" type="button" onClick={() => setDuplicateConfirmed(true)}>{copy(language, "Not same student, create anyway", "不是同一学生，仍然创建")}</button>
                     </div>
                   </div>
                 ) : null}
@@ -3288,6 +3290,7 @@ function ClubBookingActionModal({
   const [newGroupStudentEmail, setNewGroupStudentEmail] = useState("");
   const [newGroupStudentPhone, setNewGroupStudentPhone] = useState("");
   const [newGroupStudentNote, setNewGroupStudentNote] = useState("");
+  const [newGroupDuplicateConfirmed, setNewGroupDuplicateConfirmed] = useState(false);
   const enrolledNames = new Set(groupEnrollments.map((item) => item.studentName.trim().toLowerCase()));
   const selectedDropInNames = new Set(selectedDropInStudents.map((student) => student.studentName.trim().toLowerCase()));
   const dropInSearch = dropInQuery.trim().toLowerCase();
@@ -3321,7 +3324,8 @@ function ClubBookingActionModal({
       }).slice(0, 5)
     : [];
   const newGroupStudentAlreadyEnrolled = enrolledNames.has(newGroupNameKey);
-  const canCreateGroupStudent = newGroupStudentName.trim().length > 0 && !newGroupStudentAlreadyEnrolled && newGroupDuplicateCandidates.length === 0;
+  const newGroupDuplicateBlocked = newGroupDuplicateCandidates.length > 0 && !newGroupDuplicateConfirmed;
+  const canCreateGroupStudent = newGroupStudentName.trim().length > 0 && !newGroupStudentAlreadyEnrolled && !newGroupDuplicateBlocked;
 
   if (isGroupClassBlock(booking)) {
     return (
@@ -3462,15 +3466,15 @@ function ClubBookingActionModal({
                 <p className="modal-info">{copy(language, "Create a new pre-registered student account, then add that student to this group class.", "创建预注册学生账号，并把学生加入这节团体课。")}</p>
                 <label>
                   <span>{copy(language, "Student name", "学生姓名")}</span>
-                  <input value={newGroupStudentName} onChange={(event) => setNewGroupStudentName(event.target.value)} />
+                  <input value={newGroupStudentName} onChange={(event) => { setNewGroupStudentName(event.target.value); setNewGroupDuplicateConfirmed(false); }} />
                 </label>
                 <label>
                   <span>{copy(language, "Email optional", "邮箱（可选）")}</span>
-                  <input value={newGroupStudentEmail} onChange={(event) => setNewGroupStudentEmail(event.target.value)} />
+                  <input value={newGroupStudentEmail} onChange={(event) => { setNewGroupStudentEmail(event.target.value); setNewGroupDuplicateConfirmed(false); }} />
                 </label>
                 <label>
                   <span>{copy(language, "Phone optional", "电话（可选）")}</span>
-                  <input value={newGroupStudentPhone} onChange={(event) => setNewGroupStudentPhone(event.target.value)} />
+                  <input value={newGroupStudentPhone} onChange={(event) => { setNewGroupStudentPhone(event.target.value); setNewGroupDuplicateConfirmed(false); }} />
                 </label>
                 <label>
                   <span>{copy(language, "Note optional", "备注（可选）")}</span>
@@ -3482,7 +3486,7 @@ function ClubBookingActionModal({
                 {newGroupDuplicateCandidates.length > 0 ? (
                   <div className="action-confirm-panel duplicate-student-panel">
                     <strong>{copy(language, "Possible existing student", "可能已有学生")}</strong>
-                    <p>{copy(language, "This looks like an existing student. Select the existing student instead of creating another account.", "这看起来像已有学生。请选择现有学生，不要创建重复账号。")}</p>
+                    <p>{copy(language, "This looks similar to an existing student. If it is the same student, select the existing student. If it is a different student, confirm below and create anyway.", "这看起来和已有学生相似。如果是同一名学生，请选择现有学生；如果是不同学生，请在下方确认后继续创建。")}</p>
                     <div className="student-results modal-results">
                       {newGroupDuplicateCandidates.map((student) => (
                         <button
@@ -3496,6 +3500,7 @@ function ClubBookingActionModal({
                             setNewGroupStudentEmail("");
                             setNewGroupStudentPhone("");
                             setNewGroupStudentNote("");
+                            setNewGroupDuplicateConfirmed(false);
                           }}
                         >
                           <span>
@@ -3505,6 +3510,10 @@ function ClubBookingActionModal({
                           <Check size={17} />
                         </button>
                       ))}
+                    </div>
+                    <div className="modal-actions">
+                      <button className="filter-button" type="button" onClick={() => setDropInMode("existing")}>{copy(language, "Use existing student", "使用现有学生")}</button>
+                      <button className="primary-button" type="button" onClick={() => setNewGroupDuplicateConfirmed(true)}>{copy(language, "Not same student, create anyway", "不是同一学生，仍然创建")}</button>
                     </div>
                   </div>
                 ) : null}
@@ -3522,6 +3531,7 @@ function ClubBookingActionModal({
                       setNewGroupStudentEmail("");
                       setNewGroupStudentPhone("");
                       setNewGroupStudentNote("");
+                      setNewGroupDuplicateConfirmed(false);
                       setDropInMode("existing");
                     }
                   }}
