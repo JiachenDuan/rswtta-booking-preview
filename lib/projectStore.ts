@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { assertParentCancellationAllowed } from "@/lib/cancellationPolicy";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
@@ -1192,6 +1193,23 @@ export async function updateBooking(
   const row = rows.find((item) => item.id === id);
   if (!row) throw new Error("Booking not found in shared club view");
   const updated = await updateRow("bookings", id, { ...row.values, ...input });
+  return bookingFromRow(updated);
+}
+
+export async function cancelBookingAsParent(id: string, studentName: string, now = Date.now()) {
+  const rows = await listRows<Booking>("bookings");
+  const row = rows.find((item) => item.id === id);
+  if (!row) throw new Error("Booking not found in shared club view");
+  if (studentNameKey(row.values.studentName) !== studentNameKey(studentName)) {
+    throw new Error("This class does not belong to the signed-in student.");
+  }
+
+  assertParentCancellationAllowed({ startsAt: String(row.values.startsAt ?? "") }, now);
+  if (row.values.status !== "requested" && row.values.status !== "club_confirmed") {
+    throw new Error("This class can no longer be cancelled online.");
+  }
+
+  const updated = await updateRow("bookings", id, { ...row.values, status: "cancelled" as BookingStatus });
   return bookingFromRow(updated);
 }
 

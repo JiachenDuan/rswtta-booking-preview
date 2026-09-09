@@ -22,6 +22,7 @@ import {
   X
 } from "lucide-react";
 import {
+  cancelBookingAsParent,
   completeParentProfileSetup,
   createActivityLog,
   createBillNotification,
@@ -38,6 +39,7 @@ import {
   updateParentAccount,
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
+import { isParentCancellationAllowed, PARENT_CANCELLATION_WARNING } from "@/lib/cancellationPolicy";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
@@ -127,11 +129,6 @@ function calendarStatusText(status: BookingStatus, language: Language = "en") {
     coach_confirmed: { en: "Complete", zh: "完成" }
   };
   return labels[status][language];
-}
-
-function isMoreThan12HoursBeforeClass(booking: Booking) {
-  const starts = new Date(booking.startsAt).getTime();
-  return starts - Date.now() > 12 * 60 * 60 * 1000;
 }
 
 function canParentRequestChange(booking: Booking) {
@@ -928,6 +925,44 @@ export function ClubApp() {
     }
   }
 
+  async function cancelParentClass(booking: Booking) {
+    if (!isParentCancellationAllowed(booking)) {
+      setNotice(PARENT_CANCELLATION_WARNING);
+      return false;
+    }
+
+    setSaving(true);
+    setNotice(copy(language, "Cancelling class...", "正在取消课程..."));
+    try {
+      let storedBooking = booking;
+      if (booking.id.startsWith("virtual-")) {
+        storedBooking = await createBooking({
+          studentName: booking.studentName,
+          familyName: booking.familyName || booking.studentName,
+          studentEmail: booking.studentEmail,
+          phone: booking.phone,
+          requestedCoach: booking.requestedCoach,
+          assignedCoach: booking.assignedCoach,
+          program: booking.program,
+          dateLabel: booking.dateLabel,
+          timeLabel: booking.timeLabel,
+          startsAt: booking.startsAt,
+          priceCents: booking.priceCents,
+          parentNote: `${booking.parentNote} Cancelled by parent/student.`
+        });
+      }
+      await cancelBookingAsParent(storedBooking.id, studentName);
+      await loadAll();
+      setNotice(copy(language, isGroupClassJoinRequest(booking) ? "Left group class." : "Class cancelled.", isGroupClassJoinRequest(booking) ? "已退出团体课。" : "课程已取消。"));
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not cancel class.", "无法取消课程。"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function addGroupDropIn(groupClass: Booking, selectedStudents: ParentAccount[], note = "") {
     if (selectedStudents.length === 0) {
       setNotice(copy(language, "Select at least one student.", "请选择至少一名学生。"));
@@ -1438,23 +1473,12 @@ export function ClubApp() {
                 dateLabel: selectedSlot.dateLabel,
                 timeLabel: rangeLabel(selectedSlot, selectedDurationMinutes),
                 startsAt: selectedSlot.startsAt,
-                parentNote: isMoreThan12HoursBeforeClass(booking)
+                parentNote: isParentCancellationAllowed(booking)
                   ? `${copy(language, "Parent requested change from", "家长申请改期，原时间")} ${booking.dateLabel} ${booking.timeLabel}`
                   : `${copy(language, "Late change request from", "12小时内改期请求，原时间")} ${booking.dateLabel} ${booking.timeLabel}`
               });
             }}
-            onCancel={(booking) => {
-              if (!isMoreThan12HoursBeforeClass(booking)) {
-                updateBooking(booking.id, "change_requested", booking.assignedCoach, {
-                  dateLabel: booking.dateLabel,
-                  timeLabel: booking.timeLabel,
-                  startsAt: booking.startsAt,
-                  parentNote: `${copy(language, "Late cancellation request for", "12小时内取消请求")} ${booking.dateLabel} ${booking.timeLabel}`
-                });
-                return;
-              }
-              updateBooking(booking.id, "cancelled");
-            }}
+            onCancel={cancelParentClass}
             onComplete={completeParentClass}
             onGroupClassRequest={requestGroupClass}
           />
@@ -2000,7 +2024,7 @@ function ParentApp({
   onNextWeek: () => void;
   onToday: () => void;
   onChangeRequest: (booking: Booking) => void;
-  onCancel: (booking: Booking) => void;
+  onCancel: (booking: Booking) => Promise<boolean>;
   onComplete: (booking: Booking) => void;
   onGroupClassRequest: (booking: Booking) => Promise<boolean>;
 }) {
@@ -2043,6 +2067,15 @@ function ParentApp({
     studentEmail.trim().toLowerCase() !== savedStudentEmail.trim().toLowerCase() ||
     phone.trim() !== savedPhone.trim();
   const studentInfoReady = studentName.trim().length > 0 && studentEmail.includes("@") && phone.trim().length >= 7;
+  const selectedGroupEnrollment = selectedGroupClass
+    ? bookings.find(
+        (booking) =>
+          booking.status !== "cancelled" &&
+          booking.studentName.trim().toLowerCase() === studentName.trim().toLowerCase() &&
+          isGroupClassJoinRequest(booking) &&
+          sameGroupClassTime(booking, selectedGroupClass)
+      )
+    : undefined;
   return (
     <section className="calendar-first">
       <section className="section-block calendar-core">
@@ -2155,7 +2188,7 @@ function ParentApp({
             <div>
               <p className="eyebrow">{copy(language, "My classes", "我的课程")}</p>
               <h2>{copy(language, "Requested, confirmed, completed", "请求、确认、完成")}</h2>
-              <p className="section-subtitle">{copy(language, "Cancel more than 12 hours before class. Inside 12 hours sends a club approval request.", "超过 12 小时可取消；12 小时内会发送请求给 club 确认。")}</p>
+              <p className="section-subtitle">{copy(language, "Cancel only when class is more than 12 hours away.", "仅可在距离上课超过 12 小时时取消。")}</p>
             </div>
           </div>
           <div className="class-filter-panel">
@@ -2190,18 +2223,16 @@ function ParentApp({
                 onComplete(selectedParentBooking);
                 setSelectedParentBooking(null);
               }}
+              onCancel={async () => {
+                const cancelled = await onCancel(selectedParentBooking);
+                if (cancelled) setSelectedParentBooking(null);
+              }}
             />
           ) : null}
           {selectedGroupClass ? (
             <GroupClassRequestModal
               booking={selectedGroupClass}
-              existingEnrollment={bookings.find(
-                (booking) =>
-                  booking.status !== "cancelled" &&
-                  booking.studentName.trim().toLowerCase() === studentName.trim().toLowerCase() &&
-                  isGroupClassJoinRequest(booking) &&
-                  sameGroupClassTime(booking, selectedGroupClass)
-              )}
+              existingEnrollment={selectedGroupEnrollment}
               studentName={studentName}
               language={language}
               saving={saving}
@@ -2209,6 +2240,11 @@ function ParentApp({
               onConfirm={async () => {
                 const saved = await onGroupClassRequest(selectedGroupClass);
                 if (saved) setSelectedGroupClass(null);
+              }}
+              onCancelEnrollment={async () => {
+                if (!selectedGroupEnrollment) return;
+                const cancelled = await onCancel(selectedGroupEnrollment);
+                if (cancelled) setSelectedGroupClass(null);
               }}
             />
           ) : null}
@@ -3807,7 +3843,8 @@ function GroupClassRequestModal({
   language,
   saving,
   onClose,
-  onConfirm
+  onConfirm,
+  onCancelEnrollment
 }: {
   booking: Booking;
   existingEnrollment?: Booking;
@@ -3816,8 +3853,10 @@ function GroupClassRequestModal({
   saving: boolean;
   onClose: () => void;
   onConfirm: () => void;
+  onCancelEnrollment: () => void;
 }) {
   const hasExistingEnrollment = Boolean(existingEnrollment);
+  const canCancelEnrollment = Boolean(existingEnrollment && isParentCancellationAllowed(existingEnrollment));
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="group-class-request-title">
@@ -3836,9 +3875,15 @@ function GroupClassRequestModal({
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
           {existingEnrollment ? <div><dt>{copy(language, "Status", "状态")}</dt><dd>{statusText(existingEnrollment.status, language)}</dd></div> : null}
         </dl>
+        {hasExistingEnrollment && !canCancelEnrollment ? <p className="modal-warning">{PARENT_CANCELLATION_WARNING}</p> : null}
         <div className="modal-actions">
-          <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, hasExistingEnrollment ? "Close" : "Cancel", hasExistingEnrollment ? "关闭" : "取消")}</button>
-          {hasExistingEnrollment ? null : (
+          <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, "Close", "关闭")}</button>
+          {hasExistingEnrollment ? (
+            <button className="decline" onClick={onCancelEnrollment} disabled={saving || !canCancelEnrollment}>
+              <X size={18} />
+              {saving ? copy(language, "Leaving...", "正在退出...") : copy(language, "Leave group class", "退出团体课")}
+            </button>
+          ) : (
             <button className="primary-button" onClick={onConfirm} disabled={saving}>
               <Check size={18} />
               {saving ? copy(language, "Sending...", "发送中...") : copy(language, "Request to join", "申请加入")}
@@ -3854,14 +3899,17 @@ function ParentClassCompleteModal({
   booking,
   language,
   onClose,
-  onComplete
+  onComplete,
+  onCancel
 }: {
   booking: Booking;
   language: Language;
   onClose: () => void;
   onComplete: () => void;
+  onCancel: () => void;
 }) {
   const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking);
+  const canCancel = canParentRequestChange(booking) && isParentCancellationAllowed(booking);
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
@@ -3878,8 +3926,15 @@ function ParentClassCompleteModal({
           <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
         </dl>
+        {canParentRequestChange(booking) && !canCancel ? <p className="modal-warning">{PARENT_CANCELLATION_WARNING}</p> : null}
         <div className="modal-actions">
           <button className="filter-button" onClick={onClose}>{copy(language, "Close", "关闭")}</button>
+          {canParentRequestChange(booking) ? (
+            <button className="decline" disabled={!canCancel} onClick={onCancel}>
+              <X size={18} />
+              {copy(language, "Cancel class", "取消课程")}
+            </button>
+          ) : null}
           <button className="primary-button" disabled={!canComplete} onClick={onComplete}>
             <Check size={18} />
             {copy(language, "Complete", "完成")}
@@ -3928,6 +3983,21 @@ function BookingList({
             </span>
             <strong className={booking.status}>{statusText(booking.status, language)}</strong>
           </div>
+          {parentActions && canParentRequestChange(booking) ? (
+            <div className="row-actions parent-actions">
+              <button
+                className="decline"
+                type="button"
+                aria-label={copy(language, isGroupClassJoinRequest(booking) ? "Leave group class" : "Cancel class", isGroupClassJoinRequest(booking) ? "退出团体课" : "取消课程")}
+                disabled={!isParentCancellationAllowed(booking)}
+                title={!isParentCancellationAllowed(booking) ? PARENT_CANCELLATION_WARNING : undefined}
+                onClick={() => onCancel?.(booking)}
+              >
+                <X size={15} />
+              </button>
+              {!isParentCancellationAllowed(booking) ? <span className="modal-warning">{PARENT_CANCELLATION_WARNING}</span> : null}
+            </div>
+          ) : null}
         </article>
       ))}
     </div>

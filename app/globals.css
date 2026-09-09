@@ -2007,8 +2007,15 @@ button.student-result.selected {
 }
 
 .parent-actions {
-  justify-self: end;
+  justify-self: stretch;
   grid-column: 1 / -1;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.parent-actions .modal-warning {
+  flex: 1 1 280px;
+  font-size: 0.72rem;
 }
 
 .row-actions button:disabled {
