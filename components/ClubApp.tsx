@@ -35,6 +35,7 @@ import {
   loginParentAccount,
   registerParentAccount,
   resetPasswordForEmail,
+  rescheduleBookingsAtomically,
   updateUserPassword,
   updateParentAccount,
   updateBooking as updateStoredBooking
@@ -43,6 +44,7 @@ import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { isParentCancellationAllowed, PARENT_CANCELLATION_WARNING } from "@/lib/cancellationPolicy";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { createStudentAccountThenPersist } from "@/lib/studentCreation";
+import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
 import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
@@ -346,14 +348,13 @@ function typedTimeDurationMinutes(dateValue: string, startTime: string, endTime:
   return minutes > 0 ? minutes : null;
 }
 
-function slotWithNewClockTime(booking: Booking, sourceSlot: CalendarSlot) {
-  const sourceDate = new Date(sourceSlot.startsAt);
-  const targetDate = new Date(booking.startsAt);
-  targetDate.setHours(sourceDate.getHours(), sourceDate.getMinutes(), 0, 0);
+function slotShiftedWithSelectedBooking(booking: Booking, selected: Booking, sourceSlot: CalendarSlot) {
+  const deltaMs = new Date(sourceSlot.startsAt).getTime() - new Date(selected.startsAt).getTime();
+  const targetDate = new Date(new Date(booking.startsAt).getTime() + deltaMs);
   const dayIndex = (targetDate.getDay() + 6) % 7;
   return {
     ...makeCalendarDay(targetDate, dayIndex),
-    timeLabel: sourceSlot.timeLabel,
+    timeLabel: timeLabel(targetDate),
     startsAt: targetDate.toISOString()
   };
 }
@@ -433,6 +434,7 @@ function isGroupClassCalendarItem(booking: Booking) {
 }
 
 function sameGroupClassTime(left: Booking, right: Booking) {
+  if (left.groupClassId && right.groupClassId) return left.groupClassId === right.groupClassId;
   return (
     (left.assignedCoach || left.requestedCoach) === (right.assignedCoach || right.requestedCoach) &&
     left.startsAt === right.startsAt
@@ -490,19 +492,16 @@ function classConflictMessage(conflict: Booking, slot: CalendarSlot, durationMin
 }
 
 function futureSameClassBookings(bookings: Booking[], booking: Booking) {
-  const originalStartsAt = new Date(booking.startsAt).getTime();
-  return bookings.filter(
-    (item) =>
-      item.id === booking.id ||
-      (Boolean(booking.studentAccountId) &&
-        item.studentAccountId === booking.studentAccountId &&
-        item.status !== "cancelled" &&
-        item.status !== "coach_confirmed" &&
-        (item.assignedCoach || item.requestedCoach) === (booking.assignedCoach || booking.requestedCoach) &&
-        item.timeLabel === booking.timeLabel &&
-        item.program === booking.program &&
-        new Date(item.startsAt).getTime() >= originalStartsAt)
-  );
+  const originalStartsAt = new Date(booking.recurrenceOriginalStartsAt || booking.startsAt).getTime();
+  if (booking.seriesId) {
+    return bookings.filter((item) =>
+      item.seriesId === booking.seriesId &&
+      item.status !== "cancelled" &&
+      item.status !== "coach_confirmed" &&
+      new Date(item.recurrenceOriginalStartsAt || item.startsAt).getTime() >= originalStartsAt
+    );
+  }
+  return [booking];
 }
 
 
@@ -888,6 +887,7 @@ export function ClubApp() {
         requestedCoach: coach,
         assignedCoach: coach,
         program: "Group enrollment",
+        groupClassId: groupClass.groupClassId || groupClass.id,
         dateLabel: groupClass.dateLabel,
         timeLabel: groupClass.timeLabel,
         startsAt: groupClass.startsAt,
@@ -919,6 +919,10 @@ export function ClubApp() {
         if (!booking.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
         storedBooking = await createBooking({
           studentAccountId: booking.studentAccountId,
+          seriesId: booking.seriesId,
+          recurrenceOccurrenceId: booking.recurrenceOccurrenceId,
+          recurrenceOriginalStartsAt: booking.recurrenceOriginalStartsAt,
+          groupClassId: booking.groupClassId,
           studentName: booking.studentName,
           familyName: booking.familyName || booking.studentName,
           studentEmail: booking.studentEmail,
@@ -967,6 +971,7 @@ export function ClubApp() {
           requestedCoach: coach,
           assignedCoach: coach,
           program: "Group enrollment",
+          groupClassId: groupClass.groupClassId || groupClass.id,
           dateLabel: groupClass.dateLabel,
           timeLabel: groupClass.timeLabel,
           startsAt: groupClass.startsAt,
@@ -997,6 +1002,7 @@ export function ClubApp() {
   }
 
   async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) {
+    const seriesId = slots.length > 1 ? newSeriesId() : undefined;
     const conflict = slots
       .map((slot) => ({ slot, booking: findRangeConflict(bookings, coach, slot, durationMinutes) }))
       .find((item) => item.booking);
@@ -1011,6 +1017,7 @@ export function ClubApp() {
         slots.map((slot) =>
           createBooking({
             studentAccountId: student.id,
+            ...(seriesId ? recurrenceIdentity(seriesId, slot.startsAt) : {}),
             studentName: student.studentName,
             familyName: student.studentName,
             studentEmail: student.email,
@@ -1037,6 +1044,7 @@ export function ClubApp() {
   }
 
   async function addClubNewStudentClass(input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) {
+    const seriesId = slots.length > 1 ? newSeriesId() : undefined;
     const conflict = slots
       .map((slot) => ({ slot, booking: findRangeConflict(bookings, coach, slot, durationMinutes) }))
       .find((item) => item.booking);
@@ -1054,6 +1062,7 @@ export function ClubApp() {
           slots.map((slot) =>
             createBooking({
               studentAccountId: createdAccount.id,
+              ...(seriesId ? recurrenceIdentity(seriesId, slot.startsAt) : {}),
               studentName: createdAccount.studentName,
               familyName: createdAccount.studentName,
               studentEmail: createdAccount.email,
@@ -1081,6 +1090,7 @@ export function ClubApp() {
   }
 
   async function blockCoachTime(coach: string, slots: CalendarSlot[], durationMinutes: number) {
+    const seriesId = slots.length > 1 ? newSeriesId() : undefined;
     const conflict = slots
       .map((slot) => ({ slot, booking: findRangeConflict(bookings, coach, slot, durationMinutes) }))
       .find((item) => item.booking);
@@ -1094,6 +1104,7 @@ export function ClubApp() {
       await Promise.all(
         slots.map((slot) =>
           createBooking({
+            ...(seriesId ? recurrenceIdentity(seriesId, slot.startsAt) : {}),
             studentName: copy(language, "Coach unavailable", "教练不可用"),
             familyName: "Club",
             studentEmail: "",
@@ -1136,9 +1147,14 @@ export function ClubApp() {
 
   async function updateClassTime(booking: Booking, slot: CalendarSlot, durationMinutes: number, recurring: boolean) {
     const targets = recurring ? futureSameClassBookings(bookings, booking) : [booking];
-    const targetIds = new Set(targets.map((item) => item.id));
+    const movingGroupIds = new Set(targets.map((item) => item.groupClassId).filter(Boolean));
+    const targetIds = new Set(
+      bookings
+        .filter((item) => targets.some((target) => target.id === item.id) || Boolean(item.groupClassId && movingGroupIds.has(item.groupClassId)))
+        .map((item) => item.id)
+    );
     const hasConflict = targets.some((item) => {
-      const nextSlot = item.id === booking.id ? slot : slotWithNewClockTime(item, slot);
+      const nextSlot = slotShiftedWithSelectedBooking(item, booking, slot);
       return isRangeUnavailable(
         bookings.filter((candidate) => !targetIds.has(candidate.id)),
         item.assignedCoach || item.requestedCoach,
@@ -1153,19 +1169,21 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, recurring ? `Updating ${targets.length} future classes...` : "Updating class time...", recurring ? `正在更新 ${targets.length} 节未来课程...` : "正在更新课程时间..."));
     try {
-      const updated = await Promise.all(
-        targets.map((item) => {
-          const nextSlot = item.id === booking.id ? slot : slotWithNewClockTime(item, slot);
-          return updateStoredBooking(item.id, {
-            status: "club_confirmed",
-            assignedCoach: item.assignedCoach || item.requestedCoach,
-            dateLabel: nextSlot.dateLabel,
-            timeLabel: rangeLabel(nextSlot, durationMinutes),
-            startsAt: nextSlot.startsAt
-          });
-        })
-      );
-      await recordClassActivity("updated", updated, updated[0] ?? booking);
+      await rescheduleBookingsAtomically({
+        bookings,
+        selected: booking,
+        selectedStartsAt: slot.startsAt,
+        scope: recurring ? "future" : "single",
+        schedule: (startsAt) => {
+          const date = new Date(startsAt);
+          const nextSlot = {
+            ...makeCalendarDay(date, (date.getDay() + 6) % 7),
+            timeLabel: timeLabel(date),
+            startsAt
+          };
+          return { dateLabel: nextSlot.dateLabel, timeLabel: rangeLabel(nextSlot, durationMinutes) };
+        }
+      });
       await loadAll();
       setNotice(copy(language, recurring ? `Updated ${targets.length} future classes.` : "Class time updated.", recurring ? `已更新 ${targets.length} 节未来课程。` : "课程时间已更新。"));
     } catch {
@@ -1189,6 +1207,10 @@ export function ClubApp() {
             if (!item.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
             const created = await createBooking({
               studentAccountId: item.studentAccountId,
+              seriesId: item.seriesId,
+              recurrenceOccurrenceId: item.recurrenceOccurrenceId,
+              recurrenceOriginalStartsAt: item.recurrenceOriginalStartsAt,
+              groupClassId: item.groupClassId,
               studentName: item.studentName,
               familyName: item.familyName || item.studentName,
               studentEmail: item.studentEmail,
@@ -1225,6 +1247,10 @@ export function ClubApp() {
         if (!booking.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
         const created = await createBooking({
           studentAccountId: booking.studentAccountId,
+          seriesId: booking.seriesId,
+          recurrenceOccurrenceId: booking.recurrenceOccurrenceId,
+          recurrenceOriginalStartsAt: booking.recurrenceOriginalStartsAt,
+          groupClassId: booking.groupClassId,
           studentName: booking.studentName,
           familyName: booking.familyName,
           studentEmail: booking.studentEmail,
@@ -2434,7 +2460,7 @@ function ClubCalendar({
                     .map((booking) => (
                     <span
                       className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${isGroupClassCalendarItem(booking) ? " group-class-block" : ""}${useCoachLanes ? " coach-lane" : ""} spanning-event`}
-                      key={booking.id}
+                      key={stableBookingEntityId(booking)}
                       style={calendarEventStyle(booking, useCoachLanes, cellStart)}
                       onClick={(event) => {
                         if (!onBookingSelect) return;
@@ -2889,7 +2915,7 @@ function ClubAppView({
           </div>
           <div className="request-stack">
             {requested.map((booking) => (
-              <article className="flow-card" key={booking.id}>
+              <article className="flow-card" key={stableBookingEntityId(booking)}>
                 <div>
                   <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
                   <h3>{booking.studentName}</h3>
@@ -2924,7 +2950,7 @@ function ClubAppView({
           </div>
           <div className="request-stack complete-scroll-list">
             {confirmed.map((booking) => (
-              <article className="flow-card" key={booking.id}>
+              <article className="flow-card" key={stableBookingEntityId(booking)}>
                 <div>
                   <h3>{booking.studentName}</h3>
                   <p>
@@ -4002,7 +4028,7 @@ function BookingList({
   return (
     <div className="appointment-list compact-list">
       {bookings.map((booking) => (
-        <article className="appointment-row simple-row" key={booking.id}>
+        <article className="appointment-row simple-row" key={stableBookingEntityId(booking)}>
           <div className="avatar">
             <UserRound size={18} />
           </div>

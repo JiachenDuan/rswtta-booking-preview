@@ -3,6 +3,13 @@ export type BookingStatus = "requested" | "club_confirmed" | "change_requested" 
 export type Booking = {
   id: string;
   studentAccountId?: string;
+  /** Immutable identity of the weekly series, when this is a recurring class. */
+  seriesId?: string;
+  /** Immutable identity of the original series slot, even after a move. */
+  recurrenceOccurrenceId?: string;
+  recurrenceOriginalStartsAt?: string;
+  /** Permanent identity shared by a group block and all of its enrollments. */
+  groupClassId?: string;
   studentName: string;
   familyName: string;
   studentEmail: string;

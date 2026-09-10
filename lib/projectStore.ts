@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { assertParentCancellationAllowed } from "@/lib/cancellationPolicy";
 import { canonicalizeStudentReference, prepareStudentReferenceForCreation, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
+import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
@@ -10,6 +11,10 @@ const projectName = "Rising Stars World Table Tennis Academy";
 const tableDefinitions = {
   bookings: [
     ["studentAccountId", "text"],
+    ["seriesId", "text"],
+    ["recurrenceOccurrenceId", "text"],
+    ["recurrenceOriginalStartsAt", "datetime"],
+    ["groupClassId", "text"],
     ["studentName", "text"],
     ["studentEmail", "text"],
     ["phone", "text"],
@@ -341,6 +346,10 @@ function bookingFromRow(row: ProjectRow<Booking>): Booking {
   return {
     id: row.id,
     studentAccountId: String(row.values.studentAccountId ?? "") || undefined,
+    seriesId: String(row.values.seriesId ?? "") || undefined,
+    recurrenceOccurrenceId: String(row.values.recurrenceOccurrenceId ?? "") || undefined,
+    recurrenceOriginalStartsAt: String(row.values.recurrenceOriginalStartsAt ?? "") || undefined,
+    groupClassId: String(row.values.groupClassId ?? "") || undefined,
     studentName: String(row.values.studentName ?? "Student"),
     familyName: String(row.values.familyName ?? row.values.studentName ?? "Student"),
     studentEmail: String(row.values.studentEmail ?? ""),
@@ -982,6 +991,7 @@ function tianRecurringBookingValues(seed: RecurringClassSeed, date: Date, accoun
   return {
     id: "",
     studentAccountId: account.id,
+    ...recurrenceIdentity(importedSeriesId("Coach Tian Ye", account.id, seed.source), starts.toISOString()),
     studentName,
     familyName: studentName,
     studentEmail: String(account.values.email ?? ""),
@@ -1008,6 +1018,7 @@ function coachJordenRecurringBookingValues(seed: RecurringClassSeed, date: Date,
   return {
     id: "",
     studentAccountId: account.id,
+    ...recurrenceIdentity(importedSeriesId("Coach Jorden", account.id, seed.source), starts.toISOString()),
     studentName,
     familyName: studentName,
     studentEmail: String(account.values.email ?? ""),
@@ -1061,9 +1072,9 @@ function tianYeRecurringBookingsThroughDec31(accounts: Array<ProjectRow<AccountV
 }
 
 function virtualBookingRow(booking: Booking): ProjectRow<Booking> {
-  if (!booking.studentAccountId) throw new Error("Recurring class identity is unresolved");
+  if (!booking.studentAccountId || !booking.recurrenceOccurrenceId) throw new Error("Recurring class identity is unresolved");
   return {
-    id: `virtual-${booking.assignedCoach}-${booking.studentAccountId}-${booking.startsAt}`.replace(/\s+/g, "-"),
+    id: `virtual-${encodeURIComponent(booking.recurrenceOccurrenceId)}`,
     project_table_id: "virtual",
     values: booking,
     created_at: booking.startsAt,
@@ -1072,12 +1083,15 @@ function virtualBookingRow(booking: Booking): ProjectRow<Booking> {
 }
 
 function appendMissingRecurringBookings(rows: Array<ProjectRow<Booking>>, bookings: Booking[]) {
+  // Occurrence identity, not the mutable current time, suppresses regeneration after a move.
+  const existingOccurrenceIds = new Set(rows.map((row) => row.values.recurrenceOccurrenceId).filter(Boolean));
   const existingKeys = new Set(rows.map((row) => tianRecurringKey(row.values)));
   const virtualRows: Array<ProjectRow<Booking>> = [];
   for (const booking of bookings) {
     const key = tianRecurringKey(booking);
-    if (existingKeys.has(key)) continue;
+    if ((booking.recurrenceOccurrenceId && existingOccurrenceIds.has(booking.recurrenceOccurrenceId)) || existingKeys.has(key)) continue;
     virtualRows.push(virtualBookingRow(booking));
+    if (booking.recurrenceOccurrenceId) existingOccurrenceIds.add(booking.recurrenceOccurrenceId);
     existingKeys.add(key);
   }
   return rows.concat(virtualRows);
@@ -1092,9 +1106,11 @@ function uniqueBookingRows(rows: Array<ProjectRow<Booking>>) {
   for (const row of rows) {
     const note = String(row.values.parentNote ?? "");
     const isRecurringImport = note.includes("Imported Coach Tian Ye recurring class from Excel") || note.includes("Imported Coach Wang recurring class from Excel as Coach Jorden");
-    const key = isRecurringImport && row.values.studentAccountId
-      ? `recurring-import|${row.values.assignedCoach ?? row.values.requestedCoach ?? ""}|${row.values.studentAccountId}|${row.values.startsAt ?? ""}`
-      : row.id;
+    const key = row.values.recurrenceOccurrenceId
+      ? `occurrence|${row.values.recurrenceOccurrenceId}`
+      : isRecurringImport && row.values.studentAccountId
+        ? `recurring-import|${row.values.assignedCoach ?? row.values.requestedCoach ?? ""}|${row.values.studentAccountId}|${row.values.startsAt ?? ""}`
+        : row.id;
     if (!byKey.has(key)) byKey.set(key, row);
   }
   return [...byKey.values()];
@@ -1102,7 +1118,11 @@ function uniqueBookingRows(rows: Array<ProjectRow<Booking>>) {
 
 function canonicalBookingRows(rows: Array<ProjectRow<Booking>>, accounts: Array<ProjectRow<AccountValues>>) {
   const canonicalAccounts = identityAccounts(accounts);
-  return rows.map((row) => ({ ...row, values: canonicalizeStudentReference(row.values as Booking, canonicalAccounts) }));
+  return rows.map((row) => {
+    const booking = bookingFromRow(row);
+    const recurring = withDerivedRecurringIdentity(booking);
+    return { ...row, values: canonicalizeStudentReference(recurring, canonicalAccounts) };
+  });
 }
 
 async function listBookingRowsWithSeeds() {
@@ -1142,6 +1162,7 @@ async function findExistingActiveBooking(values: Partial<Booking>) {
 export async function createBooking(input: Omit<Booking, "id" | "status" | "createdAt" | "updatedAt">) {
   const values = {
     ...input,
+    ...(input.program === "Group class" && !input.groupClassId ? { groupClassId: `group:${crypto.randomUUID()}` } : {}),
     id: "",
     status: "requested" as BookingStatus,
     createdAt: "",
@@ -1180,6 +1201,41 @@ export async function updateBooking(
   const values = canonicalizeStudentReference(merged as Booking, identityAccounts(accountRows));
   const updated = await updateRow("bookings", id, values);
   return bookingFromRow(updated);
+}
+
+export async function rescheduleBookingsAtomically(input: {
+  bookings: Booking[];
+  selected: Booking;
+  selectedStartsAt: string;
+  scope: RecurrenceScope;
+  schedule: (startsAt: string, booking: Booking) => Pick<Booking, "dateLabel" | "timeLabel">;
+}) {
+  const planned = planRecurringReschedule(input.bookings, input.selected, input.selectedStartsAt, input.scope).map((change) => ({
+    ...change,
+    values: {
+      ...change.values,
+      ...input.schedule(change.newStartsAt, change.values),
+      assignedCoach: change.values.assignedCoach || change.values.requestedCoach
+    }
+  }));
+  if (planned.length === 0) throw new Error("No classes were selected for rescheduling");
+
+  // Do not fall back after an RPC error: the server transaction is the source of
+  // truth, and callers must see any validation failure rather than a local-only move.
+  const selectedIdentity = withDerivedRecurringIdentity(input.selected);
+  const response = await supabase.rpc("reschedule_booking_occurrences", {
+    p_changes: planned.map((change) => ({
+      id: change.id ?? null,
+      oldStartsAt: change.oldStartsAt,
+      newStartsAt: change.newStartsAt,
+      values: change.values
+    })),
+    p_scope: input.scope,
+    p_series_id: selectedIdentity.seriesId ?? null,
+    p_boundary: selectedIdentity.recurrenceOriginalStartsAt ?? selectedIdentity.startsAt
+  });
+  if (response.error) throw setupError(response.error.message);
+  return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);
 }
 
 export async function cancelBookingAsParent(id: string, studentAccountId: string, now = Date.now()) {
