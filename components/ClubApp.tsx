@@ -3945,13 +3945,15 @@ function GroupClassRequestModal({
           {existingEnrollment ? <div><dt>{copy(language, "Status", "状态")}</dt><dd>{statusText(existingEnrollment.status, language)}</dd></div> : null}
         </dl>
         {hasExistingEnrollment && cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
-        <div className="modal-actions">
+        <div className={`modal-actions ${hasExistingEnrollment && !canCancelEnrollment ? "single-action" : ""}`}>
           <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, "Close", "关闭")}</button>
           {hasExistingEnrollment ? (
-            <button className="decline" onClick={onCancelEnrollment} disabled={saving || !canCancelEnrollment}>
-              <X size={18} />
-              {saving ? copy(language, "Leaving...", "正在退出...") : copy(language, "Leave group class", "退出团体课")}
-            </button>
+            canCancelEnrollment ? (
+              <button className="decline" onClick={onCancelEnrollment} disabled={saving}>
+                <X size={18} />
+                {saving ? copy(language, "Leaving...", "正在退出...") : copy(language, "Leave group class", "退出团体课")}
+              </button>
+            ) : null
           ) : (
             <button className="primary-button" onClick={onConfirm} disabled={saving}>
               <Check size={18} />
@@ -4002,9 +4004,9 @@ function ParentClassCompleteModal({
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
         </dl>
         {canParentRequestChange(booking) && cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
-        <div className="modal-actions">
-          {canParentRequestChange(booking) ? (
-            <button className="decline" disabled={!canCancel} onClick={onCancel}>
+        <div className={`modal-actions ${!canCancel ? "single-action" : ""}`}>
+          {canCancel ? (
+            <button className="decline" onClick={onCancel}>
               <X size={18} />
               {copy(language, "Cancel class", "取消课程")}
             </button>
@@ -4063,16 +4065,16 @@ function BookingList({
           </div>
           {parentActions && canParentRequestChange(booking) ? (
             <div className="row-actions parent-actions">
-              <button
-                className="decline"
-                type="button"
-                aria-label={copy(language, isGroupClassJoinRequest(booking) ? "Leave group class" : "Cancel class", isGroupClassJoinRequest(booking) ? "退出团体课" : "取消课程")}
-                disabled={Boolean(cancellationBlockReason)}
-                title={cancellationBlockReason ? parentCancellationWarning(cancellationBlockReason, language) : undefined}
-                onClick={() => onCancel?.(booking)}
-              >
-                <X size={15} />
-              </button>
+              {!cancellationBlockReason ? (
+                <button
+                  className="decline"
+                  type="button"
+                  aria-label={copy(language, isGroupClassJoinRequest(booking) ? "Leave group class" : "Cancel class", isGroupClassJoinRequest(booking) ? "退出团体课" : "取消课程")}
+                  onClick={() => onCancel?.(booking)}
+                >
+                  <X size={15} />
+                </button>
+              ) : null}
               {cancellationBlockReason ? <span className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</span> : null}
             </div>
           ) : null}

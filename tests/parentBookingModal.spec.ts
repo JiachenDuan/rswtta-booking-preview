@@ -20,13 +20,15 @@ test("Class Actions modal replaces the bottom text Close with one accessible top
   expect(classActionsModal.match(/aria-label="Close"/g)).toHaveLength(1);
 });
 
-test("Class Actions keeps bilingual Cancel class and Complete actions in the two-button footer", () => {
-  expect(classActionsModal).toContain('className="modal-actions"');
+test("Class Actions hides blocked cancellation while preserving the bilingual actions and Complete footer", () => {
+  expect(classActionsModal).toContain('className={`modal-actions ${!canCancel ? "single-action" : ""}`}');
+  expect(classActionsModal).toContain('{canCancel ? (');
   expect(classActionsModal).toContain('copy(language, "Cancel class", "取消课程")');
   expect(classActionsModal).toContain('copy(language, "Complete", "完成")');
-  expect(classActionsModal).toContain("disabled={!canCancel} onClick={onCancel}");
+  expect(classActionsModal).not.toContain("disabled={!canCancel}");
   expect(classActionsModal).toContain("disabled={!canComplete} onClick={onComplete}");
   expect(css).toMatch(/\.modal-actions \{[\s\S]*?grid-template-columns: 1fr 1fr;[\s\S]*?gap: 10px;/);
+  expect(css).toMatch(/\.modal-actions\.single-action \{[\s\S]*?grid-template-columns: 1fr;/);
 });
 
 test("close control has a 44px target, safe title spacing, and visible keyboard focus", () => {

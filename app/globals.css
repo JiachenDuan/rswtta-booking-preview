@@ -1659,6 +1659,10 @@ button.student-result.selected {
   gap: 10px;
 }
 
+.modal-actions.single-action {
+  grid-template-columns: 1fr;
+}
+
 .modal-actions.class-actions {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
 }
