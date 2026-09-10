@@ -41,8 +41,8 @@ import {
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { isParentCancellationAllowed, PARENT_CANCELLATION_WARNING } from "@/lib/cancellationPolicy";
-import { serializeCsvRows } from "@/lib/classReport";
-import { canonicalizeStudentReference, partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
+import { classReportAuditRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
+import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
@@ -567,12 +567,6 @@ function classTypeText(booking: Booking, language: Language = "en") {
 
 function isCsvGroupClass(booking: Booking) {
   return isGroupClassType(booking);
-}
-
-function shouldIncludeInClassExport(booking: Booking) {
-  if (isBlockedTime(booking) || isGroupClassBlock(booking)) return false;
-  if (isCsvGroupClass(booking)) return booking.status === "club_confirmed" || booking.status === "coach_confirmed";
-  return booking.status === "club_confirmed" || booking.status === "coach_confirmed";
 }
 
 function eventHeightStyle(hours: number) {
@@ -2627,20 +2621,21 @@ function ClubAppView({
       return;
     }
 
-    const canonicalExportBookings = bookings.map((booking) => canonicalizeStudentReference(booking, studentDirectory));
-    const inPeriod = canonicalExportBookings.filter((booking) => {
-      const startsAt = new Date(booking.startsAt);
-      const matchesStudent = resolvedExportStudent
-        ? booking.studentAccountId === resolvedExportStudent.id
-        : true;
-      return (
-        startsAt >= periodStart &&
-        startsAt <= periodEnd &&
-        matchesStudent &&
-        shouldIncludeInClassExport(booking)
-      );
-    });
-    const { linked: linkedExportBookings, unresolvedLegacy: unresolvedLegacyBookings } = partitionStudentReferencesByIdentity(inPeriod);
+    let reportPlan;
+    try {
+      reportPlan = planClassReportExport({
+        bookings,
+        accounts: studentDirectory,
+        periodStart,
+        periodEnd,
+        studentAccountId: resolvedExportStudent?.id
+      });
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : "Class report reconciliation failed.");
+      return;
+    }
+    const linkedExportBookings = reportPlan.linkedBookings;
+    const unresolvedLegacyBookings = reportPlan.unresolvedBookings;
 
     const studentsByKey = new Map<
       string,
@@ -2693,10 +2688,12 @@ function ClubAppView({
         [`${title} total`, "", sectionBookings.length, hoursText(totalHours)],
         [],
         ["Class details"],
-        ["Date", "Time", "Hours", "Coach", "Status", "Parent note"],
+        ["Booking ID", "Student account ID", "Date", "Time", "Hours", "Coach", "Status", "Parent note"],
         ...sectionBookings
           .sort((left, right) => new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime())
           .map((booking) => [
+            booking.id,
+            booking.studentAccountId ?? "",
             booking.dateLabel,
             booking.timeLabel,
             bookingHoursLabel(booking),
@@ -2723,27 +2720,13 @@ function ClubAppView({
         ["Student total", "", student.bookings.length, hoursText(totalHours)]
       ];
     });
-    const unresolvedLegacyRows = unresolvedLegacyBookings.length
-      ? [
-          [],
-          ["UNRESOLVED LEGACY CLASS ROWS"],
-          ["These rows are display snapshots only and are not linked to a student account."],
-          ["Booking ID", "Student snapshot", "Date", "Time", "Coach", "Status"],
-          ...unresolvedLegacyBookings.map((booking) => [
-            booking.id,
-            booking.studentName,
-            booking.dateLabel,
-            booking.timeLabel,
-            coachDisplayName(booking.assignedCoach || booking.requestedCoach),
-            statusText(booking.status)
-          ])
-        ]
-      : [];
+    const unresolvedLegacyRows = unresolvedClassReportRows(unresolvedLegacyBookings);
 
     const csv = serializeCsvRows([
       ["RSWTTA class report", periodTitle],
       ["Date range", `${exportStartDate} to ${exportEndDate}`],
       ["Student filter", exportStudentLabel],
+      ...classReportAuditRows(reportPlan, Boolean(resolvedExportStudent)),
       [],
       ["Class details by student"],
       ...studentDetailRows,
@@ -2752,6 +2735,11 @@ function ClubAppView({
 
     const filenameStudent = (resolvedExportStudent?.studentName || exportStudentQuery.trim()).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
     downloadTextFile(`rswtta-classes${filenameStudent ? `-${filenameStudent}` : ""}-${exportStartDate}-to-${exportEndDate}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
+    onNotice(
+      resolvedExportStudent && reportPlan.unresolvedInPeriodCount
+        ? copy(language, `Exported ${reportPlan.exportedLinkedCount} linked classes. ${reportPlan.unresolvedInPeriodCount} unresolved in-period rows were not attributed by name.`, `已导出 ${reportPlan.exportedLinkedCount} 节已关联课程。${reportPlan.unresolvedInPeriodCount} 条身份未解决的区间内记录未按姓名归属。`)
+        : copy(language, `Exported ${reportPlan.eligibleSourceCount} classes: ${reportPlan.exportedLinkedCount} linked + ${reportPlan.exportedUnresolvedCount} unresolved.`, `已导出 ${reportPlan.eligibleSourceCount} 节课程：${reportPlan.exportedLinkedCount} 条已关联 + ${reportPlan.exportedUnresolvedCount} 条未解决。`)
+    );
   }
 
   return (
