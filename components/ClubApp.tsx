@@ -2071,6 +2071,14 @@ function ParentApp({
       if (canonical) setSelectedParentBooking(canonical);
     }
   }, [bookings]);
+  useEffect(() => {
+    if (
+      selectedParentBooking &&
+      (!canParentRequestChange(selectedParentBooking) || parentCancellationBlockReason(selectedParentBooking, currentTime.getTime()))
+    ) {
+      setSelectedParentBooking(null);
+    }
+  }, [currentTime, selectedParentBooking]);
   const [classStatusFilter, setClassStatusFilter] = useState<"requested" | "club_confirmed" | "coach_confirmed" | "cancelled">("requested");
   const [classStartDate, setClassStartDate] = useState(() => dateInputValue(calendarDays[0]?.date ?? new Date()));
   const [classEndDate, setClassEndDate] = useState(() => dateInputValue(calendarDays[calendarDays.length - 1]?.date ?? addDays(new Date(), 6)));
@@ -2159,12 +2167,16 @@ function ParentApp({
             blockUnavailable={parentCalendarTab !== "My calendar"}
             privacyMode
             parentMyCalendar={parentCalendarTab === "My calendar"}
+            isBookingActionable={(booking) =>
+              isGroupClassBlock(booking) || (canParentRequestChange(booking) && !parentCancellationBlockReason(booking, currentTime.getTime()))
+            }
             onSlotChange={onSlotChange}
             onBookingSelect={(booking) => {
               if (isGroupClassBlock(booking)) {
                 setSelectedGroupClass(booking);
                 return;
               }
+              if (!canParentRequestChange(booking) || parentCancellationBlockReason(booking, currentTime.getTime())) return;
               setSelectedParentBooking(booking);
             }}
           />
@@ -2346,6 +2358,7 @@ function ClubCalendar({
   blockUnavailable = false,
   privacyMode = false,
   parentMyCalendar = false,
+  isBookingActionable,
   onSlotChange,
   onBookingSelect
 }: {
@@ -2362,6 +2375,7 @@ function ClubCalendar({
   blockUnavailable?: boolean;
   privacyMode?: boolean;
   parentMyCalendar?: boolean;
+  isBookingActionable?: (booking: Booking) => boolean;
   onSlotChange: (value: CalendarSlot) => void;
   onBookingSelect?: (booking: Booking) => void;
 }) {
@@ -2424,7 +2438,8 @@ function ClubCalendar({
             const blockedUnavailable = unavailableDisplayBooking && isBlockedTime(unavailableDisplayBooking) ? unavailableDisplayBooking : undefined;
             const unavailable = blockUnavailable && unavailableBookings.length > 0;
             const useCoachLanes = visibleCoachTab === "Combined" && slotBookings.length > 1;
-            const actionable = Boolean(onBookingSelect && selectableBooking && !useCoachLanes);
+            const selectedBookingIsActionable = Boolean(selectableBooking && (!isBookingActionable || isBookingActionable(selectableBooking)));
+            const actionable = Boolean(onBookingSelect && selectedBookingIsActionable && !useCoachLanes);
             const startTotal = startHour * 60 + startMinute;
             const endTotal = nextHour * 60 + nextMinute;
             const currentTotal = currentTime.getHours() * 60 + currentTime.getMinutes();
@@ -2440,11 +2455,11 @@ function ClubCalendar({
                   actionable ? "actionable" : ""
                 ].filter(Boolean).join(" ")}
                 key={startsAt}
-                disabled={unavailable && !actionable}
+                disabled={(unavailable && !actionable) || (parentMyCalendar && hasVisibleBooking && !actionable)}
                 onClick={() => {
                   if (unavailable && !actionable) return;
                   if (useCoachLanes) return;
-                  if (onBookingSelect && selectableBooking) {
+                  if (onBookingSelect && selectableBooking && selectedBookingIsActionable) {
                     onBookingSelect(selectableBooking);
                     return;
                   }
@@ -2467,11 +2482,10 @@ function ClubCalendar({
                       className={`calendar-booking ${booking.status}${isBlockedTime(booking) ? " blocked-time" : ""}${isGroupClassCalendarItem(booking) ? " group-class-block" : ""}${useCoachLanes ? " coach-lane" : ""} spanning-event`}
                       key={stableBookingEntityId(booking)}
                       style={calendarEventStyle(booking, useCoachLanes, cellStart)}
-                      onClick={(event) => {
-                        if (!onBookingSelect) return;
+                      onClick={onBookingSelect && (!isBookingActionable || isBookingActionable(booking)) ? (event) => {
                         event.stopPropagation();
                         onBookingSelect(booking);
-                      }}
+                      } : undefined}
                     >
                       <span className={`calendar-status-badge ${booking.status}`}>
                         {isBlockedTime(booking) ? copy(language, "Blocked", "不可用") : isGroupClassType(booking) ? copy(language, "Group", "团体") : calendarStatusText(booking.status, language)}
@@ -4063,19 +4077,16 @@ function BookingList({
             </span>
             <strong className={booking.status}>{statusText(booking.status, language)}</strong>
           </div>
-          {parentActions && canParentRequestChange(booking) ? (
+          {parentActions && canParentRequestChange(booking) && !cancellationBlockReason ? (
             <div className="row-actions parent-actions">
-              {!cancellationBlockReason ? (
-                <button
-                  className="decline"
-                  type="button"
-                  aria-label={copy(language, isGroupClassJoinRequest(booking) ? "Leave group class" : "Cancel class", isGroupClassJoinRequest(booking) ? "退出团体课" : "取消课程")}
-                  onClick={() => onCancel?.(booking)}
-                >
-                  <X size={15} />
-                </button>
-              ) : null}
-              {cancellationBlockReason ? <span className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</span> : null}
+              <button
+                className="decline"
+                type="button"
+                aria-label={copy(language, isGroupClassJoinRequest(booking) ? "Leave group class" : "Cancel class", isGroupClassJoinRequest(booking) ? "退出团体课" : "取消课程")}
+                onClick={() => onCancel?.(booking)}
+              >
+                <X size={15} />
+              </button>
             </div>
           ) : null}
         </article>

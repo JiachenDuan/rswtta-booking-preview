@@ -11,6 +11,8 @@ const groupRequestModal = source.slice(
   source.indexOf("function GroupClassRequestModal"),
   source.indexOf("function ParentClassCompleteModal")
 );
+const parentApp = source.slice(source.indexOf("function ParentApp"), source.indexOf("function CalendarControls"));
+const bookingList = source.slice(source.indexOf("function BookingList"));
 
 test("Class Actions modal replaces the bottom text Close with one accessible top-right ×", () => {
   expect(classActionsModal).toContain('className="confirm-modal class-action-modal"');
@@ -44,6 +46,14 @@ test("close control has a 44px target, safe title spacing, and visible keyboard 
   expect(css).toMatch(/\.class-action-head \{[\s\S]*?padding-right: 52px;/);
   expect(focusRule).toContain("outline: 3px solid var(--gold)");
   expect(focusRule).toContain("outline-offset: 3px");
+});
+
+test("blocked and completed Parent App cards are read-only without warnings or modal affordances", () => {
+  expect(parentApp).toContain("isBookingActionable={(booking) =>");
+  expect(parentApp).toContain("canParentRequestChange(booking) && !parentCancellationBlockReason(booking, currentTime.getTime())");
+  expect(parentApp).toContain("if (!canParentRequestChange(booking) || parentCancellationBlockReason(booking, currentTime.getTime())) return;");
+  expect(bookingList).toContain("parentActions && canParentRequestChange(booking) && !cancellationBlockReason");
+  expect(bookingList).not.toContain("parentCancellationWarning(cancellationBlockReason, language)");
 });
 
 test("other parent booking dialogs remain outside the screenshot-scoped change", () => {
