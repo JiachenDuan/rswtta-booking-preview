@@ -1663,6 +1663,11 @@ button.student-result.selected {
   grid-template-columns: 1fr;
 }
 
+.class-action-modal .modal-actions button {
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .modal-actions.class-actions {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
 }
