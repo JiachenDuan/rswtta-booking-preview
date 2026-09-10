@@ -22,6 +22,8 @@ import {
   X
 } from "lucide-react";
 import {
+  authoritativeCurrentTime,
+  cancelBookingAsClub,
   cancelBookingAsParent,
   completeParentProfileSetup,
   createActivityLog,
@@ -41,7 +43,7 @@ import {
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
-import { isParentCancellationAllowed, PARENT_CANCELLATION_WARNING } from "@/lib/cancellationPolicy";
+import { isParentCancellationAllowed, parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
@@ -675,6 +677,7 @@ export function ClubApp() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [saving, setSaving] = useState(false);
   const realtimeRefreshTimer = useRef<number | null>(null);
+  const authoritativeClockOffsetMs = useRef(0);
   const calendarDays = useMemo(() => weekDays(visibleWeekStart), [visibleWeekStart]);
   const canGoPrevious = addDays(visibleWeekStart, -7) >= startOfWeek(minCalendarDate);
   const canGoNext = addDays(visibleWeekStart, 7) <= startOfWeek(maxCalendarDate);
@@ -785,7 +788,15 @@ export function ClubApp() {
 
   async function loadAll() {
     try {
-      const [nextBookings, nextBills, nextStudents, nextActivityLogs] = await Promise.all([listBookings(), listBillNotifications(), listParentAccounts(), listActivityLogs()]);
+      const [nextBookings, nextBills, nextStudents, nextActivityLogs, databaseTime] = await Promise.all([
+        listBookings(),
+        listBillNotifications(),
+        listParentAccounts(),
+        listActivityLogs(),
+        authoritativeCurrentTime()
+      ]);
+      authoritativeClockOffsetMs.current = databaseTime.getTime() - Date.now();
+      setCurrentTime(databaseTime);
       setBookings(nextBookings);
       setBills(nextBills);
       setStudents(nextStudents);
@@ -906,44 +917,35 @@ export function ClubApp() {
   }
 
   async function cancelParentClass(booking: Booking) {
-    if (!isParentCancellationAllowed(booking)) {
-      setNotice(PARENT_CANCELLATION_WARNING);
+    const blockReason = parentCancellationBlockReason(booking, currentTime.getTime());
+    if (blockReason) {
+      setNotice(parentCancellationWarning(blockReason, language));
       return false;
     }
 
     setSaving(true);
     setNotice(copy(language, "Cancelling class...", "正在取消课程..."));
     try {
-      let storedBooking = booking;
-      if (booking.id.startsWith("virtual-")) {
-        if (!booking.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
-        storedBooking = await createBooking({
-          studentAccountId: booking.studentAccountId,
-          seriesId: booking.seriesId,
-          recurrenceOccurrenceId: booking.recurrenceOccurrenceId,
-          recurrenceOriginalStartsAt: booking.recurrenceOriginalStartsAt,
-          groupClassId: booking.groupClassId,
-          studentName: booking.studentName,
-          familyName: booking.familyName || booking.studentName,
-          studentEmail: booking.studentEmail,
-          phone: booking.phone,
-          requestedCoach: booking.requestedCoach,
-          assignedCoach: booking.assignedCoach,
-          program: booking.program,
-          dateLabel: booking.dateLabel,
-          timeLabel: booking.timeLabel,
-          startsAt: booking.startsAt,
-          priceCents: booking.priceCents,
-          parentNote: `${booking.parentNote} Cancelled by parent/student.`
-        });
+      if (booking.id.startsWith("virtual-") && !booking.studentAccountId) {
+        throw new Error("This recurring class has unresolved student identity.");
       }
-      const cancelled = await cancelBookingAsParent(storedBooking.id, parentSession?.id ?? "");
+      const cancelled = await cancelBookingAsParent(booking, parentSession?.id ?? "");
       await recordClassActivity("cancelled", [cancelled], cancelled, "parent/student");
       await loadAll();
       setNotice(copy(language, isGroupClassJoinRequest(booking) ? "Left group class." : "Class cancelled.", isGroupClassJoinRequest(booking) ? "已退出团体课。" : "课程已取消。"));
       return true;
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : copy(language, "Could not cancel class.", "无法取消课程。"));
+      let message = error instanceof Error ? error.message : copy(language, "Could not cancel class.", "无法取消课程。");
+      try {
+        const databaseTime = await authoritativeCurrentTime();
+        authoritativeClockOffsetMs.current = databaseTime.getTime() - Date.now();
+        setCurrentTime(databaseTime);
+        const authoritativeBlockReason = parentCancellationBlockReason(booking, databaseTime.getTime());
+        if (authoritativeBlockReason) message = parentCancellationWarning(authoritativeBlockReason, language);
+      } catch {
+        // Preserve the original mutation error when the clock refresh is unavailable.
+      }
+      setNotice(message);
       return false;
     } finally {
       setSaving(false);
@@ -1137,7 +1139,8 @@ export function ClubApp() {
   ) {
     setNotice(`${copy(language, "Updating status to", "正在更新状态为")} ${statusText(status, language)}...`);
     try {
-      await updateStoredBooking(id, { status, assignedCoach, ...schedule });
+      if (status === "cancelled") await cancelBookingAsClub(id);
+      else await updateStoredBooking(id, { status, assignedCoach, ...schedule });
       await loadAll();
       setNotice(`${copy(language, "Saved", "已保存")}: ${statusText(status, language)}.`);
     } catch {
@@ -1224,9 +1227,9 @@ export function ClubApp() {
               priceCents: item.priceCents,
               parentNote: `${item.parentNote} Cancelled by club.`
             });
-            return updateStoredBooking(created.id, { status: "cancelled", assignedCoach });
+            return cancelBookingAsClub(created.id);
           }
-          return updateStoredBooking(item.id, { status: "cancelled", assignedCoach });
+          return cancelBookingAsClub(item.id);
         })
       );
       await recordClassActivity("cancelled", cancelled, cancelled[0] ?? booking);
@@ -1350,7 +1353,7 @@ export function ClubApp() {
       .channel("rswtta-project-rows-push")
       .on("postgres_changes", { event: "*", schema: "public", table: "project_rows" }, refreshFromPush)
       .subscribe();
-    const clock = window.setInterval(() => setCurrentTime(new Date()), 60000);
+    const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
     return () => {
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       supabase.removeChannel(realtimeChannel);
@@ -2250,11 +2253,12 @@ function ParentApp({
               {copy(language, "Showing", "显示")} {filteredClassBookings.length} {copy(language, "classes", "节课")}
             </p>
           </div>
-          <BookingList bookings={filteredClassBookings} parentActions language={language} onChangeRequest={onChangeRequest} onCancel={onCancel} onComplete={onComplete} />
+          <BookingList bookings={filteredClassBookings} parentActions language={language} now={currentTime.getTime()} onChangeRequest={onChangeRequest} onCancel={onCancel} onComplete={onComplete} />
           {selectedParentBooking ? (
             <ParentClassCompleteModal
               booking={selectedParentBooking}
               language={language}
+              now={currentTime.getTime()}
               onClose={() => setSelectedParentBooking(null)}
               onComplete={() => {
                 onComplete(selectedParentBooking);
@@ -2273,6 +2277,7 @@ function ParentApp({
               studentName={studentName}
               language={language}
               saving={saving}
+              now={currentTime.getTime()}
               onClose={() => setSelectedGroupClass(null)}
               onConfirm={async () => {
                 const saved = await onGroupClassRequest(selectedGroupClass);
@@ -3903,6 +3908,7 @@ function GroupClassRequestModal({
   studentName,
   language,
   saving,
+  now,
   onClose,
   onConfirm,
   onCancelEnrollment
@@ -3912,12 +3918,14 @@ function GroupClassRequestModal({
   studentName: string;
   language: Language;
   saving: boolean;
+  now: number;
   onClose: () => void;
   onConfirm: () => void;
   onCancelEnrollment: () => void;
 }) {
   const hasExistingEnrollment = Boolean(existingEnrollment);
-  const canCancelEnrollment = Boolean(existingEnrollment && isParentCancellationAllowed(existingEnrollment));
+  const cancellationBlockReason = existingEnrollment ? parentCancellationBlockReason(existingEnrollment, now) : null;
+  const canCancelEnrollment = Boolean(existingEnrollment && !cancellationBlockReason);
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="group-class-request-title">
@@ -3936,7 +3944,7 @@ function GroupClassRequestModal({
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
           {existingEnrollment ? <div><dt>{copy(language, "Status", "状态")}</dt><dd>{statusText(existingEnrollment.status, language)}</dd></div> : null}
         </dl>
-        {hasExistingEnrollment && !canCancelEnrollment ? <p className="modal-warning">{PARENT_CANCELLATION_WARNING}</p> : null}
+        {hasExistingEnrollment && cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
         <div className="modal-actions">
           <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, "Close", "关闭")}</button>
           {hasExistingEnrollment ? (
@@ -3959,18 +3967,21 @@ function GroupClassRequestModal({
 function ParentClassCompleteModal({
   booking,
   language,
+  now,
   onClose,
   onComplete,
   onCancel
 }: {
   booking: Booking;
   language: Language;
+  now: number;
   onClose: () => void;
   onComplete: () => void;
   onCancel: () => void;
 }) {
   const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking);
-  const canCancel = canParentRequestChange(booking) && isParentCancellationAllowed(booking);
+  const cancellationBlockReason = parentCancellationBlockReason(booking, now);
+  const canCancel = canParentRequestChange(booking) && !cancellationBlockReason;
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
@@ -3990,7 +4001,7 @@ function ParentClassCompleteModal({
           <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
         </dl>
-        {canParentRequestChange(booking) && !canCancel ? <p className="modal-warning">{PARENT_CANCELLATION_WARNING}</p> : null}
+        {canParentRequestChange(booking) && cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
         <div className="modal-actions">
           {canParentRequestChange(booking) ? (
             <button className="decline" disabled={!canCancel} onClick={onCancel}>
@@ -4012,6 +4023,7 @@ function BookingList({
   bookings,
   parentActions,
   language,
+  now,
   onChangeRequest,
   onCancel,
   onComplete
@@ -4019,6 +4031,7 @@ function BookingList({
   bookings: Booking[];
   parentActions?: boolean;
   language: Language;
+  now: number;
   onChangeRequest?: (booking: Booking) => void;
   onCancel?: (booking: Booking) => void;
   onComplete?: (booking: Booking) => void;
@@ -4029,7 +4042,9 @@ function BookingList({
 
   return (
     <div className="appointment-list compact-list">
-      {bookings.map((booking) => (
+      {bookings.map((booking) => {
+        const cancellationBlockReason = parentCancellationBlockReason(booking, now);
+        return (
         <article className="appointment-row simple-row" key={stableBookingEntityId(booking)}>
           <div className="avatar">
             <UserRound size={18} />
@@ -4052,17 +4067,18 @@ function BookingList({
                 className="decline"
                 type="button"
                 aria-label={copy(language, isGroupClassJoinRequest(booking) ? "Leave group class" : "Cancel class", isGroupClassJoinRequest(booking) ? "退出团体课" : "取消课程")}
-                disabled={!isParentCancellationAllowed(booking)}
-                title={!isParentCancellationAllowed(booking) ? PARENT_CANCELLATION_WARNING : undefined}
+                disabled={Boolean(cancellationBlockReason)}
+                title={cancellationBlockReason ? parentCancellationWarning(cancellationBlockReason, language) : undefined}
                 onClick={() => onCancel?.(booking)}
               >
                 <X size={15} />
               </button>
-              {!isParentCancellationAllowed(booking) ? <span className="modal-warning">{PARENT_CANCELLATION_WARNING}</span> : null}
+              {cancellationBlockReason ? <span className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</span> : null}
             </div>
           ) : null}
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }

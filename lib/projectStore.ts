@@ -1,6 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { assertParentCancellationAllowed } from "@/lib/cancellationPolicy";
-import { canonicalizeStudentReference, prepareStudentReferenceForCreation, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
+import { canonicalizeStudentReference, prepareStudentReferenceForCreation } from "@/lib/studentIdentity";
 import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
@@ -1238,21 +1237,52 @@ export async function rescheduleBookingsAtomically(input: {
   return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);
 }
 
-export async function cancelBookingAsParent(id: string, studentAccountId: string, now = Date.now()) {
-  const rows = await listRows<Booking>("bookings");
-  const row = rows.find((item) => item.id === id);
-  if (!row) throw new Error("Booking not found in shared club view");
-  if (!studentReferenceBelongsToAccount(row.values, studentAccountId)) {
-    throw new Error("This class does not belong to the signed-in student.");
-  }
+function virtualCancellationValues(booking: Booking) {
+  return {
+    studentAccountId: booking.studentAccountId,
+    seriesId: booking.seriesId,
+    recurrenceOccurrenceId: booking.recurrenceOccurrenceId,
+    recurrenceOriginalStartsAt: booking.recurrenceOriginalStartsAt,
+    groupClassId: booking.groupClassId,
+    studentName: booking.studentName,
+    familyName: booking.familyName || booking.studentName,
+    studentEmail: booking.studentEmail,
+    phone: booking.phone,
+    requestedCoach: booking.requestedCoach,
+    assignedCoach: booking.assignedCoach,
+    program: booking.program,
+    dateLabel: booking.dateLabel,
+    timeLabel: booking.timeLabel,
+    startsAt: booking.startsAt,
+    priceCents: booking.priceCents,
+    status: booking.status,
+    parentNote: booking.parentNote
+  };
+}
 
-  assertParentCancellationAllowed({ startsAt: String(row.values.startsAt ?? "") }, now);
-  if (row.values.status !== "requested" && row.values.status !== "club_confirmed") {
-    throw new Error("This class can no longer be cancelled online.");
-  }
+export async function authoritativeCurrentTime() {
+  const response = await supabase.rpc("authoritative_current_time");
+  if (response.error) throw setupError(response.error.message);
+  const value = new Date(String(response.data));
+  if (!Number.isFinite(value.getTime())) throw new Error("Database returned an invalid current time");
+  return value;
+}
 
-  const updated = await updateRow("bookings", id, { ...row.values, status: "cancelled" as BookingStatus });
-  return bookingFromRow(updated);
+export async function cancelBookingAsParent(booking: Booking, studentAccountId: string) {
+  const isVirtual = booking.id.startsWith("virtual-");
+  const response = await supabase.rpc("cancel_booking_as_parent", {
+    p_booking_id: isVirtual ? null : booking.id,
+    p_student_account_id: studentAccountId,
+    p_virtual_values: isVirtual ? virtualCancellationValues(booking) : null
+  });
+  if (response.error) throw setupError(response.error.message);
+  return bookingFromRow(response.data as ProjectRow<Booking>);
+}
+
+export async function cancelBookingAsClub(id: string) {
+  const response = await supabase.rpc("cancel_booking_as_club", { p_booking_id: id });
+  if (response.error) throw setupError(response.error.message);
+  return bookingFromRow(response.data as ProjectRow<Booking>);
 }
 
 export async function listBillNotifications() {
