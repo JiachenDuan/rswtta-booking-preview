@@ -41,7 +41,7 @@ import {
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { isParentCancellationAllowed, PARENT_CANCELLATION_WARNING } from "@/lib/cancellationPolicy";
-import { classReportAuditRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
+import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
@@ -2640,6 +2640,7 @@ function ClubAppView({
     const studentsByKey = new Map<
       string,
       {
+        studentAccountId: string;
         studentName: string;
         bookings: Booking[];
       }
@@ -2650,6 +2651,7 @@ function ClubAppView({
       const existing =
         studentsByKey.get(key) ??
         {
+          studentAccountId: key,
           studentName: booking.studentName,
           bookings: []
         };
@@ -2712,6 +2714,7 @@ function ClubAppView({
         [],
         ["========================================"],
         [`STUDENT: ${student.studentName}`],
+        [`STUDENT ACCOUNT ID: ${student.studentAccountId}`],
         ["========================================"],
         ...classSectionRows("PRIVATE CLASSES", privateBookings),
         [],
@@ -2727,6 +2730,7 @@ function ClubAppView({
       ["Date range", `${exportStartDate} to ${exportEndDate}`],
       ["Student filter", exportStudentLabel],
       ...classReportAuditRows(reportPlan, Boolean(resolvedExportStudent)),
+      ...classReportBillingReconciliationRows(reportPlan),
       [],
       ["Class details by student"],
       ...studentDetailRows,

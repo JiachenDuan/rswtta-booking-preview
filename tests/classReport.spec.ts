@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   assertLosslessClassReport,
   classReportAuditRows,
+  classReportBillingReconciliationRows,
   planClassReportExport,
   serializeCsvRows,
   unresolvedClassReportRows
@@ -80,6 +81,11 @@ test("all-students export reconciles every eligible confirmed and completed clas
   expect(plan.eligibleSourceCount).toBe(plan.exportedLinkedCount + plan.exportedUnresolvedCount);
   const ids = [...plan.linkedBookings, ...plan.unresolvedBookings].map((item) => item.id);
   expect(new Set(ids).size).toBe(ids.length);
+  expect(plan.linkedStudentTotals).toEqual([
+    { studentAccountId: "avery-account", studentName: "Avery Johnson", confirmedCount: 1, completedCount: 1, totalCount: 2 },
+    { studentAccountId: "other-account", studentName: "Morgan Lee", confirmedCount: 0, completedCount: 1, totalCount: 1 }
+  ]);
+  expect(plan.linkedStudentTotals.reduce((sum, student) => sum + student.totalCount, 0) + plan.exportedUnresolvedCount).toBe(plan.eligibleSourceCount);
 });
 
 test("linked export rows use the canonical renamed account name", () => {
@@ -104,11 +110,16 @@ test("unresolved CSV section is explicit and carries every required audit field"
   const plan = planClassReportExport({ bookings: source, accounts, periodStart, periodEnd });
   const csv = serializeCsvRows([
     ...classReportAuditRows(plan, false),
+    ...classReportBillingReconciliationRows(plan),
     ...unresolvedClassReportRows(plan.unresolvedBookings)
   ]);
   expect(csv).toContain("Eligible source rows,5");
   expect(csv).toContain("Reconciliation,5 = 3 + 2");
-  expect(csv).toContain("UNRESOLVED LEGACY CLASS ROWS");
+  expect(csv).toContain("BILLING RECONCILIATION BY STABLE STUDENT ACCOUNT");
+  expect(csv).toContain("avery-account,Avery Johnson,1,1,2");
+  expect(csv).toContain("other-account,Morgan Lee,0,1,1");
+  expect(csv).toContain("Billing reconciliation,,,,3 + 2 = 5");
+  expect(csv).toContain("UNRESOLVED BILLING RECONCILIATION QUEUE");
   expect(csv).toContain("Booking ID,Student snapshot,Date,Time,Coach,Status");
   expect(csv).toContain('unresolved-confirmed,Morgan,"Sep 8, 2026",5:00 PM,Coach Tian Ye,club_confirmed');
   expect(csv).toContain('unresolved-completed,Morgan,"Sep 8, 2026",5:00 PM,Coach Tian Ye,coach_confirmed');
@@ -134,6 +145,9 @@ test("duplicate eligible booking IDs fail the lossless export assertion", () => 
     unresolvedInPeriodCount: 0,
     confirmedCount: 1,
     completedCount: 0,
+    unresolvedConfirmedCount: 0,
+    unresolvedCompletedCount: 0,
+    linkedStudentTotals: [{ studentAccountId: "avery-account", studentName: "Avery Johnson", confirmedCount: 1, completedCount: 0, totalCount: 1 }],
     linkedBookings: [source[0]],
     unresolvedBookings: []
   })).toThrow("reconciliation failed");
