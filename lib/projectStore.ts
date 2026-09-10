@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { assertParentCancellationAllowed } from "@/lib/cancellationPolicy";
-import { canonicalizeStudentReference, prepareStudentReferenceForCreation, resolveStudentAccountForSeed } from "@/lib/studentIdentity";
+import { canonicalizeStudentReference, prepareStudentReferenceForCreation, resolveStudentAccountForSeed, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
@@ -315,21 +315,8 @@ function studentNameKey(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function uniqueAccountRowsByStudentName(rows: Array<ProjectRow<AccountValues>>) {
-  const byName = new Map<string, ProjectRow<AccountValues>>();
-  for (const row of rows) {
-    const key = studentNameKey(row.values.studentName);
-    if (!key) continue;
-    const existing = byName.get(key);
-    if (!existing) {
-      byName.set(key, row);
-      continue;
-    }
-    const existingHasContact = Boolean(String(existing.values.email ?? "") || String(existing.values.phone ?? ""));
-    const rowHasContact = Boolean(String(row.values.email ?? "") || String(row.values.phone ?? ""));
-    if (!existingHasContact && rowHasContact) byName.set(key, row);
-  }
-  return [...byName.values()];
+function uniqueAccountRowsById(rows: Array<ProjectRow<AccountValues>>) {
+  return [...new Map(rows.map((row) => [row.id, row])).values()];
 }
 
 function normalizeCoachName(value: unknown) {
@@ -722,7 +709,7 @@ export async function loginParentAccount(identifier: string, password: string, o
 
 export async function listParentAccounts() {
   const rows = await listAccountRowsWithSeeds();
-  return uniqueAccountRowsByStudentName(rows).map(accountFromRow).sort((left, right) => left.studentName.localeCompare(right.studentName));
+  return uniqueAccountRowsById(rows).map(accountFromRow).sort((left, right) => left.studentName.localeCompare(right.studentName));
 }
 
 export async function createClubStudentAccount(input: { studentName: string; email?: string; phone?: string }) {
@@ -956,8 +943,9 @@ function nextDateForDay(start: Date, day: number) {
 }
 
 function bookingNaturalKey(values: Partial<Booking>) {
+  const isSystemCalendarRow = values.program === "Unavailable" || values.program === "Group class";
   return [
-    values.studentAccountId ? `account:${values.studentAccountId}` : `legacy:${String(values.studentName ?? "").trim().toLowerCase()}`,
+    values.studentAccountId ? `account:${values.studentAccountId}` : isSystemCalendarRow ? `system:${values.program}` : "unresolved-legacy",
     normalizeCoachName(values.assignedCoach ?? values.requestedCoach ?? "").trim().toLowerCase(),
     String(values.startsAt ?? "").trim()
   ].join("|");
@@ -990,17 +978,17 @@ function recurringSeedAccount(seed: RecurringClassSeed, accounts: Array<ProjectR
   return resolved ? accounts.find((row) => row.id === resolved.id) : undefined;
 }
 
-function tianRecurringBookingValues(seed: RecurringClassSeed, date: Date, account?: ProjectRow<AccountValues>): Booking {
+function tianRecurringBookingValues(seed: RecurringClassSeed, date: Date, account: ProjectRow<AccountValues>): Booking {
   const starts = new Date(date);
   starts.setHours(seed.startHour, seed.startMinute, 0, 0);
-  const studentName = String(account?.values.studentName ?? seed.studentName);
+  const studentName = String(account.values.studentName);
   return {
     id: "",
-    studentAccountId: account?.id,
+    studentAccountId: account.id,
     studentName,
     familyName: studentName,
-    studentEmail: String(account?.values.email ?? ""),
-    phone: String(account?.values.phone ?? ""),
+    studentEmail: String(account.values.email ?? ""),
+    phone: String(account.values.phone ?? ""),
     requestedCoach: "Coach Tian Ye",
     assignedCoach: "Coach Tian Ye",
     program: "Private lesson",
@@ -1016,17 +1004,17 @@ function tianRecurringBookingValues(seed: RecurringClassSeed, date: Date, accoun
 }
 
 
-function coachJordenRecurringBookingValues(seed: RecurringClassSeed, date: Date, account?: ProjectRow<AccountValues>): Booking {
+function coachJordenRecurringBookingValues(seed: RecurringClassSeed, date: Date, account: ProjectRow<AccountValues>): Booking {
   const starts = new Date(date);
   starts.setHours(seed.startHour, seed.startMinute, 0, 0);
-  const studentName = String(account?.values.studentName ?? seed.studentName);
+  const studentName = String(account.values.studentName);
   return {
     id: "",
-    studentAccountId: account?.id,
+    studentAccountId: account.id,
     studentName,
     familyName: studentName,
-    studentEmail: String(account?.values.email ?? ""),
-    phone: String(account?.values.phone ?? ""),
+    studentEmail: String(account.values.email ?? ""),
+    phone: String(account.values.phone ?? ""),
     requestedCoach: "Coach Jorden",
     assignedCoach: "Coach Jorden",
     program: "Group lesson",
@@ -1047,8 +1035,10 @@ function coachJordenRecurringBookingsThroughDec31(accounts: Array<ProjectRow<Acc
   const end = new Date(2026, 11, 31, 23, 59, 59, 999);
   const bookings: Booking[] = [];
   for (const seed of coachJordenRecurringClassSeeds) {
+    const account = recurringSeedAccount(seed, accounts);
+    if (!account) continue;
     for (let date = nextDateForDay(start, seed.day); date <= end; date.setDate(date.getDate() + 7)) {
-      bookings.push(coachJordenRecurringBookingValues(seed, new Date(date), recurringSeedAccount(seed, accounts)));
+      bookings.push(coachJordenRecurringBookingValues(seed, new Date(date), account));
     }
   }
   return bookings;
@@ -1064,16 +1054,19 @@ function tianYeRecurringBookingsThroughDec31(accounts: Array<ProjectRow<AccountV
   const end = new Date(2026, 11, 31, 23, 59, 59, 999);
   const bookings: Booking[] = [];
   for (const seed of tianYeRecurringClassSeeds) {
+    const account = recurringSeedAccount(seed, accounts);
+    if (!account) continue;
     for (let date = nextDateForDay(start, seed.day); date <= end; date.setDate(date.getDate() + 7)) {
-      bookings.push(tianRecurringBookingValues(seed, new Date(date), recurringSeedAccount(seed, accounts)));
+      bookings.push(tianRecurringBookingValues(seed, new Date(date), account));
     }
   }
   return bookings;
 }
 
 function virtualBookingRow(booking: Booking): ProjectRow<Booking> {
+  if (!booking.studentAccountId) throw new Error("Recurring class identity is unresolved");
   return {
-    id: `virtual-${booking.assignedCoach}-${booking.studentAccountId || booking.studentName}-${booking.startsAt}`.replace(/\s+/g, "-"),
+    id: `virtual-${booking.assignedCoach}-${booking.studentAccountId}-${booking.startsAt}`.replace(/\s+/g, "-"),
     project_table_id: "virtual",
     values: booking,
     created_at: booking.startsAt,
@@ -1101,8 +1094,9 @@ function uniqueBookingRows(rows: Array<ProjectRow<Booking>>) {
   const byKey = new Map<string, ProjectRow<Booking>>();
   for (const row of rows) {
     const note = String(row.values.parentNote ?? "");
-    const key = note.includes("Imported Coach Tian Ye recurring class from Excel") || note.includes("Imported Coach Wang recurring class from Excel as Coach Jorden")
-      ? `recurring-import|${row.values.assignedCoach ?? row.values.requestedCoach ?? ""}|${row.values.studentAccountId || row.values.studentName || ""}|${row.values.startsAt ?? ""}`
+    const isRecurringImport = note.includes("Imported Coach Tian Ye recurring class from Excel") || note.includes("Imported Coach Wang recurring class from Excel as Coach Jorden");
+    const key = isRecurringImport && row.values.studentAccountId
+      ? `recurring-import|${row.values.assignedCoach ?? row.values.requestedCoach ?? ""}|${row.values.studentAccountId}|${row.values.startsAt ?? ""}`
       : row.id;
     if (!byKey.has(key)) byKey.set(key, row);
   }
@@ -1176,25 +1170,25 @@ export async function updateBooking(
   id: string,
   input: Partial<Pick<Booking, "studentAccountId" | "studentName" | "familyName" | "studentEmail" | "phone" | "status" | "assignedCoach" | "dateLabel" | "timeLabel" | "startsAt" | "parentNote">>
 ) {
-  const rows = await listRows<Booking>("bookings");
+  const [rows, accountRows] = await Promise.all([listRows<Booking>("bookings"), listRows<AccountValues>("parent_accounts")]);
   const row = rows.find((item) => item.id === id);
   if (!row) throw new Error("Booking not found in shared club view");
-  const updated = await updateRow("bookings", id, { ...row.values, ...input });
+  if (input.studentAccountId && input.studentAccountId !== row.values.studentAccountId) {
+    throw new Error("Student identity cannot be changed through a class update");
+  }
+  const merged = { ...row.values, ...input, studentAccountId: row.values.studentAccountId };
+  const values = canonicalizeStudentReference(merged as Booking, identityAccounts(accountRows));
+  const updated = await updateRow("bookings", id, values);
   return bookingFromRow(updated);
 }
 
 export async function cancelBookingAsParent(id: string, studentAccountId: string, now = Date.now()) {
-  const [rows, accountRows] = await Promise.all([listRows<Booking>("bookings"), listRows<AccountValues>("parent_accounts")]);
+  const rows = await listRows<Booking>("bookings");
   const row = rows.find((item) => item.id === id);
   if (!row) throw new Error("Booking not found in shared club view");
-  const account = accountRows.find((item) => item.id === studentAccountId);
-  const matchingLegacyAccounts = account
-    ? accountRows.filter((item) => studentNameKey(item.values.studentName) === studentNameKey(account.values.studentName))
-    : [];
-  const belongsToStudent = row.values.studentAccountId
-    ? row.values.studentAccountId === studentAccountId
-    : Boolean(account && matchingLegacyAccounts.length === 1 && studentNameKey(row.values.studentName) === studentNameKey(account.values.studentName));
-  if (!belongsToStudent) throw new Error("This class does not belong to the signed-in student.");
+  if (!studentReferenceBelongsToAccount(row.values, studentAccountId)) {
+    throw new Error("This class does not belong to the signed-in student.");
+  }
 
   assertParentCancellationAllowed({ startsAt: String(row.values.startsAt ?? "") }, now);
   if (row.values.status !== "requested" && row.values.status !== "club_confirmed") {

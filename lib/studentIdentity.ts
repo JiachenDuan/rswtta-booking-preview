@@ -136,9 +136,20 @@ export function resolveStudentAccountForSeed(accounts: StudentIdentityAccount[],
   return exact.length === 1 ? exact[0] : undefined;
 }
 
+export function studentReferenceBelongsToAccount(reference: { studentAccountId?: string; studentName?: string }, accountId: string) {
+  return Boolean(accountId && reference.studentAccountId === accountId);
+}
+
+export function partitionStudentReferencesByIdentity<T extends StudentIdentityReference>(references: T[]) {
+  return {
+    linked: references.filter((reference) => Boolean(reference.studentAccountId)),
+    unresolvedLegacy: references.filter((reference) => !reference.studentAccountId)
+  };
+}
+
 export function resolveCanonicalStudentAccount(reference: StudentIdentityReference, accounts: StudentIdentityAccount[]) {
-  const resolution = resolveProvableStudentAccount(reference, accounts);
-  return resolution.status === "resolved" ? resolution.account : undefined;
+  if (!reference.studentAccountId) return undefined;
+  return accounts.find((account) => account.id === reference.studentAccountId);
 }
 
 export function canonicalizeStudentReference<T extends StudentIdentityReference>(reference: T, accounts: StudentIdentityAccount[]): T {
@@ -167,11 +178,7 @@ export function planStudentRename<TBooking extends StudentIdentityReference, TBi
     throw new Error("Student name already has an account");
   }
 
-  const shouldUpdate = (item: StudentIdentityReference) => {
-    if (item.studentAccountId) return item.studentAccountId === input.accountId;
-    const resolution = resolveProvableStudentAccount(item, input.accounts);
-    return resolution.status === "resolved" && resolution.account.id === input.accountId;
-  };
+  const shouldUpdate = (item: StudentIdentityReference) => item.studentAccountId === input.accountId;
   const updateReference = <T extends StudentIdentityReference>(item: T, bill: boolean): T => {
     if (!shouldUpdate(item)) return { ...item };
     return {

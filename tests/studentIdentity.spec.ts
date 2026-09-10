@@ -2,11 +2,13 @@ import { expect, test } from "@playwright/test";
 import { serializeCsvRows } from "../lib/classReport";
 import {
   canonicalizeStudentReference,
+  partitionStudentReferencesByIdentity,
   planStudentIdentityBackfill,
   planStudentRename,
   prepareStudentReferenceForCreation,
   resolveProvableStudentAccount,
-  resolveStudentAccountForSeed
+  resolveStudentAccountForSeed,
+  studentReferenceBelongsToAccount
 } from "../lib/studentIdentity";
 
 const account = { id: "account-1", studentName: "Kyson", email: "old@example.test", phone: "1111111" };
@@ -147,6 +149,21 @@ test("ambiguous unlinked legacy records remain untouched during a rename", () =>
   expect(bookings).toEqual(snapshot);
 });
 
+test("even uniquely named unlinked legacy rows are not claimed during a rename", () => {
+  const bookings = [{ id: "legacy", studentName: "Kyson", familyName: "Kyson" }];
+  const plan = planStudentRename({
+    accountId: account.id,
+    newStudentName: "Kyson Duan",
+    newEmail: "new@example.test",
+    newPhone: "2222222",
+    accounts: [account],
+    bookings,
+    bills: []
+  });
+  expect(plan.updatedBookingCount).toBe(0);
+  expect(plan.bookings).toEqual(bookings);
+});
+
 test("already linked records remain collision-safe even when legacy display names are duplicated", () => {
   const plan = planStudentRename({
     accountId: account.id,
@@ -164,7 +181,7 @@ test("already linked records remain collision-safe even when legacy display name
   expect(plan.bookings[1].studentName).toBe("KYSON");
 });
 
-test("CSV output resolves linked and uniquely claimed legacy names while excluding stale names", () => {
+test("CSV canonical rendering follows IDs and reports unlinked legacy rows separately", () => {
   const accounts = [
     { id: "avery-account", studentName: "Avery Johnson", preregisteredName: "Avery" },
     { id: "morgan-account", studentName: "Morgan Lee", preregisteredName: "Morgan" }
@@ -174,12 +191,22 @@ test("CSV output resolves linked and uniquely claimed legacy names while excludi
     { id: "legacy", studentName: "Morgan", familyName: "Morgan" }
   ];
   const canonical = staleReferences.map((booking) => canonicalizeStudentReference(booking, accounts));
-  const csv = serializeCsvRows(canonical.map((booking) => [`STUDENT: ${booking.studentName}`]));
+  const { linked, unresolvedLegacy } = partitionStudentReferencesByIdentity(canonical);
+  const csv = serializeCsvRows([
+    ...linked.map((booking) => [`STUDENT: ${booking.studentName}`]),
+    ...unresolvedLegacy.map((booking) => ["UNRESOLVED LEGACY CLASS ROW", booking.id, booking.studentName])
+  ]);
 
   expect(csv).toContain("STUDENT: Avery Johnson");
-  expect(csv).toContain("STUDENT: Morgan Lee");
+  expect(csv).toContain("UNRESOLVED LEGACY CLASS ROW,legacy,Morgan");
   expect(csv.split("\n")).not.toContain("STUDENT: Avery");
-  expect(csv.split("\n")).not.toContain("STUDENT: Morgan");
+  expect(csv.split("\n")).not.toContain("STUDENT: Morgan Lee");
+});
+
+test("ownership never falls back to an equal mutable name", () => {
+  expect(studentReferenceBelongsToAccount({ studentAccountId: "account-1", studentName: "Same Name" }, "account-1")).toBe(true);
+  expect(studentReferenceBelongsToAccount({ studentName: "Same Name" }, "account-1")).toBe(false);
+  expect(studentReferenceBelongsToAccount({ studentAccountId: "account-2", studentName: "Same Name" }, "account-1")).toBe(false);
 });
 
 test("ambiguous legacy names are not canonicalized into either duplicate student", () => {
@@ -200,4 +227,11 @@ test("recurring seed resolves a claimed student's current full name instead of r
     "Kyson"
   );
   expect(resolved).toMatchObject({ id: account.id, studentName: "Kyson Duan" });
+});
+
+test("an ambiguous recurring seed is unresolved instead of materialized under a name", () => {
+  expect(resolveStudentAccountForSeed([
+    { id: "alex-li", studentName: "Alex" },
+    { id: "alex-ma", studentName: "Alex" }
+  ], "Alex")).toBeUndefined();
 });

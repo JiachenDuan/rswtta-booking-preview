@@ -42,7 +42,7 @@ import {
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { isParentCancellationAllowed, PARENT_CANCELLATION_WARNING } from "@/lib/cancellationPolicy";
 import { serializeCsvRows } from "@/lib/classReport";
-import { canonicalizeStudentReference } from "@/lib/studentIdentity";
+import { canonicalizeStudentReference, partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
@@ -686,14 +686,9 @@ export function ClubApp() {
   const canGoNext = addDays(visibleWeekStart, 7) <= startOfWeek(maxCalendarDate);
 
   const parentBookings = useMemo(() => {
-    const sessionStudentName = parentSession?.studentName.trim().toLowerCase() ?? studentName.trim().toLowerCase();
-    const legacyNameIsUnique = students.filter((account) => account.studentName.trim().toLowerCase() === sessionStudentName).length === 1;
-    return bookings.filter(
-      (booking) =>
-        booking.studentAccountId === parentSession?.id ||
-        (!booking.studentAccountId && legacyNameIsUnique && booking.studentName.trim().toLowerCase() === sessionStudentName)
-    );
-  }, [bookings, parentSession?.id, parentSession?.studentName, studentName, students]);
+    if (!parentSession?.id) return [];
+    return bookings.filter((booking) => studentReferenceBelongsToAccount(booking, parentSession.id));
+  }, [bookings, parentSession?.id]);
 
   const completedTotal = parentBookings
     .filter((booking) => booking.status === "coach_confirmed")
@@ -926,8 +921,9 @@ export function ClubApp() {
     try {
       let storedBooking = booking;
       if (booking.id.startsWith("virtual-")) {
+        if (!booking.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
         storedBooking = await createBooking({
-          studentAccountId: booking.studentAccountId || parentSession?.id,
+          studentAccountId: booking.studentAccountId,
           studentName: booking.studentName,
           familyName: booking.familyName || booking.studentName,
           studentEmail: booking.studentEmail,
@@ -1188,6 +1184,7 @@ export function ClubApp() {
         targets.map(async (item) => {
           const assignedCoach = item.assignedCoach || item.requestedCoach;
           if (item.id.startsWith("virtual-")) {
+            if (!item.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
             const created = await createBooking({
               studentAccountId: item.studentAccountId,
               studentName: item.studentName,
@@ -1223,8 +1220,9 @@ export function ClubApp() {
     setNotice(copy(language, "Marking class complete...", "正在标记课程完成..."));
     try {
       if (booking.id.startsWith("virtual-")) {
+        if (!booking.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
         const created = await createBooking({
-          studentAccountId: booking.studentAccountId || parentSession?.id,
+          studentAccountId: booking.studentAccountId,
           studentName: booking.studentName,
           familyName: booking.familyName,
           studentEmail: booking.studentEmail,
@@ -1253,10 +1251,12 @@ export function ClubApp() {
     setNotice("Generating weekly student bill notifications...");
     try {
       const completed = bookings.filter((booking) => booking.status === "coach_confirmed" && !isGroupClassBlock(booking));
+      const { linked: linkedCompleted, unresolvedLegacy: unresolvedCompleted } = partitionStudentReferencesByIdentity(completed);
       const grouped = new Map<string, BillNotification>();
+      const unresolvedCount = unresolvedCompleted.length;
 
-      for (const booking of completed) {
-        const key = booking.studentAccountId || `${booking.studentName}-${booking.familyName}`;
+      for (const booking of linkedCompleted) {
+        const key = booking.studentAccountId!;
         const existing = grouped.get(key);
         if (existing) {
           existing.classCount += 1;
@@ -1289,7 +1289,11 @@ export function ClubApp() {
         )
       );
       await loadAll();
-      setNotice(copy(language, "Bill notifications generated from coach-completed classes.", "账单提醒已生成。"));
+      setNotice(copy(
+        language,
+        `Bill notifications generated from linked classes.${unresolvedCount ? ` ${unresolvedCount} unresolved legacy class${unresolvedCount === 1 ? " was" : "es were"} excluded.` : ""}`,
+        `已从已关联课程生成账单提醒。${unresolvedCount ? ` 已排除 ${unresolvedCount} 节身份未解决的历史课程。` : ""}`
+      ));
     } catch {
       setNotice(copy(language, "Could not generate bills.", "无法生成账单。"));
     }
@@ -1499,6 +1503,7 @@ export function ClubApp() {
             activeCalendarTab={clubCalendarTab}
             saving={saving}
             language={language}
+            onNotice={setNotice}
             onSlotChange={selectSingleSlot}
             onDurationChange={setSelectedDurationMinutes}
             onCalendarTabChange={setClubCalendarTab}
@@ -2492,7 +2497,8 @@ function ClubAppView({
   onAddNewStudentClass,
   onBlockTime,
   onAddGroupDropIn,
-  onAddGroupNewStudent
+  onAddGroupNewStudent,
+  onNotice
 }: {
   bookings: Booking[];
   activityLogs: ActivityLog[];
@@ -2526,6 +2532,7 @@ function ClubAppView({
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onAddGroupDropIn: (groupClass: Booking, students: ParentAccount[]) => Promise<boolean>;
   onAddGroupNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) => Promise<boolean>;
+  onNotice: (message: string) => void;
 }) {
   const defaultExportStart = dateInputValue(startOfWeek(selectedSlot.date));
   const defaultExportEnd = dateInputValue(addDays(startOfWeek(selectedSlot.date), 6));
@@ -2564,8 +2571,7 @@ function ClubAppView({
   const studentDirectory = useMemo(() => {
     const byIdentity = new Map<string, ParentAccount>();
     const rememberStudent = (student: ParentAccount) => {
-      const key = student.id || `legacy:${student.studentName.trim().toLowerCase()}`;
-      if (!key) return;
+      const key = student.id;
       const existing = byIdentity.get(key);
       if (!existing) {
         byIdentity.set(key, student);
@@ -2576,21 +2582,8 @@ function ClubAppView({
       if (!existingHasContact && nextHasContact) byIdentity.set(key, student);
     };
     for (const student of students) rememberStudent(student);
-    for (const booking of bookings) {
-      if (booking.status === "cancelled" || isGroupClassBlock(booking) || isBlockedTime(booking)) continue;
-      rememberStudent({
-        id: booking.studentAccountId || `legacy:${booking.studentName.trim().toLowerCase()}`,
-        studentName: booking.studentName,
-        parentName: "",
-        email: booking.studentEmail,
-        phone: booking.phone,
-        confirmed: true,
-        profileSetupRequired: false,
-        createdAt: booking.createdAt
-      });
-    }
     return [...byIdentity.values()].sort((left, right) => left.studentName.localeCompare(right.studentName));
-  }, [bookings, students]);
+  }, [students]);
   const filteredStudents = studentDirectory.filter((student) => {
     const query = studentQuery.trim().toLowerCase();
     if (!query) return true;
@@ -2628,19 +2621,18 @@ function ClubAppView({
       (student) => student.preregisteredName && studentKey(student.preregisteredName) === studentFilter
     );
     const resolvedExportStudent = selectedExportStudent ?? (legacyFilterMatches.length === 1 ? legacyFilterMatches[0] : null);
-    const selectedStudentName = resolvedExportStudent ? studentKey(resolvedExportStudent.studentName) : "";
     const exportStudentLabel = resolvedExportStudent?.studentName || exportStudentQuery.trim() || "All students";
+    if (studentFilter && !resolvedExportStudent) {
+      onNotice(copy(language, "Select a student account before exporting. Unresolved legacy rows cannot be selected by name.", "导出前请选择学生账户。无法按姓名选择身份未解决的历史课程。"));
+      return;
+    }
 
     const canonicalExportBookings = bookings.map((booking) => canonicalizeStudentReference(booking, studentDirectory));
     const inPeriod = canonicalExportBookings.filter((booking) => {
       const startsAt = new Date(booking.startsAt);
-      const bookingStudentName = studentKey(booking.studentName);
-      const matchesStudent = selectedStudentName
-        ? bookingStudentName === selectedStudentName
-        : !studentFilter ||
-          bookingStudentName.includes(studentFilter) ||
-          booking.studentEmail.toLowerCase().includes(studentFilter) ||
-          booking.phone.toLowerCase().includes(studentFilter);
+      const matchesStudent = resolvedExportStudent
+        ? booking.studentAccountId === resolvedExportStudent.id
+        : true;
       return (
         startsAt >= periodStart &&
         startsAt <= periodEnd &&
@@ -2648,6 +2640,7 @@ function ClubAppView({
         shouldIncludeInClassExport(booking)
       );
     });
+    const { linked: linkedExportBookings, unresolvedLegacy: unresolvedLegacyBookings } = partitionStudentReferencesByIdentity(inPeriod);
 
     const studentsByKey = new Map<
       string,
@@ -2657,8 +2650,8 @@ function ClubAppView({
       }
     >();
 
-    for (const booking of inPeriod) {
-      const key = booking.studentAccountId || `legacy:${studentKey(booking.studentName)}`;
+    for (const booking of linkedExportBookings) {
+      const key = booking.studentAccountId!;
       const existing =
         studentsByKey.get(key) ??
         {
@@ -2730,6 +2723,22 @@ function ClubAppView({
         ["Student total", "", student.bookings.length, hoursText(totalHours)]
       ];
     });
+    const unresolvedLegacyRows = unresolvedLegacyBookings.length
+      ? [
+          [],
+          ["UNRESOLVED LEGACY CLASS ROWS"],
+          ["These rows are display snapshots only and are not linked to a student account."],
+          ["Booking ID", "Student snapshot", "Date", "Time", "Coach", "Status"],
+          ...unresolvedLegacyBookings.map((booking) => [
+            booking.id,
+            booking.studentName,
+            booking.dateLabel,
+            booking.timeLabel,
+            coachDisplayName(booking.assignedCoach || booking.requestedCoach),
+            statusText(booking.status)
+          ])
+        ]
+      : [];
 
     const csv = serializeCsvRows([
       ["RSWTTA class report", periodTitle],
@@ -2737,7 +2746,8 @@ function ClubAppView({
       ["Student filter", exportStudentLabel],
       [],
       ["Class details by student"],
-      ...studentDetailRows
+      ...studentDetailRows,
+      ...unresolvedLegacyRows
     ]);
 
     const filenameStudent = (resolvedExportStudent?.studentName || exportStudentQuery.trim()).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
@@ -3377,16 +3387,16 @@ function ClubBookingActionModal({
   const [newGroupStudentPhone, setNewGroupStudentPhone] = useState("");
   const [newGroupStudentNote, setNewGroupStudentNote] = useState("");
   const [newGroupDuplicateConfirmed, setNewGroupDuplicateConfirmed] = useState(false);
-  const enrolledNames = new Set(groupEnrollments.map((item) => item.studentName.trim().toLowerCase()));
-  const selectedDropInNames = new Set(selectedDropInStudents.map((student) => student.studentName.trim().toLowerCase()));
+  const enrolledAccountIds = new Set(groupEnrollments.map((item) => item.studentAccountId).filter(Boolean));
+  const selectedDropInAccountIds = new Set(selectedDropInStudents.map((student) => student.id));
   const dropInSearch = dropInQuery.trim().toLowerCase();
   const dropInResults = dropInSearch
     ? students
         .filter((student) => {
           const studentName = student.studentName.trim().toLowerCase();
           return (
-            !enrolledNames.has(studentName) &&
-            !selectedDropInNames.has(studentName) &&
+            !enrolledAccountIds.has(student.id) &&
+            !selectedDropInAccountIds.has(student.id) &&
             (studentName.includes(dropInSearch) ||
               student.email.toLowerCase().includes(dropInSearch) ||
               student.phone.toLowerCase().includes(dropInSearch))
@@ -3409,9 +3419,8 @@ function ClubBookingActionModal({
         );
       }).slice(0, 5)
     : [];
-  const newGroupStudentAlreadyEnrolled = enrolledNames.has(newGroupNameKey);
   const newGroupDuplicateBlocked = newGroupDuplicateCandidates.length > 0 && !newGroupDuplicateConfirmed;
-  const canCreateGroupStudent = newGroupStudentName.trim().length > 0 && !newGroupStudentAlreadyEnrolled && !newGroupDuplicateBlocked;
+  const canCreateGroupStudent = newGroupStudentName.trim().length > 0 && !newGroupDuplicateBlocked;
 
   if (isGroupClassBlock(booking)) {
     return (
@@ -3567,9 +3576,6 @@ function ClubBookingActionModal({
                   <span>{copy(language, "Note optional", "备注（可选）")}</span>
                   <textarea value={newGroupStudentNote} onChange={(event) => setNewGroupStudentNote(event.target.value)} />
                 </label>
-                {newGroupStudentAlreadyEnrolled ? (
-                  <p className="modal-warning">{copy(language, "This student is already in this group class.", "这名学生已在这节团体课中。")}</p>
-                ) : null}
                 {newGroupDuplicateCandidates.length > 0 ? (
                   <div className="action-confirm-panel duplicate-student-panel">
                     <strong>{copy(language, "Possible existing student", "可能已有学生")}</strong>
@@ -3581,7 +3587,7 @@ function ClubBookingActionModal({
                           className="student-result"
                           key={student.id}
                           onClick={() => {
-                            if (!enrolledNames.has(student.studentName.trim().toLowerCase())) setSelectedDropInStudents((current) => [...current, student]);
+                            if (!enrolledAccountIds.has(student.id)) setSelectedDropInStudents((current) => [...current, student]);
                             setDropInMode("existing");
                             setNewGroupStudentName("");
                             setNewGroupStudentEmail("");
