@@ -502,10 +502,7 @@ async function seedPreregisteredAccounts(rows: Array<ProjectRow<AccountValues>>,
 
 async function listAccountRowsWithSeeds() {
   return withLocalFallback(
-    async () => {
-      const rows = await listRows<AccountValues>("parent_accounts");
-      return seedPreregisteredAccounts(rows, (values) => createRow<AccountValues>("parent_accounts", values));
-    },
+    () => listRows<AccountValues>("parent_accounts"),
     async () => {
       const rows = localRows<AccountValues>("parent_accounts");
       return seedPreregisteredAccounts(rows, (values) => createLocalRow("parent_accounts", values));
