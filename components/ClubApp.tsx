@@ -24,7 +24,6 @@ import {
 import {
   authoritativeCurrentTime,
   cancelBookingAsClub,
-  cancelBookingAsParent,
   completeParentProfileSetup,
   createActivityLog,
   createBillNotification,
@@ -43,7 +42,6 @@ import {
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
-import { isParentCancellationAllowed, parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
@@ -916,42 +914,6 @@ export function ClubApp() {
     }
   }
 
-  async function cancelParentClass(booking: Booking) {
-    const blockReason = parentCancellationBlockReason(booking, currentTime.getTime());
-    if (blockReason) {
-      setNotice(parentCancellationWarning(blockReason, language));
-      return false;
-    }
-
-    setSaving(true);
-    setNotice(copy(language, "Cancelling class...", "正在取消课程..."));
-    try {
-      if (booking.id.startsWith("virtual-") && !booking.studentAccountId) {
-        throw new Error("This recurring class has unresolved student identity.");
-      }
-      const cancelled = await cancelBookingAsParent(booking, parentSession?.id ?? "");
-      await recordClassActivity("cancelled", [cancelled], cancelled, "parent/student");
-      await loadAll();
-      setNotice(copy(language, isGroupClassJoinRequest(booking) ? "Left group class." : "Class cancelled.", isGroupClassJoinRequest(booking) ? "已退出团体课。" : "课程已取消。"));
-      return true;
-    } catch (error) {
-      let message = error instanceof Error ? error.message : copy(language, "Could not cancel class.", "无法取消课程。");
-      try {
-        const databaseTime = await authoritativeCurrentTime();
-        authoritativeClockOffsetMs.current = databaseTime.getTime() - Date.now();
-        setCurrentTime(databaseTime);
-        const authoritativeBlockReason = parentCancellationBlockReason(booking, databaseTime.getTime());
-        if (authoritativeBlockReason) message = parentCancellationWarning(authoritativeBlockReason, language);
-      } catch {
-        // Preserve the original mutation error when the clock refresh is unavailable.
-      }
-      setNotice(message);
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function addGroupDropIn(groupClass: Booking, selectedStudents: ParentAccount[], note = "") {
     if (selectedStudents.length === 0) {
       setNotice(copy(language, "Select at least one student.", "请选择至少一名学生。"));
@@ -1243,41 +1205,6 @@ export function ClubApp() {
     }
   }
 
-  async function completeParentClass(booking: Booking) {
-    setNotice(copy(language, "Marking class complete...", "正在标记课程完成..."));
-    try {
-      if (booking.id.startsWith("virtual-")) {
-        if (!booking.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
-        const created = await createBooking({
-          studentAccountId: booking.studentAccountId,
-          seriesId: booking.seriesId,
-          recurrenceOccurrenceId: booking.recurrenceOccurrenceId,
-          recurrenceOriginalStartsAt: booking.recurrenceOriginalStartsAt,
-          groupClassId: booking.groupClassId,
-          studentName: booking.studentName,
-          familyName: booking.familyName,
-          studentEmail: booking.studentEmail,
-          phone: booking.phone,
-          requestedCoach: booking.requestedCoach,
-          assignedCoach: booking.assignedCoach,
-          program: booking.program,
-          dateLabel: booking.dateLabel,
-          timeLabel: booking.timeLabel,
-          startsAt: booking.startsAt,
-          priceCents: booking.priceCents,
-          parentNote: `${booking.parentNote} Marked complete by student.`
-        });
-        await updateStoredBooking(created.id, { status: "coach_confirmed", assignedCoach: booking.assignedCoach });
-      } else {
-        await updateStoredBooking(booking.id, { status: "coach_confirmed", assignedCoach: booking.assignedCoach });
-      }
-      await loadAll();
-      setNotice(copy(language, "Class marked complete.", "课程已标记完成。"));
-    } catch {
-      setNotice(copy(language, "Could not mark class complete.", "无法标记课程完成。"));
-    }
-  }
-
   async function generateBills() {
     setNotice("Generating weekly student bill notifications...");
     try {
@@ -1502,18 +1429,6 @@ export function ClubApp() {
               setVisibleWeekStart(initialWeekStart);
               replaceSelectedSlot(initialCalendarSlot);
             }}
-            onChangeRequest={(booking) => {
-              updateBooking(booking.id, "change_requested", requestedCoach, {
-                dateLabel: selectedSlot.dateLabel,
-                timeLabel: rangeLabel(selectedSlot, selectedDurationMinutes),
-                startsAt: selectedSlot.startsAt,
-                parentNote: isParentCancellationAllowed(booking)
-                  ? `${copy(language, "Parent requested change from", "家长申请改期，原时间")} ${booking.dateLabel} ${booking.timeLabel}`
-                  : `${copy(language, "Late change request from", "12小时内改期请求，原时间")} ${booking.dateLabel} ${booking.timeLabel}`
-              });
-            }}
-            onCancel={cancelParentClass}
-            onComplete={completeParentClass}
             onGroupClassRequest={requestGroupClass}
           />
         ) : (
@@ -2017,9 +1932,6 @@ function ParentApp({
   onPreviousWeek,
   onNextWeek,
   onToday,
-  onChangeRequest,
-  onCancel,
-  onComplete,
   onGroupClassRequest
 }: {
   bookings: Booking[];
@@ -2058,27 +1970,9 @@ function ParentApp({
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
-  onChangeRequest: (booking: Booking) => void;
-  onCancel: (booking: Booking) => Promise<boolean>;
-  onComplete: (booking: Booking) => void;
   onGroupClassRequest: (booking: Booking) => Promise<boolean>;
 }) {
-  const [selectedParentBooking, setSelectedParentBooking] = useState<Booking | null>(null);
   const [selectedGroupClass, setSelectedGroupClass] = useState<Booking | null>(null);
-  useEffect(() => {
-    if (selectedParentBooking) {
-      const canonical = bookings.find((booking) => booking.id === selectedParentBooking.id);
-      if (canonical) setSelectedParentBooking(canonical);
-    }
-  }, [bookings]);
-  useEffect(() => {
-    if (
-      selectedParentBooking &&
-      (!canParentRequestChange(selectedParentBooking) || parentCancellationBlockReason(selectedParentBooking, currentTime.getTime()))
-    ) {
-      setSelectedParentBooking(null);
-    }
-  }, [currentTime, selectedParentBooking]);
   const [classStatusFilter, setClassStatusFilter] = useState<"requested" | "club_confirmed" | "coach_confirmed" | "cancelled">("requested");
   const [classStartDate, setClassStartDate] = useState(() => dateInputValue(calendarDays[0]?.date ?? new Date()));
   const [classEndDate, setClassEndDate] = useState(() => dateInputValue(calendarDays[calendarDays.length - 1]?.date ?? addDays(new Date(), 6)));
@@ -2167,17 +2061,14 @@ function ParentApp({
             blockUnavailable={parentCalendarTab !== "My calendar"}
             privacyMode
             parentMyCalendar={parentCalendarTab === "My calendar"}
-            isBookingActionable={(booking) =>
-              isGroupClassBlock(booking) || (canParentRequestChange(booking) && !parentCancellationBlockReason(booking, currentTime.getTime()))
-            }
+            isBookingActionable={isGroupClassBlock}
             onSlotChange={onSlotChange}
             onBookingSelect={(booking) => {
               if (isGroupClassBlock(booking)) {
                 setSelectedGroupClass(booking);
                 return;
               }
-              if (!canParentRequestChange(booking) || parentCancellationBlockReason(booking, currentTime.getTime())) return;
-              setSelectedParentBooking(booking);
+              return;
             }}
           />
         </div>
@@ -2240,7 +2131,7 @@ function ParentApp({
             <div>
               <p className="eyebrow">{copy(language, "My classes", "我的课程")}</p>
               <h2>{copy(language, "Requested, confirmed, completed", "请求、确认、完成")}</h2>
-              <p className="section-subtitle">{copy(language, "Cancel only when class is more than 12 hours away.", "仅可在距离上课超过 12 小时时取消。")}</p>
+              <p className="section-subtitle">{copy(language, "View class details and status.", "查看课程详情和状态。")}</p>
             </div>
           </div>
           <div className="class-filter-panel">
@@ -2265,23 +2156,7 @@ function ParentApp({
               {copy(language, "Showing", "显示")} {filteredClassBookings.length} {copy(language, "classes", "节课")}
             </p>
           </div>
-          <BookingList bookings={filteredClassBookings} parentActions language={language} now={currentTime.getTime()} onChangeRequest={onChangeRequest} onCancel={onCancel} onComplete={onComplete} />
-          {selectedParentBooking ? (
-            <ParentClassCompleteModal
-              booking={selectedParentBooking}
-              language={language}
-              now={currentTime.getTime()}
-              onClose={() => setSelectedParentBooking(null)}
-              onComplete={() => {
-                onComplete(selectedParentBooking);
-                setSelectedParentBooking(null);
-              }}
-              onCancel={async () => {
-                const cancelled = await onCancel(selectedParentBooking);
-                if (cancelled) setSelectedParentBooking(null);
-              }}
-            />
-          ) : null}
+          <BookingList bookings={filteredClassBookings} language={language} />
           {selectedGroupClass ? (
             <GroupClassRequestModal
               booking={selectedGroupClass}
@@ -2289,16 +2164,10 @@ function ParentApp({
               studentName={studentName}
               language={language}
               saving={saving}
-              now={currentTime.getTime()}
               onClose={() => setSelectedGroupClass(null)}
               onConfirm={async () => {
                 const saved = await onGroupClassRequest(selectedGroupClass);
                 if (saved) setSelectedGroupClass(null);
-              }}
-              onCancelEnrollment={async () => {
-                if (!selectedGroupEnrollment) return;
-                const cancelled = await onCancel(selectedGroupEnrollment);
-                if (cancelled) setSelectedGroupClass(null);
               }}
             />
           ) : null}
@@ -3922,24 +3791,18 @@ function GroupClassRequestModal({
   studentName,
   language,
   saving,
-  now,
   onClose,
-  onConfirm,
-  onCancelEnrollment
+  onConfirm
 }: {
   booking: Booking;
   existingEnrollment?: Booking;
   studentName: string;
   language: Language;
   saving: boolean;
-  now: number;
   onClose: () => void;
   onConfirm: () => void;
-  onCancelEnrollment: () => void;
 }) {
   const hasExistingEnrollment = Boolean(existingEnrollment);
-  const cancellationBlockReason = existingEnrollment ? parentCancellationBlockReason(existingEnrollment, now) : null;
-  const canCancelEnrollment = Boolean(existingEnrollment && !cancellationBlockReason);
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="group-class-request-title">
@@ -3958,109 +3821,28 @@ function GroupClassRequestModal({
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
           {existingEnrollment ? <div><dt>{copy(language, "Status", "状态")}</dt><dd>{statusText(existingEnrollment.status, language)}</dd></div> : null}
         </dl>
-        {hasExistingEnrollment && cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
-        <div className={`modal-actions ${hasExistingEnrollment && !canCancelEnrollment ? "single-action" : ""}`}>
+        <div className={`modal-actions ${hasExistingEnrollment ? "single-action" : ""}`}>
           <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, "Close", "关闭")}</button>
-          {hasExistingEnrollment ? (
-            canCancelEnrollment ? (
-              <button className="decline" onClick={onCancelEnrollment} disabled={saving}>
-                <X size={18} />
-                {saving ? copy(language, "Leaving...", "正在退出...") : copy(language, "Leave group class", "退出团体课")}
-              </button>
-            ) : null
-          ) : (
+          {!hasExistingEnrollment ? (
             <button className="primary-button" onClick={onConfirm} disabled={saving}>
               <Check size={18} />
               {saving ? copy(language, "Sending...", "发送中...") : copy(language, "Request to join", "申请加入")}
             </button>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function ParentClassCompleteModal({
-  booking,
-  language,
-  now,
-  onClose,
-  onComplete,
-  onCancel
-}: {
-  booking: Booking;
-  language: Language;
-  now: number;
-  onClose: () => void;
-  onComplete: () => void;
-  onCancel: () => void;
-}) {
-  const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking);
-  const cancellationBlockReason = parentCancellationBlockReason(booking, now);
-  const canCancel = canParentRequestChange(booking) && !cancellationBlockReason;
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
-        <button className="modal-close-icon" type="button" aria-label="Close" onClick={onClose}>
-          <span aria-hidden="true">×</span>
-        </button>
-        <div className="section-head compact class-action-head">
-          <div>
-            <p className="eyebrow">{copy(language, "Class actions", "课程操作")}</p>
-            <h2 id="student-class-actions-title">{booking.studentName}</h2>
-            <p className="section-subtitle">{copy(language, "Mark this class complete after it is finished.", "课程结束后可以标记完成。")}</p>
-          </div>
-          <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
-        </div>
-        <dl className="confirm-summary">
-          <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{coachDisplayName(booking.assignedCoach, language)}</dd></div>
-          <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
-          <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
-        </dl>
-        {canParentRequestChange(booking) && cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
-        <div className={`modal-actions ${!canCancel ? "single-action" : ""}`}>
-          {canCancel ? (
-            <button className="decline" onClick={onCancel}>
-              <X size={18} />
-              {copy(language, "Cancel class", "取消课程")}
-            </button>
           ) : null}
-          <button className="primary-button" disabled={!canComplete} onClick={onComplete}>
-            <Check size={18} />
-            {copy(language, "Complete", "完成")}
-          </button>
         </div>
       </section>
     </div>
   );
 }
 
-function BookingList({
-  bookings,
-  parentActions,
-  language,
-  now,
-  onChangeRequest,
-  onCancel,
-  onComplete
-}: {
-  bookings: Booking[];
-  parentActions?: boolean;
-  language: Language;
-  now: number;
-  onChangeRequest?: (booking: Booking) => void;
-  onCancel?: (booking: Booking) => void;
-  onComplete?: (booking: Booking) => void;
-}) {
+function BookingList({ bookings, language }: { bookings: Booking[]; language: Language }) {
   if (bookings.length === 0) {
     return <p className="empty-state">{copy(language, "No classes yet.", "还没有课程。")}</p>;
   }
 
   return (
     <div className="appointment-list compact-list">
-      {bookings.map((booking) => {
-        const cancellationBlockReason = parentCancellationBlockReason(booking, now);
-        return (
+      {bookings.map((booking) => (
         <article className="appointment-row simple-row" key={stableBookingEntityId(booking)}>
           <div className="avatar">
             <UserRound size={18} />
@@ -4077,21 +3859,8 @@ function BookingList({
             </span>
             <strong className={booking.status}>{statusText(booking.status, language)}</strong>
           </div>
-          {parentActions && canParentRequestChange(booking) && !cancellationBlockReason ? (
-            <div className="row-actions parent-actions">
-              <button
-                className="decline"
-                type="button"
-                aria-label={copy(language, isGroupClassJoinRequest(booking) ? "Leave group class" : "Cancel class", isGroupClassJoinRequest(booking) ? "退出团体课" : "取消课程")}
-                onClick={() => onCancel?.(booking)}
-              >
-                <X size={15} />
-              </button>
-            </div>
-          ) : null}
         </article>
-        );
-      })}
+      ))}
     </div>
   );
 }

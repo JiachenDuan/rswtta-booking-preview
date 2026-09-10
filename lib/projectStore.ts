@@ -1237,29 +1237,6 @@ export async function rescheduleBookingsAtomically(input: {
   return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);
 }
 
-function virtualCancellationValues(booking: Booking) {
-  return {
-    studentAccountId: booking.studentAccountId,
-    seriesId: booking.seriesId,
-    recurrenceOccurrenceId: booking.recurrenceOccurrenceId,
-    recurrenceOriginalStartsAt: booking.recurrenceOriginalStartsAt,
-    groupClassId: booking.groupClassId,
-    studentName: booking.studentName,
-    familyName: booking.familyName || booking.studentName,
-    studentEmail: booking.studentEmail,
-    phone: booking.phone,
-    requestedCoach: booking.requestedCoach,
-    assignedCoach: booking.assignedCoach,
-    program: booking.program,
-    dateLabel: booking.dateLabel,
-    timeLabel: booking.timeLabel,
-    startsAt: booking.startsAt,
-    priceCents: booking.priceCents,
-    status: booking.status,
-    parentNote: booking.parentNote
-  };
-}
-
 export async function authoritativeCurrentTime() {
   const response = await supabase.rpc("authoritative_current_time");
   if (response.error) throw setupError(response.error.message);
@@ -1268,15 +1245,8 @@ export async function authoritativeCurrentTime() {
   return value;
 }
 
-export async function cancelBookingAsParent(booking: Booking, studentAccountId: string) {
-  const isVirtual = booking.id.startsWith("virtual-");
-  const response = await supabase.rpc("cancel_booking_as_parent", {
-    p_booking_id: isVirtual ? null : booking.id,
-    p_student_account_id: studentAccountId,
-    p_virtual_values: isVirtual ? virtualCancellationValues(booking) : null
-  });
-  if (response.error) throw setupError(response.error.message);
-  return bookingFromRow(response.data as ProjectRow<Booking>);
+export async function cancelBookingAsParent(_booking: Booking, _studentAccountId: string): Promise<never> {
+  throw new Error("Parent cancellation is not available. Please contact the club assistant.");
 }
 
 export async function cancelBookingAsClub(id: string) {
