@@ -3973,8 +3973,11 @@ function ParentClassCompleteModal({
   const canCancel = canParentRequestChange(booking) && isParentCancellationAllowed(booking);
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
-        <div className="section-head compact">
+      <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
+        <button className="modal-close-icon" type="button" aria-label="Close" onClick={onClose}>
+          <span aria-hidden="true">×</span>
+        </button>
+        <div className="section-head compact class-action-head">
           <div>
             <p className="eyebrow">{copy(language, "Class actions", "课程操作")}</p>
             <h2 id="student-class-actions-title">{booking.studentName}</h2>
@@ -3989,7 +3992,6 @@ function ParentClassCompleteModal({
         </dl>
         {canParentRequestChange(booking) && !canCancel ? <p className="modal-warning">{PARENT_CANCELLATION_WARNING}</p> : null}
         <div className="modal-actions">
-          <button className="filter-button" onClick={onClose}>{copy(language, "Close", "关闭")}</button>
           {canParentRequestChange(booking) ? (
             <button className="decline" disabled={!canCancel} onClick={onCancel}>
               <X size={18} />

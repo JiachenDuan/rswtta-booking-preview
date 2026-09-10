@@ -2634,10 +2634,12 @@ button.student-result.selected {
   position: absolute;
   top: 14px;
   right: 14px;
+  z-index: 1;
   display: inline-grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
@@ -2645,13 +2647,24 @@ button.student-result.selected {
   cursor: pointer;
 }
 
+.modal-close-icon span {
+  font-size: 1.75rem;
+  font-weight: 500;
+  line-height: 1;
+}
+
 .modal-close-icon:hover {
   border-color: rgba(244, 201, 93, 0.5);
   background: rgba(244, 201, 93, 0.12);
 }
 
+.modal-close-icon:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
+
 .class-action-head {
-  padding-right: 48px;
+  padding-right: 52px;
 }
 
 .complete-hero-button {
