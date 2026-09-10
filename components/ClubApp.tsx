@@ -42,6 +42,7 @@ import {
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { isParentCancellationAllowed, PARENT_CANCELLATION_WARNING } from "@/lib/cancellationPolicy";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
+import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
@@ -987,8 +988,12 @@ export function ClubApp() {
   }
 
   async function addGroupNewStudent(groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) {
-    const account = await createClubStudentAccount(input);
-    return addGroupDropIn(groupClass, [account], input.note);
+    const { result } = await createStudentAccountThenPersist({
+      student: input,
+      createOrReuseAccount: createClubStudentAccount,
+      persist: (account) => addGroupDropIn(groupClass, [account], input.note)
+    });
+    return result;
   }
 
   async function addClubClass(student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) {
@@ -1042,26 +1047,29 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, "Creating student and adding class...", "正在创建学生并添加课程..."));
     try {
-      const account = await createClubStudentAccount({ studentName: input.studentName, email: input.email, phone: input.phone });
-      const created = await Promise.all(
-        slots.map((slot) =>
-          createBooking({
-            studentAccountId: account.id,
-            studentName: account.studentName,
-            familyName: account.studentName,
-            studentEmail: account.email,
-            phone: account.phone,
-            requestedCoach: coach,
-            assignedCoach: coach,
-            program: lessonProgram(coach),
-            dateLabel: slot.dateLabel,
-            timeLabel: rangeLabel(slot, durationMinutes),
-            startsAt: slot.startsAt,
-            priceCents: lessonPriceCents(coach),
-            parentNote: input.note ? `Added by club: ${input.note}` : "Added by club"
-          }).then((booking) => updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach }))
+      const { account, result: created } = await createStudentAccountThenPersist({
+        student: { studentName: input.studentName, email: input.email, phone: input.phone },
+        createOrReuseAccount: createClubStudentAccount,
+        persist: (createdAccount) => Promise.all(
+          slots.map((slot) =>
+            createBooking({
+              studentAccountId: createdAccount.id,
+              studentName: createdAccount.studentName,
+              familyName: createdAccount.studentName,
+              studentEmail: createdAccount.email,
+              phone: createdAccount.phone,
+              requestedCoach: coach,
+              assignedCoach: coach,
+              program: lessonProgram(coach),
+              dateLabel: slot.dateLabel,
+              timeLabel: rangeLabel(slot, durationMinutes),
+              startsAt: slot.startsAt,
+              priceCents: lessonPriceCents(coach),
+              parentNote: input.note ? `Added by club: ${input.note}` : "Added by club"
+            }).then((booking) => updateStoredBooking(booking.id, { status: "club_confirmed", assignedCoach: coach }))
+          )
         )
-      );
+      });
       await recordClassActivity("created", created, created[0]);
       await loadAll();
       setNotice(copy(language, `Added ${slots.length} class${slots.length === 1 ? "" : "es"} for ${account.studentName}.`, `已为 ${account.studentName} 添加 ${slots.length} 节课。`));

@@ -38,16 +38,15 @@ test("new records persist the selected account ID and canonical current name at 
   });
 });
 
-test("storage boundary links an unlinked new record only when one account is provable", () => {
-  const created = prepareStudentReferenceForCreation(
+test("storage boundary rejects creation without an explicit account ID", () => {
+  expect(() => prepareStudentReferenceForCreation(
     { studentName: "Morgan", familyName: "Morgan", studentEmail: "morgan@example.test" },
     [
       { id: "morgan", studentName: "Morgan Lee", preregisteredName: "Morgan", email: "morgan@example.test" },
       { id: "other", studentName: "Taylor Lee", email: "taylor@example.test" }
     ],
     { requireAccount: true }
-  );
-  expect(created).toMatchObject({ studentAccountId: "morgan", studentName: "Morgan Lee", familyName: "Morgan Lee" });
+  )).toThrow("Select or create the student account");
 });
 
 test("duplicate first names never cross-link at creation", () => {
@@ -60,7 +59,7 @@ test("duplicate first names never cross-link at creation", () => {
     candidateAccountIds: ["alex-li", "alex-ma"]
   });
   expect(() => prepareStudentReferenceForCreation({ studentName: "Alex" }, accounts, { requireAccount: true })).toThrow(
-    "Student identity is ambiguous"
+    "Select or create the student account"
   );
 });
 
@@ -130,6 +129,25 @@ test("rename links and updates private, group, future, and past references witho
   expect(plan.bookings.slice(0, 4).every((item) => item.studentAccountId === account.id && item.studentName === "Kyson Duan")).toBe(true);
   expect(plan.bookings[4].studentName).toBe("Kyson Lee");
   expect(plan.bills[0]).toMatchObject({ studentAccountId: account.id, studentName: "Kyson Duan", familyName: "Kyson Duan", message: "Kyson Duan: 4 completed classes ready to bill" });
+});
+
+test("rename permits duplicate display names but never creates or relinks accounts", () => {
+  const accounts = [account, { id: "account-2", studentName: "Shared Name" }];
+  const plan = planStudentRename({
+    accountId: account.id,
+    newStudentName: "Shared Name",
+    newEmail: "new@example.test",
+    newPhone: "2222222",
+    accounts,
+    bookings: [
+      { id: "mine", studentAccountId: account.id, studentName: "Kyson" },
+      { id: "theirs", studentAccountId: "account-2", studentName: "Shared Name" }
+    ],
+    bills: []
+  });
+  expect(plan.account.id).toBe(account.id);
+  expect(plan.bookings.map((item) => item.studentAccountId)).toEqual([account.id, "account-2"]);
+  expect(accounts.map((item) => item.id)).toEqual([account.id, "account-2"]);
 });
 
 test("ambiguous unlinked legacy records remain untouched during a rename", () => {

@@ -85,6 +85,9 @@ export function prepareStudentReferenceForCreation<T extends StudentIdentityRefe
   accounts: StudentIdentityAccount[],
   options: { requireAccount?: boolean } = {}
 ): T {
+  if (options.requireAccount && !reference.studentAccountId) {
+    throw new Error("Select or create the student account before creating this record.");
+  }
   const resolution = resolveProvableStudentAccount(reference, accounts);
   if (resolution.status === "resolved") return canonicalizeStudentReference({ ...reference, studentAccountId: resolution.account.id }, accounts);
   if (options.requireAccount) {
@@ -167,10 +170,6 @@ export function planStudentRename<TBooking extends StudentIdentityReference, TBi
   const oldName = account.studentName.trim();
   const newName = input.newStudentName.trim();
   if (!newName) throw new Error("Student name is required");
-  if (input.accounts.some((item) => item.id !== input.accountId && nameKey(item.studentName) === nameKey(newName))) {
-    throw new Error("Student name already has an account");
-  }
-
   const shouldUpdate = (item: StudentIdentityReference) => item.studentAccountId === input.accountId;
   const updateReference = <T extends StudentIdentityReference>(item: T, bill: boolean): T => {
     if (!shouldUpdate(item)) return { ...item };

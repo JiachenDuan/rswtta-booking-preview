@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { assertParentCancellationAllowed } from "@/lib/cancellationPolicy";
 import { canonicalizeStudentReference, prepareStudentReferenceForCreation, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
+import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
@@ -311,10 +312,6 @@ async function ensureSchema() {
   return schemaPromise;
 }
 
-function studentNameKey(value: unknown) {
-  return String(value ?? "").trim().toLowerCase();
-}
-
 function uniqueAccountRowsById(rows: Array<ProjectRow<AccountValues>>) {
   return [...new Map(rows.map((row) => [row.id, row])).values()];
 }
@@ -516,11 +513,6 @@ export async function registerParentAccount(input: { studentName: string; email:
       }
 
       const rows = await listRows<AccountValues>("parent_accounts");
-      const bookingRows = await listRows<Booking>("bookings");
-      assertNoDuplicateFirstNameForNewAccount(rows, bookingRows, input.studentName);
-      const nameKey = studentNameKey(input.studentName);
-      const duplicateName = rows.find((row) => studentNameKey(row.values.studentName) === nameKey && String(row.values.email ?? "").toLowerCase() !== email);
-      if (duplicateName) throw new Error("Student name already has an account");
       const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
       if (existing) {
         if (!existing.values.confirmed) {
@@ -546,11 +538,6 @@ export async function registerParentAccount(input: { studentName: string; email:
     async () => {
       const email = input.email.toLowerCase();
       const rows = localRows<AccountValues>("parent_accounts");
-      const bookingRows = localRows<Booking>("bookings");
-      assertNoDuplicateFirstNameForNewAccount(rows, bookingRows, input.studentName);
-      const nameKey = studentNameKey(input.studentName);
-      const duplicateName = rows.find((row) => studentNameKey(row.values.studentName) === nameKey && String(row.values.email ?? "").toLowerCase() !== email);
-      if (duplicateName) throw new Error("Student name already has an account");
       const existing = rows.find((row) => String(row.values.email ?? "").toLowerCase() === email);
       if (existing) {
         const updated = updateLocalRow("parent_accounts", existing.id, { ...existing.values, confirmed: true });
@@ -625,13 +612,6 @@ function assertUniquePreregisteredRosterName(accountRows: Array<ProjectRow<Accou
   if (uniqueRosterNames.size > 1) {
     throw new Error("More than one student has this first name. Please log in with email.");
   }
-}
-
-function assertNoDuplicateFirstNameForNewAccount(accountRows: Array<ProjectRow<AccountValues>>, bookingRows: Array<ProjectRow<Booking>>, studentName: string) {
-  const hasMatch =
-    accountRows.some((item) => matchesFirstName(item.values.studentName, studentName)) ||
-    bookingRows.some((item) => matchesFirstName(item.values.studentName, studentName));
-  if (hasMatch) throw new Error("A student with this first name already exists. Please use the existing account or log in with email.");
 }
 
 function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier: string, allowPreregisteredName: boolean) {
@@ -733,32 +713,20 @@ export async function createClubStudentAccount(input: { studentName: string; ema
     createdAt: ""
   };
 
-  const row = await withLocalFallback(
+  return withLocalFallback(
     async () => {
       const rows = await listRows<AccountValues>("parent_accounts");
-      const nameKey = studentNameKey(studentName);
-      const existing = rows.find((item) =>
-        studentNameKey(item.values.studentName) === nameKey ||
-        (email && String(item.values.email ?? "").trim().toLowerCase() === email) ||
-        (phone && String(item.values.phone ?? "").trim() === phone)
-      );
+      const existing = reusableStudentAccountByEmail(rows.map(accountFromRow), email);
       if (existing) return existing;
-      return createRow<AccountValues>("parent_accounts", values);
+      return accountFromRow(await createRow<AccountValues>("parent_accounts", values));
     },
     () => {
       const rows = localRows<AccountValues>("parent_accounts");
-      const nameKey = studentNameKey(studentName);
-      const existing = rows.find((item) =>
-        studentNameKey(item.values.studentName) === nameKey ||
-        (email && String(item.values.email ?? "").trim().toLowerCase() === email) ||
-        (phone && String(item.values.phone ?? "").trim() === phone)
-      );
+      const existing = reusableStudentAccountByEmail(rows.map(accountFromRow), email);
       if (existing) return existing;
-      return createLocalRow<AccountValues>("parent_accounts", values);
+      return accountFromRow(createLocalRow<AccountValues>("parent_accounts", values));
     }
   );
-
-  return accountFromRow(row);
 }
 
 export async function resetPasswordForEmail(email: string) {
@@ -1182,6 +1150,9 @@ export async function createBooking(input: Omit<Booking, "id" | "status" | "crea
   try {
     const accountRows = await listRows<AccountValues>("parent_accounts");
     const isSystemCalendarRow = values.program === "Unavailable" || values.program === "Group class";
+    if (!isSystemCalendarRow && !values.studentAccountId) {
+      throw new Error("Select or create the student account before creating a class.");
+    }
     const linkedValues = prepareStudentReferenceForCreation(values, identityAccounts(accountRows), { requireAccount: !isSystemCalendarRow });
     const existing = await findExistingActiveBooking(linkedValues);
     if (existing) return bookingFromRow(existing);
