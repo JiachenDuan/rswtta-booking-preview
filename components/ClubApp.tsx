@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -17,6 +16,7 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  Table2,
   UserPlus,
   UserRound,
   X
@@ -1366,14 +1366,7 @@ export function ClubApp() {
       <aside className="sidebar" aria-label="Primary">
         <div className="brand">
           <div className="brand-mark">
-            <Image
-              className="brand-icon"
-              src="/brand/rising-stars-emblem.webp"
-              alt="Rising Stars World Table Tennis Academy logo"
-              width={36}
-              height={36}
-              priority
-            />
+            <Table2 size={22} />
           </div>
           <div>
             <strong>Rising Stars World</strong>
