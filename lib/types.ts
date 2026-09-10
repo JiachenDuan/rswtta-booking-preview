@@ -2,6 +2,7 @@ export type BookingStatus = "requested" | "club_confirmed" | "change_requested" 
 
 export type Booking = {
   id: string;
+  studentAccountId?: string;
   studentName: string;
   familyName: string;
   studentEmail: string;
@@ -21,6 +22,7 @@ export type Booking = {
 
 export type BillNotification = {
   id: string;
+  studentAccountId?: string;
   studentName: string;
   familyName: string;
   classCount: number;
@@ -43,6 +45,7 @@ export type ActivityLog = {
 
 export type ParentAccount = {
   id: string;
+  preregisteredName?: string;
   studentName: string;
   parentName: string;
   email: string;

@@ -39,7 +39,10 @@ import {
   updateParentAccount,
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
+import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { isParentCancellationAllowed, PARENT_CANCELLATION_WARNING } from "@/lib/cancellationPolicy";
+import { serializeCsvRows } from "@/lib/classReport";
+import { canonicalizeStudentReference } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
@@ -156,11 +159,6 @@ function coachDisplayName(coach: string, language: Language = "en") {
 
 function coachTabText(tab: ClubCalendarTab, language: Language) {
   return tab === "Combined" ? copy(language, "Combined", "全部") : coachDisplayName(tab, language);
-}
-
-function csvValue(value: string | number) {
-  const text = String(value);
-  return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
 
 function studentKey(value: string) {
@@ -495,9 +493,10 @@ function futureSameClassBookings(bookings: Booking[], booking: Booking) {
   return bookings.filter(
     (item) =>
       item.id === booking.id ||
-      (item.status !== "cancelled" &&
+      (Boolean(booking.studentAccountId) &&
+        item.studentAccountId === booking.studentAccountId &&
+        item.status !== "cancelled" &&
         item.status !== "coach_confirmed" &&
-        item.studentName.trim().toLowerCase() === booking.studentName.trim().toLowerCase() &&
         (item.assignedCoach || item.requestedCoach) === (booking.assignedCoach || booking.requestedCoach) &&
         item.timeLabel === booking.timeLabel &&
         item.program === booking.program &&
@@ -527,11 +526,15 @@ function activitySummary(items: Booking[], fallback: Booking) {
   };
 }
 
-function classActivityMessage(action: string, items: Booking[], fallback: Booking, language: Language) {
+function classActivityMessage(action: string, items: Booking[], fallback: Booking, language: Language, source: "club" | "parent/student" = "club") {
   const summary = activitySummary(items, fallback);
+  const first = items[0] ?? fallback;
   const countText = items.length > 1 ? `${items.length} classes` : "1 class";
   const zhCountText = items.length > 1 ? `${items.length} 节课` : "1 节课";
   const coach = coachDisplayName(summary.coach, language);
+  if (action === "cancelled" && source === "parent/student") {
+    return parentCancellationActivityMessage(first, coach, isGroupClassJoinRequest(first), language);
+  }
   if (action === "created") {
     return copy(language, `Created ${countText} for ${summary.studentName} with ${coach}, starting ${summary.dateLabel} ${summary.timeLabel}.`, `已创建 ${summary.studentName} 与 ${coach} 的 ${zhCountText}，从 ${summary.dateLabel} ${summary.timeLabel} 开始。`);
   }
@@ -684,8 +687,13 @@ export function ClubApp() {
 
   const parentBookings = useMemo(() => {
     const sessionStudentName = parentSession?.studentName.trim().toLowerCase() ?? studentName.trim().toLowerCase();
-    return bookings.filter((booking) => booking.studentName.trim().toLowerCase() === sessionStudentName);
-  }, [bookings, parentSession?.studentName, studentName]);
+    const legacyNameIsUnique = students.filter((account) => account.studentName.trim().toLowerCase() === sessionStudentName).length === 1;
+    return bookings.filter(
+      (booking) =>
+        booking.studentAccountId === parentSession?.id ||
+        (!booking.studentAccountId && legacyNameIsUnique && booking.studentName.trim().toLowerCase() === sessionStudentName)
+    );
+  }, [bookings, parentSession?.id, parentSession?.studentName, studentName, students]);
 
   const completedTotal = parentBookings
     .filter((booking) => booking.status === "coach_confirmed")
@@ -736,7 +744,6 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, "Updating student info...", "正在更新学生信息..."));
     try {
-      const oldStudentName = parentSession.studentName;
       const account = await updateParentAccount({
         accountId: parentSession.id,
         studentName: input.studentName,
@@ -744,19 +751,6 @@ export function ClubApp() {
         email: input.email,
         phone: input.phone
       });
-      const matchingBookings = bookings.filter(
-        (booking) => booking.studentName.trim().toLowerCase() === oldStudentName.trim().toLowerCase()
-      );
-      await Promise.all(
-        matchingBookings.map((booking) =>
-          updateStoredBooking(booking.id, {
-            studentName: account.studentName,
-            familyName: account.studentName,
-            studentEmail: account.email,
-            phone: account.phone
-          })
-        )
-      );
       applyParentSession(account);
       await loadAll();
       setNotice(copy(language, "Student info updated.", "学生信息已更新。"));
@@ -769,7 +763,6 @@ export function ClubApp() {
 
   async function completeFirstLoginSetup(input: { studentName: string; parentName: string; email: string; phone: string; password: string }) {
     if (!parentSession) return;
-    const oldStudentName = parentSession.studentName;
     const account = await completeParentProfileSetup({
       accountId: parentSession.id,
       studentName: input.studentName,
@@ -778,19 +771,6 @@ export function ClubApp() {
       phone: input.phone,
       password: input.password
     });
-    const matchingBookings = bookings.filter(
-      (booking) => booking.studentName.trim().toLowerCase() === oldStudentName.trim().toLowerCase()
-    );
-    await Promise.all(
-      matchingBookings.map((booking) =>
-        updateStoredBooking(booking.id, {
-          studentName: account.studentName,
-          familyName: account.studentName,
-          studentEmail: account.email,
-          phone: account.phone
-        })
-      )
-    );
     applyParentSession(account);
     await loadAll();
     setNotice(copy(language, "Profile setup complete. You can now use the dashboard.", "资料设置完成。现在可以使用主页。"));
@@ -821,18 +801,27 @@ export function ClubApp() {
       setBills(nextBills);
       setStudents(nextStudents);
       setActivityLogs(nextActivityLogs);
+      const storedParent = window.localStorage.getItem(parentSessionKey);
+      const storedAccount = storedParent ? (JSON.parse(storedParent) as ParentAccount) : parentSession;
+      const canonicalAccount = storedAccount ? nextStudents.find((account) => account.id === storedAccount.id) : undefined;
+      if (canonicalAccount && canonicalAccount.studentName !== storedAccount?.studentName) applyParentSession(canonicalAccount);
       setNotice(copy(language, "Supabase backend connected.", "Supabase 已连接。"));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : copy(language, "Database is not ready.", "数据库暂时不可用。"));
     }
   }
 
-  async function recordClassActivity(action: "created" | "updated" | "cancelled", items: Booking[], fallback: Booking) {
+  async function recordClassActivity(
+    action: "created" | "updated" | "cancelled",
+    items: Booking[],
+    fallback: Booking,
+    source: "club" | "parent/student" = "club"
+  ) {
     const summary = activitySummary(items, fallback);
     try {
       await createActivityLog({
         action,
-        message: classActivityMessage(action, items, fallback, language),
+        message: classActivityMessage(action, items, fallback, language, source),
         studentName: summary.studentName,
         coach: summary.coach,
         dateLabel: summary.dateLabel,
@@ -857,6 +846,7 @@ export function ClubApp() {
       await Promise.all(
         slots.map((slot) =>
           createBooking({
+            studentAccountId: parentSession?.id,
             studentName,
             familyName,
             studentEmail,
@@ -886,10 +876,9 @@ export function ClubApp() {
 
   async function requestGroupClass(groupClass: Booking) {
     const coach = groupClass.assignedCoach || groupClass.requestedCoach;
-    const existingEnrollment = bookings.find(
+    const existingEnrollment = parentBookings.find(
       (booking) =>
         booking.status !== "cancelled" &&
-        booking.studentName.trim().toLowerCase() === studentName.trim().toLowerCase() &&
         isGroupClassJoinRequest(booking) &&
         sameGroupClassTime(booking, groupClass)
     );
@@ -901,6 +890,7 @@ export function ClubApp() {
     setNotice(copy(language, "Saving group class request...", "正在保存团体课请求..."));
     try {
       await createBooking({
+        studentAccountId: parentSession?.id,
         studentName,
         familyName: studentName,
         studentEmail,
@@ -937,6 +927,7 @@ export function ClubApp() {
       let storedBooking = booking;
       if (booking.id.startsWith("virtual-")) {
         storedBooking = await createBooking({
+          studentAccountId: booking.studentAccountId || parentSession?.id,
           studentName: booking.studentName,
           familyName: booking.familyName || booking.studentName,
           studentEmail: booking.studentEmail,
@@ -951,7 +942,8 @@ export function ClubApp() {
           parentNote: `${booking.parentNote} Cancelled by parent/student.`
         });
       }
-      await cancelBookingAsParent(storedBooking.id, studentName);
+      const cancelled = await cancelBookingAsParent(storedBooking.id, parentSession?.id ?? "");
+      await recordClassActivity("cancelled", [cancelled], cancelled, "parent/student");
       await loadAll();
       setNotice(copy(language, isGroupClassJoinRequest(booking) ? "Left group class." : "Class cancelled.", isGroupClassJoinRequest(booking) ? "已退出团体课。" : "课程已取消。"));
       return true;
@@ -976,6 +968,7 @@ export function ClubApp() {
       const createdBookings: Booking[] = [];
       for (const student of selectedStudents) {
         const booking = await createBooking({
+          studentAccountId: student.id,
           studentName: student.studentName,
           familyName: student.studentName,
           studentEmail: student.email,
@@ -1022,6 +1015,7 @@ export function ClubApp() {
       const created = await Promise.all(
         slots.map((slot) =>
           createBooking({
+            studentAccountId: student.id,
             studentName: student.studentName,
             familyName: student.studentName,
             studentEmail: student.email,
@@ -1062,6 +1056,7 @@ export function ClubApp() {
       const created = await Promise.all(
         slots.map((slot) =>
           createBooking({
+            studentAccountId: account.id,
             studentName: account.studentName,
             familyName: account.studentName,
             studentEmail: account.email,
@@ -1194,6 +1189,7 @@ export function ClubApp() {
           const assignedCoach = item.assignedCoach || item.requestedCoach;
           if (item.id.startsWith("virtual-")) {
             const created = await createBooking({
+              studentAccountId: item.studentAccountId,
               studentName: item.studentName,
               familyName: item.familyName || item.studentName,
               studentEmail: item.studentEmail,
@@ -1228,6 +1224,7 @@ export function ClubApp() {
     try {
       if (booking.id.startsWith("virtual-")) {
         const created = await createBooking({
+          studentAccountId: booking.studentAccountId || parentSession?.id,
           studentName: booking.studentName,
           familyName: booking.familyName,
           studentEmail: booking.studentEmail,
@@ -1259,7 +1256,7 @@ export function ClubApp() {
       const grouped = new Map<string, BillNotification>();
 
       for (const booking of completed) {
-        const key = `${booking.studentName}-${booking.familyName}`;
+        const key = booking.studentAccountId || `${booking.studentName}-${booking.familyName}`;
         const existing = grouped.get(key);
         if (existing) {
           existing.classCount += 1;
@@ -1268,6 +1265,7 @@ export function ClubApp() {
         } else {
           grouped.set(key, {
             id: crypto.randomUUID(),
+            studentAccountId: booking.studentAccountId,
             studentName: booking.studentName,
             familyName: booking.familyName,
             classCount: 1,
@@ -1281,6 +1279,7 @@ export function ClubApp() {
       await Promise.all(
         [...grouped.values()].map((bill) =>
           createBillNotification({
+            studentAccountId: bill.studentAccountId,
             studentName: bill.studentName,
             familyName: bill.familyName,
             classCount: bill.classCount,
@@ -2030,6 +2029,12 @@ function ParentApp({
 }) {
   const [selectedParentBooking, setSelectedParentBooking] = useState<Booking | null>(null);
   const [selectedGroupClass, setSelectedGroupClass] = useState<Booking | null>(null);
+  useEffect(() => {
+    if (selectedParentBooking) {
+      const canonical = bookings.find((booking) => booking.id === selectedParentBooking.id);
+      if (canonical) setSelectedParentBooking(canonical);
+    }
+  }, [bookings]);
   const [classStatusFilter, setClassStatusFilter] = useState<"requested" | "club_confirmed" | "coach_confirmed" | "cancelled">("requested");
   const [classStartDate, setClassStartDate] = useState(() => dateInputValue(calendarDays[0]?.date ?? new Date()));
   const [classEndDate, setClassEndDate] = useState(() => dateInputValue(calendarDays[calendarDays.length - 1]?.date ?? addDays(new Date(), 6)));
@@ -2071,7 +2076,6 @@ function ParentApp({
     ? bookings.find(
         (booking) =>
           booking.status !== "cancelled" &&
-          booking.studentName.trim().toLowerCase() === studentName.trim().toLowerCase() &&
           isGroupClassJoinRequest(booking) &&
           sameGroupClassTime(booking, selectedGroupClass)
       )
@@ -2534,28 +2538,48 @@ function ClubAppView({
   const [showAddClassModal, setShowAddClassModal] = useState(false);
   const [selectedAddStudent, setSelectedAddStudent] = useState<ParentAccount | null>(null);
   const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
+  useEffect(() => {
+    if (selectedClubBooking) {
+      const canonical = bookings.find((booking) => booking.id === selectedClubBooking.id);
+      if (canonical) setSelectedClubBooking(canonical);
+    }
+    if (selectedExportStudent) {
+      const canonical = students.find((student) => student.id === selectedExportStudent.id);
+      if (canonical) {
+        setSelectedExportStudent(canonical);
+        setExportStudentQuery(canonical.studentName);
+      }
+    }
+    if (selectedAddStudent) {
+      const canonical = students.find((student) => student.id === selectedAddStudent.id);
+      if (canonical) {
+        setSelectedAddStudent(canonical);
+        setStudentQuery(canonical.studentName);
+      }
+    }
+  }, [bookings, students]);
   const visibleBookings = bookings.filter((booking) => activeCalendarTab === "Combined" || bookingMatchesCoach(booking, activeCalendarTab));
   const requested = bookings.filter((booking) => !isBlockedTime(booking) && !isGroupClassBlock(booking) && (booking.status === "requested" || booking.status === "change_requested"));
   const confirmed = visibleBookings.filter((booking) => booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking));
   const studentDirectory = useMemo(() => {
-    const byName = new Map<string, ParentAccount>();
+    const byIdentity = new Map<string, ParentAccount>();
     const rememberStudent = (student: ParentAccount) => {
-      const key = student.studentName.trim().toLowerCase();
+      const key = student.id || `legacy:${student.studentName.trim().toLowerCase()}`;
       if (!key) return;
-      const existing = byName.get(key);
+      const existing = byIdentity.get(key);
       if (!existing) {
-        byName.set(key, student);
+        byIdentity.set(key, student);
         return;
       }
       const existingHasContact = Boolean(existing.email || existing.phone);
       const nextHasContact = Boolean(student.email || student.phone);
-      if (!existingHasContact && nextHasContact) byName.set(key, student);
+      if (!existingHasContact && nextHasContact) byIdentity.set(key, student);
     };
     for (const student of students) rememberStudent(student);
     for (const booking of bookings) {
       if (booking.status === "cancelled" || isGroupClassBlock(booking) || isBlockedTime(booking)) continue;
       rememberStudent({
-        id: booking.studentName,
+        id: booking.studentAccountId || `legacy:${booking.studentName.trim().toLowerCase()}`,
         studentName: booking.studentName,
         parentName: "",
         email: booking.studentEmail,
@@ -2565,7 +2589,7 @@ function ClubAppView({
         createdAt: booking.createdAt
       });
     }
-    return [...byName.values()].sort((left, right) => left.studentName.localeCompare(right.studentName));
+    return [...byIdentity.values()].sort((left, right) => left.studentName.localeCompare(right.studentName));
   }, [bookings, students]);
   const filteredStudents = studentDirectory.filter((student) => {
     const query = studentQuery.trim().toLowerCase();
@@ -2582,6 +2606,7 @@ function ClubAppView({
         const query = exportStudentQuery.trim().toLowerCase();
         return (
           student.studentName.toLowerCase().includes(query) ||
+          student.preregisteredName?.toLowerCase().includes(query) ||
           student.email.toLowerCase().includes(query) ||
           student.phone.toLowerCase().includes(query)
         );
@@ -2599,9 +2624,15 @@ function ClubAppView({
     const periodEnd = endOfDay(dateFromInputValue(exportEndDate));
     const periodTitle = `${dateLabel(periodStart)} - ${dateLabel(periodEnd)}`;
     const studentFilter = studentKey(exportStudentQuery);
-    const selectedStudentName = selectedExportStudent ? studentKey(selectedExportStudent.studentName) : "";
+    const legacyFilterMatches = studentDirectory.filter(
+      (student) => student.preregisteredName && studentKey(student.preregisteredName) === studentFilter
+    );
+    const resolvedExportStudent = selectedExportStudent ?? (legacyFilterMatches.length === 1 ? legacyFilterMatches[0] : null);
+    const selectedStudentName = resolvedExportStudent ? studentKey(resolvedExportStudent.studentName) : "";
+    const exportStudentLabel = resolvedExportStudent?.studentName || exportStudentQuery.trim() || "All students";
 
-    const inPeriod = bookings.filter((booking) => {
+    const canonicalExportBookings = bookings.map((booking) => canonicalizeStudentReference(booking, studentDirectory));
+    const inPeriod = canonicalExportBookings.filter((booking) => {
       const startsAt = new Date(booking.startsAt);
       const bookingStudentName = studentKey(booking.studentName);
       const matchesStudent = selectedStudentName
@@ -2627,7 +2658,7 @@ function ClubAppView({
     >();
 
     for (const booking of inPeriod) {
-      const key = studentKey(booking.studentName);
+      const key = booking.studentAccountId || `legacy:${studentKey(booking.studentName)}`;
       const existing =
         studentsByKey.get(key) ??
         {
@@ -2700,18 +2731,16 @@ function ClubAppView({
       ];
     });
 
-    const csv = [
+    const csv = serializeCsvRows([
       ["RSWTTA class report", periodTitle],
       ["Date range", `${exportStartDate} to ${exportEndDate}`],
-      ["Student filter", selectedExportStudent?.studentName || exportStudentQuery.trim() || "All students"],
+      ["Student filter", exportStudentLabel],
       [],
       ["Class details by student"],
       ...studentDetailRows
-    ]
-      .map((row) => row.map((cell) => csvValue(cell)).join(","))
-      .join("\n");
+    ]);
 
-    const filenameStudent = (selectedExportStudent?.studentName || exportStudentQuery.trim()).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    const filenameStudent = (resolvedExportStudent?.studentName || exportStudentQuery.trim()).replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
     downloadTextFile(`rswtta-classes${filenameStudent ? `-${filenameStudent}` : ""}-${exportStartDate}-to-${exportEndDate}.csv`, `\uFEFF${csv}`, "text/csv;charset=utf-8");
   }
 
