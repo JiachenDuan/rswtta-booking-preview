@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { assertParentCancellationAllowed } from "@/lib/cancellationPolicy";
-import { canonicalizeStudentReference, prepareStudentReferenceForCreation, resolveStudentAccountForSeed, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
+import { canonicalizeStudentReference, prepareStudentReferenceForCreation, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
@@ -870,8 +870,37 @@ export async function completeParentProfileSetup(input: { accountId: string; stu
 }
 
 
+export const recurringStudentAccountIds = {
+  Abinav: "e46f4a6e-4f15-4cac-8b7f-b56efbf0bb34",
+  Adi: "a0324572-db54-4f40-a2fb-8a69f1acbe85",
+  Advik: "3a5d55f4-65b7-4a50-b468-874ff39af1ad",
+  Alex: "9bed3c27-3e60-4a78-be48-fbb40430cf0c",
+  Angie: "36cee43b-4aa0-4e0f-9e5d-73133dd156b2",
+  Ayden: "f48731af-a7a9-4d33-942a-05e6a8e707b7",
+  Chen: "136a5ebc-0f03-478d-ab03-ad2654b0bacb",
+  Daria: "bb04312b-5d2e-4684-bed7-4a4ed7d1f4d0",
+  Derek: "cdaa204c-9e82-4ecd-bd1c-3e2556998339",
+  Desmond: "24cea930-8629-4eb9-a7a5-6829efabdb96",
+  Elijah: "fa748b5b-6b7d-4f3b-9b3b-f44328e7f63f",
+  Ella: "b8433b38-75f0-4e37-8792-3b952d26c74d",
+  "Han Xi": "0f183233-b47f-4cbf-84ad-e38074fdc20e",
+  Kyson: "bdaac62c-8f13-4426-bca1-fc8ac7d2a7f9",
+  Luke: "9f04c65b-d514-4d17-b407-d57b043964e8",
+  Max: "ca9d21a4-bd28-4072-b13b-f83ecf9d6dee",
+  Maya: "717026bf-fb61-4ecb-99c4-671c6662d0dc",
+  Nike: "3a58db57-4a9a-45ca-b220-c10dbb4771d5",
+  Rhoy: "4bd9e722-6fbe-4e89-8f7e-569373300e88",
+  Rishaan: "4bb76513-7572-45d8-8b89-f74eeb9477cf",
+  Shan: "be602cde-a725-4ced-b184-d2a5964579cf",
+  Siva: "09257ad4-1757-4055-a75f-cd7934185f26",
+  Stanley: "6b91263d-5f60-49c8-bc49-9318d56b8094",
+  Vanya: "0252b9a2-bfa1-4c21-b873-5ea73fe324b4",
+  Vishal: "b0b024a3-a9e9-4e62-bf58-413e8f641357",
+  Yajia: "8b98dd5d-aa83-47bb-8e86-85c2b9f21822"
+} as const;
+
 type RecurringClassSeed = {
-  studentName: string;
+  studentName: keyof typeof recurringStudentAccountIds;
   day: number;
   startHour: number;
   startMinute: number;
@@ -974,8 +1003,8 @@ function identityAccounts(accounts: Array<ProjectRow<AccountValues>>) {
 }
 
 function recurringSeedAccount(seed: RecurringClassSeed, accounts: Array<ProjectRow<AccountValues>>) {
-  const resolved = resolveStudentAccountForSeed(identityAccounts(accounts), seed.studentName);
-  return resolved ? accounts.find((row) => row.id === resolved.id) : undefined;
+  const accountId = recurringStudentAccountIds[seed.studentName];
+  return accounts.find((row) => row.id === accountId);
 }
 
 function tianRecurringBookingValues(seed: RecurringClassSeed, date: Date, account: ProjectRow<AccountValues>): Booking {

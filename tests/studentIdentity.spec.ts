@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { serializeCsvRows } from "../lib/classReport";
+import { recurringStudentAccountIds } from "../lib/projectStore";
 import {
   canonicalizeStudentReference,
   partitionStudentReferencesByIdentity,
@@ -7,7 +8,6 @@ import {
   planStudentRename,
   prepareStudentReferenceForCreation,
   resolveProvableStudentAccount,
-  resolveStudentAccountForSeed,
   studentReferenceBelongsToAccount
 } from "../lib/studentIdentity";
 
@@ -218,20 +218,19 @@ test("ambiguous legacy names are not canonicalized into either duplicate student
   expect(result).toEqual(legacy);
 });
 
-test("recurring seed resolves a claimed student's current full name instead of recreating the old name", () => {
-  const resolved = resolveStudentAccountForSeed(
-    [
-      { id: account.id, studentName: "Kyson Duan", preregisteredName: "Kyson" },
-      { id: "blank-duplicate", studentName: "Kyson" }
-    ],
-    "Kyson"
+test("recurring roster uses stable account IDs and renders the current name after rename", () => {
+  expect(recurringStudentAccountIds.Kyson).toBe("bdaac62c-8f13-4426-bca1-fc8ac7d2a7f9");
+  expect(recurringStudentAccountIds.Alex).toBe("9bed3c27-3e60-4a78-be48-fbb40430cf0c");
+  expect(recurringStudentAccountIds.Luke).toBe("9f04c65b-d514-4d17-b407-d57b043964e8");
+  const rendered = canonicalizeStudentReference(
+    { studentAccountId: recurringStudentAccountIds.Kyson, studentName: "Kyson" },
+    [{ id: recurringStudentAccountIds.Kyson, studentName: "Kyson Duan" }]
   );
-  expect(resolved).toMatchObject({ id: account.id, studentName: "Kyson Duan" });
+  expect(rendered.studentName).toBe("Kyson Duan");
 });
 
-test("an ambiguous recurring seed is unresolved instead of materialized under a name", () => {
-  expect(resolveStudentAccountForSeed([
-    { id: "alex-li", studentName: "Alex" },
-    { id: "alex-ma", studentName: "Alex" }
-  ], "Alex")).toBeUndefined();
+test("every configured recurring student has one unique stable account ID", () => {
+  const ids = Object.values(recurringStudentAccountIds);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(ids.every((id) => /^[0-9a-f-]{36}$/.test(id))).toBe(true);
 });

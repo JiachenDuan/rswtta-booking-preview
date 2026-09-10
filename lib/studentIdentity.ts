@@ -129,13 +129,6 @@ export function planStudentIdentityBackfill<T extends StudentIdentityReference>(
   };
 }
 
-export function resolveStudentAccountForSeed(accounts: StudentIdentityAccount[], seedName: string) {
-  const claimed = accounts.filter((account) => nameKey(account.preregisteredName) === nameKey(seedName));
-  if (claimed.length === 1) return claimed[0];
-  const exact = accounts.filter((account) => nameKey(account.studentName) === nameKey(seedName));
-  return exact.length === 1 ? exact[0] : undefined;
-}
-
 export function studentReferenceBelongsToAccount(reference: { studentAccountId?: string; studentName?: string }, accountId: string) {
   return Boolean(accountId && reference.studentAccountId === accountId);
 }
