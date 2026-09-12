@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { canonicalizeStudentReference, prepareStudentReferenceForCreation } from "@/lib/studentIdentity";
 import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
+import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
@@ -1184,6 +1185,22 @@ export async function createBooking(input: Omit<Booking, "id" | "status" | "crea
       ? new Error(`Could not save to shared club view. ${error.message}`)
       : new Error("Could not save to shared club view.");
   }
+}
+
+export async function requestBookingAsParent(input: Omit<Booking, "id" | "status" | "createdAt" | "updatedAt">, studentAccountId: string) {
+  if (!studentAccountId || input.studentAccountId !== studentAccountId) {
+    throw new Error("A signed-in student account is required to request this class.");
+  }
+  const response = await supabase.rpc("request_booking_as_parent", {
+    p_request_id: crypto.randomUUID(),
+    p_student_account_id: studentAccountId,
+    p_values: input
+  });
+  if (response.error) {
+    if (response.error.message.includes(TIAN_YE_BOOKING_MESSAGE_EN)) throw new Error(TIAN_YE_BOOKING_MESSAGE_EN);
+    throw setupError(response.error.message);
+  }
+  return bookingFromRow(response.data as ProjectRow<Booking>);
 }
 
 export async function updateBooking(

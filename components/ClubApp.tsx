@@ -37,6 +37,7 @@ import {
   loginParentAccount,
   registerParentAccount,
   resetPasswordForEmail,
+  requestBookingAsParent,
   rescheduleBookingsAtomically,
   updateUserPassword,
   updateParentAccount,
@@ -44,6 +45,8 @@ import {
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
+import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
+import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
@@ -469,6 +472,10 @@ function isRangeUnavailable(bookings: Booking[], coach: string, slot: CalendarSl
   });
 }
 
+function isParentRequestRangeUnavailable(bookings: Booking[], studentAccountId: string, coach: string, slot: CalendarSlot, durationMinutes: number) {
+  return isParentRequestIntervalUnavailable(bookings, studentAccountId, coach, slot.startsAt, durationMinutes);
+}
+
 function isRangeUnavailableExceptBooking(bookings: Booking[], coach: string, slot: CalendarSlot, durationMinutes: number, bookingId: string) {
   return isRangeUnavailable(bookings.filter((booking) => booking.id !== bookingId), coach, slot, durationMinutes);
 }
@@ -648,7 +655,7 @@ const maxCalendarDate = new Date(2026, 11, 31);
 const initialWeekStart = today;
 const initialCalendarDay = makeCalendarDay(today, (today.getDay() + 6) % 7);
 const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7 PM");
-const parentPrivateClassRequestsEnabled = false;
+const parentPrivateClassRequestsEnabled = true;
 const parentSelfRegistrationEnabled = false;
 
 export function ClubApp() {
@@ -674,6 +681,7 @@ export function ClubApp() {
   const [selectedSlots, setSelectedSlots] = useState<CalendarSlot[]>([initialCalendarSlot]);
   const [selectedDurationMinutes, setSelectedDurationMinutes] = useState(60);
   const [showRequestConfirm, setShowRequestConfirm] = useState(false);
+  const [showTianYeRestriction, setShowTianYeRestriction] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [saving, setSaving] = useState(false);
   const realtimeRefreshTimer = useRef<number | null>(null);
@@ -836,8 +844,14 @@ export function ClubApp() {
 
   async function requestBooking(parentNote = "") {
     const slots = [selectedSlot];
-    if (isRangeUnavailable(bookings, requestedCoach, selectedSlot, selectedDurationMinutes)) {
-      setNotice(copy(language, "That coach is not available at the selected time.", "该教练这个时间不可预约。"));
+    if (isTianYeCoach(requestedCoach)) {
+      setShowRequestConfirm(false);
+      setShowTianYeRestriction(true);
+      setNotice(copy(language, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH));
+      return false;
+    }
+    if (isParentRequestRangeUnavailable(bookings, parentSession?.id ?? "", requestedCoach, selectedSlot, selectedDurationMinutes)) {
+      setNotice(copy(language, "The full class interval is not available for this coach or student.", "该教练或学生的完整课程时段不可预约。"));
       return false;
     }
     setSaving(true);
@@ -845,7 +859,7 @@ export function ClubApp() {
     try {
       await Promise.all(
         slots.map((slot) =>
-          createBooking({
+          requestBookingAsParent({
             studentAccountId: parentSession?.id,
             studentName,
             familyName,
@@ -859,7 +873,7 @@ export function ClubApp() {
             startsAt: slot.startsAt,
             priceCents: lessonPriceCents(requestedCoach),
             parentNote
-          })
+          }, parentSession?.id ?? "")
         )
       );
 
@@ -876,6 +890,10 @@ export function ClubApp() {
 
   async function requestGroupClass(groupClass: Booking) {
     const coach = groupClass.assignedCoach || groupClass.requestedCoach;
+    if (isTianYeCoach(coach)) {
+      setNotice(copy(language, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH));
+      return false;
+    }
     const existingEnrollment = parentBookings.find(
       (booking) =>
         booking.status !== "cancelled" &&
@@ -1494,11 +1512,24 @@ export function ClubApp() {
             savedPhone={parentSession.phone}
             onCoachChange={setRequestedCoach}
             onParentCalendarTabChange={(tab) => {
+              setShowRequestConfirm(false);
+              setShowTianYeRestriction(false);
               setParentCalendarTab(tab);
               if (tab !== "My calendar") setRequestedCoach(tab);
             }}
             onSlotChange={(slot) => {
               if (!parentPrivateClassRequestsEnabled) return;
+              if (isTianYeCoach(requestedCoach)) {
+                setShowRequestConfirm(false);
+                setShowTianYeRestriction(true);
+                setNotice(copy(language, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH));
+                return;
+              }
+              if (new Date(slot.startsAt).getTime() <= currentTime.getTime()) {
+                setShowRequestConfirm(false);
+                setNotice(copy(language, "Past times cannot be requested.", "无法预约已经过去的时间。"));
+                return;
+              }
               selectSingleSlot(slot);
               setShowRequestConfirm(true);
             }}
@@ -1511,6 +1542,11 @@ export function ClubApp() {
             }}
             onCancel={cancelParentClass}
             onComplete={completeParentClass}
+            onRestrictedCoachSelect={() => {
+              setShowRequestConfirm(false);
+              setShowTianYeRestriction(true);
+              setNotice(copy(language, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH));
+            }}
             onGroupClassRequest={requestGroupClass}
           />
         ) : (
@@ -1560,7 +1596,7 @@ export function ClubApp() {
             coach={requestedCoach}
             slot={selectedSlot}
             durationMinutes={selectedDurationMinutes}
-            unavailable={isRangeUnavailable(bookings, requestedCoach, selectedSlot, selectedDurationMinutes)}
+            unavailable={isParentRequestRangeUnavailable(bookings, parentSession?.id ?? "", requestedCoach, selectedSlot, selectedDurationMinutes)}
             recurring={false}
             recurringWeeks={1}
             saving={saving}
@@ -1572,6 +1608,9 @@ export function ClubApp() {
               if (saved) setShowRequestConfirm(false);
             }}
           />
+        ) : null}
+        {showTianYeRestriction && mode === "parent" && parentSession ? (
+          <CoachBookingRestrictionNotice language={language} onClose={() => setShowTianYeRestriction(false)} />
         ) : null}
       </section>
     </main>
@@ -2016,6 +2055,7 @@ function ParentApp({
   onToday,
   onCancel,
   onComplete,
+  onRestrictedCoachSelect,
   onGroupClassRequest
 }: {
   bookings: Booking[];
@@ -2056,6 +2096,7 @@ function ParentApp({
   onToday: () => void;
   onCancel: (booking: Booking) => Promise<boolean>;
   onComplete: (booking: Booking) => void;
+  onRestrictedCoachSelect: () => void;
   onGroupClassRequest: (booking: Booking) => Promise<boolean>;
 }) {
   const [selectedParentBooking, setSelectedParentBooking] = useState<Booking | null>(null);
@@ -2154,9 +2195,14 @@ function ParentApp({
             blockUnavailable={parentCalendarTab !== "My calendar"}
             privacyMode
             parentMyCalendar={parentCalendarTab === "My calendar"}
+            onUnavailableSlotSelect={isTianYeCoach(requestedCoach) ? onRestrictedCoachSelect : undefined}
             isBookingActionable={(booking) => isGroupClassBlock(booking) || canParentRequestChange(booking)}
             onSlotChange={onSlotChange}
             onBookingSelect={(booking) => {
+              if (isGroupClassBlock(booking) && isTianYeCoach(booking.assignedCoach || booking.requestedCoach)) {
+                onRestrictedCoachSelect();
+                return;
+              }
               if (isGroupClassBlock(booking)) {
                 setSelectedGroupClass(booking);
                 return;
@@ -2337,6 +2383,7 @@ function ClubCalendar({
   privacyMode = false,
   parentMyCalendar = false,
   isBookingActionable,
+  onUnavailableSlotSelect,
   onSlotChange,
   onBookingSelect
 }: {
@@ -2354,6 +2401,7 @@ function ClubCalendar({
   privacyMode?: boolean;
   parentMyCalendar?: boolean;
   isBookingActionable?: (booking: Booking) => boolean;
+  onUnavailableSlotSelect?: () => void;
   onSlotChange: (value: CalendarSlot) => void;
   onBookingSelect?: (booking: Booking) => void;
 }) {
@@ -2433,9 +2481,12 @@ function ClubCalendar({
                   actionable ? "actionable" : ""
                 ].filter(Boolean).join(" ")}
                 key={startsAt}
-                disabled={(unavailable && !actionable) || (parentMyCalendar && hasVisibleBooking && !actionable)}
+                disabled={(unavailable && !actionable && !onUnavailableSlotSelect) || (parentMyCalendar && hasVisibleBooking && !actionable)}
                 onClick={() => {
-                  if (unavailable && !actionable) return;
+                  if (unavailable && !actionable) {
+                    onUnavailableSlotSelect?.();
+                    return;
+                  }
                   if (useCoachLanes) return;
                   if (onBookingSelect && selectableBooking && selectedBookingIsActionable) {
                     onBookingSelect(selectableBooking);
@@ -3786,6 +3837,27 @@ function ClubBookingActionModal({
   );
 }
 
+function CoachBookingRestrictionNotice({ language, onClose }: { language: Language; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirm-modal coach-booking-restriction" role="alertdialog" aria-modal="true" aria-labelledby="coach-booking-restriction-title">
+        <div className="section-head compact">
+          <div>
+            <p className="eyebrow">{copy(language, "Contact the club", "请联系俱乐部")}</p>
+            <h2 id="coach-booking-restriction-title">{copy(language, "Coach Tian Ye booking", "Tian Ye 教练课程预约")}</h2>
+          </div>
+        </div>
+        <p className="section-subtitle restriction-message">
+          {copy(language, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH)}
+        </p>
+        <button className="primary-button wide-button" type="button" onClick={onClose}>
+          {copy(language, "Got it", "知道了")}
+        </button>
+      </section>
+    </div>
+  );
+}
+
 function ConfirmRequestModal({
   action = "request",
   language,
@@ -3819,7 +3891,7 @@ function ConfirmRequestModal({
 }) {
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-booking-title">
+      <section className={`confirm-modal ${action === "request" ? "parent-request-modal" : ""}`} role="dialog" aria-modal="true" aria-labelledby="confirm-booking-title">
         <div className="section-head compact">
           <div>
             <p className="eyebrow">{copy(language, action === "add" ? "Confirm class" : "Confirm request", action === "add" ? "确认课程" : "确认预约")}</p>

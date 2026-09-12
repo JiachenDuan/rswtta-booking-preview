@@ -1633,6 +1633,16 @@ button.student-result.selected {
   overscroll-behavior: contain;
 }
 
+.coach-booking-restriction {
+  max-width: 520px;
+}
+
+.restriction-message {
+  margin: 0 0 4px;
+  color: var(--ink);
+  line-height: 1.65;
+}
+
 .confirm-summary {
   display: grid;
   gap: 8px;
@@ -2595,6 +2605,11 @@ button.student-result.selected {
 }
 
 @media (max-width: 760px) {
+  .parent-request-modal .modal-field-grid,
+  .parent-request-modal .modal-actions {
+    grid-template-columns: 1fr;
+  }
+
   .modal-actions.class-actions {
     grid-template-columns: 1fr 1fr;
   }
