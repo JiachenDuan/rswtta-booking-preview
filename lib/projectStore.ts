@@ -4,7 +4,8 @@ import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
 import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
-import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
+import { appendPackageLedgerEntry, hoursToMinutes } from "@/lib/classPackages";
+import type { ActivityLog, BillNotification, Booking, BookingStatus, PackageHoursLedgerEntry, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
 const projectName = "Rising Stars World Table Tennis Academy";
@@ -83,6 +84,8 @@ type ProjectRow<T> = {
 
 let schemaPromise: Promise<Record<keyof typeof tableDefinitions, string>> | null = null;
 const localStoreKey = "rswtta-local-data";
+// Local-review only. Publication is blocked until Club auth and package-ledger RLS/RPC are deployed.
+const localPackageLedgerKey = "rswtta-local-package-hours-ledger-v1";
 
 export const preregisteredStudentNames = [
   "Abinav",
@@ -1397,6 +1400,44 @@ export async function listActivityLogs() {
     () => localRows<ActivityLog>("activity_logs")
   );
   return rows.map(activityLogFromRow).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+}
+
+export function listLocalPackageHoursLedger(): PackageHoursLedgerEntry[] {
+  if (!isBrowser()) return [];
+  const raw = window.localStorage.getItem(localPackageLedgerKey);
+  if (!raw) return [];
+  try {
+    const value = JSON.parse(raw);
+    return Array.isArray(value) ? value as PackageHoursLedgerEntry[] : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function addLocalPackageHours(input: {
+  studentAccountId: string;
+  hours: number;
+  note?: string;
+  reference?: string;
+  idempotencyKey: string;
+}) {
+  const accounts = await listParentAccounts();
+  if (!accounts.some((account) => account.id === input.studentAccountId)) {
+    throw new Error("Student account does not exist.");
+  }
+  const current = listLocalPackageHoursLedger();
+  const result = appendPackageLedgerEntry(current, {
+    studentAccountId: input.studentAccountId,
+    deltaMinutes: hoursToMinutes(input.hours),
+    operationType: "package_purchase",
+    actorId: "local-review-club",
+    actorType: "club_user",
+    note: input.note?.trim() ?? "",
+    reference: input.reference?.trim() ?? "",
+    idempotencyKey: input.idempotencyKey.trim()
+  });
+  if (result.inserted) window.localStorage.setItem(localPackageLedgerKey, JSON.stringify(result.entries));
+  return result;
 }
 
 export async function createActivityLog(input: Omit<ActivityLog, "id" | "createdAt">) {

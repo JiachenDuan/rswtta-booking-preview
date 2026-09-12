@@ -2919,3 +2919,127 @@ button.student-result.selected {
   color: var(--muted);
   line-height: 1.35;
 }
+
+/* Club-only class package ledger (local review v1). */
+.club-section-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 5px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.club-section-nav button {
+  min-height: 40px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.club-section-nav button.selected {
+  background: var(--red);
+  color: #fff;
+}
+
+.class-packages {
+  display: grid;
+  gap: 16px;
+}
+
+.package-hero {
+  display: grid;
+  gap: 18px;
+}
+
+.package-scope-note {
+  display: grid;
+  gap: 4px;
+  padding: 13px 15px;
+  border: 1px solid rgba(244, 201, 93, 0.28);
+  border-radius: 8px;
+  background: rgba(244, 201, 93, 0.07);
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.package-scope-note strong { color: var(--gold-soft); }
+.package-search { width: min(520px, 100%); }
+.package-search input { background: transparent; color: var(--ink); }
+.package-directory { overflow: hidden; padding: 0; }
+
+.package-table-head,
+.package-account-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.6fr) minmax(130px, 0.75fr) minmax(125px, 0.7fr) minmax(170px, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.package-table-head {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.package-account-row {
+  min-height: 82px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.package-account-row:last-child { border-bottom: 0; }
+.package-identity { min-width: 0; }
+.package-identity strong { display: block; margin-bottom: 5px; color: var(--ink); }
+.package-identity code,
+.package-confirm-summary code {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.package-balance { color: var(--gold-soft); font-size: 1.25rem; }
+.package-balance small { color: var(--muted); font-size: 0.72rem; font-weight: 600; }
+.package-updated { color: var(--muted); font-size: 0.8rem; }
+.package-count { margin: 0; padding: 12px 18px; border-top: 1px solid var(--line); font-size: 0.78rem; }
+.package-add-button { min-height: 36px; padding: 0 11px; font-size: 0.74rem; }
+.package-modal { width: min(620px, calc(100vw - 28px)); }
+.package-modal-close { position: absolute; top: 14px; right: 14px; }
+.package-confirm-summary code { max-width: 320px; }
+.package-note { display: grid; gap: 7px; margin-top: 12px; color: var(--muted); font-size: 0.8rem; font-weight: 800; }
+.package-result { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin-top: 14px; padding: 13px; border: 1px solid rgba(244, 201, 93, 0.32); border-radius: 8px; background: rgba(244, 201, 93, 0.08); }
+.package-result strong { color: var(--gold-soft); }
+.form-error { margin: 12px 0 0; color: #fca5a5; font-size: 0.85rem; }
+.primary-button:disabled, .ghost-button:disabled, .icon-button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+@media (max-width: 900px) {
+  .package-table-head { display: none; }
+  .package-account-row { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; }
+  .package-identity { grid-column: 1 / -1; }
+  .package-updated::before { content: "Updated · "; }
+}
+
+@media (max-width: 560px) {
+  .club-section-nav { width: 100%; }
+  .club-section-nav button { flex: 1; min-width: 0; padding: 0 8px; font-size: 0.76rem; }
+  .package-account-row { grid-template-columns: 1fr; align-items: start; }
+  .package-identity, .package-account-row > * { grid-column: 1; }
+  .package-add-button { width: 100%; margin-top: 3px; }
+  .package-confirm-summary code { max-width: 240px; }
+  .package-result { grid-template-columns: auto 1fr; }
+  .package-result strong { grid-column: 2; }
+}

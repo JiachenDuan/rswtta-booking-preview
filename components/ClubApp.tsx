@@ -56,6 +56,7 @@ import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/re
 import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
+import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
@@ -812,7 +813,8 @@ export function ClubApp() {
         listBillNotifications(),
         listParentAccounts(),
         listActivityLogs(),
-        authoritativeCurrentTime()
+        // Keep the established local projectStore fallback usable for isolated review.
+        authoritativeCurrentTime().catch(() => new Date())
       ]);
       authoritativeClockOffsetMs.current = databaseTime.getTime() - Date.now();
       setCurrentTime(databaseTime);
@@ -2659,6 +2661,7 @@ function ClubAppView({
   const [showAddClassModal, setShowAddClassModal] = useState(false);
   const [selectedAddStudent, setSelectedAddStudent] = useState<ParentAccount | null>(null);
   const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
+  const [clubSection, setClubSection] = useState<"calendar" | "packages">("calendar");
   useEffect(() => {
     if (selectedClubBooking) {
       const canonical = bookings.find((booking) => booking.id === selectedClubBooking.id);
@@ -2868,6 +2871,15 @@ function ClubAppView({
 
   return (
     <section className="calendar-first">
+      <nav className="club-section-nav" aria-label={copy(language, "Club sections", "俱乐部功能")}>
+        <button type="button" className={clubSection === "calendar" ? "selected" : ""} onClick={() => setClubSection("calendar")}>
+          {copy(language, "Calendar / 日历", "日历 / Calendar")}
+        </button>
+        <button type="button" className={clubSection === "packages" ? "selected" : ""} onClick={() => setClubSection("packages")}>
+          {copy(language, "Class packages / 课时包", "课时包 / Class packages")}
+        </button>
+      </nav>
+      {clubSection === "packages" ? <ClassPackagesPanel students={studentDirectory} language={language} /> : <>
       <section className="section-block calendar-core">
         <div className="section-head">
           <div>
@@ -3160,6 +3172,7 @@ function ClubAppView({
           }}
         />
       ) : null}
+      </>}
     </section>
   );
 }
