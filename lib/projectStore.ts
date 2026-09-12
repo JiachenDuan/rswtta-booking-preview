@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { canonicalizeStudentReference, prepareStudentReferenceForCreation } from "@/lib/studentIdentity";
 import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
+import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
@@ -1249,6 +1250,36 @@ export async function rescheduleBookingsAtomically(input: {
     p_scope: input.scope,
     p_series_id: selectedIdentity.seriesId ?? null,
     p_boundary: selectedIdentity.recurrenceOriginalStartsAt ?? selectedIdentity.startsAt
+  });
+  if (response.error) throw setupError(response.error.message);
+  return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);
+}
+
+export async function manageGroupOccurrencesAtomically(input: {
+  bookings: Booking[];
+  selected: Booking;
+  action: GroupOccurrenceAction;
+  scope: GroupOccurrenceScope;
+  newStartsAt?: string;
+  newDateLabel?: string;
+  newTimeLabel?: string;
+  now?: Date;
+}) {
+  const selection = selectGroupOccurrenceTargets(input.bookings, input.selected, input.scope, input.now);
+  const response = await supabase.rpc("manage_group_occurrences", {
+    p_selected_block_id: input.selected.id,
+    p_action: input.action,
+    p_scope: input.scope,
+    p_expected_series_id: input.selected.seriesId,
+    p_expected_occurrence_id: input.selected.recurrenceOccurrenceId,
+    p_expected_original_starts_at: input.selected.recurrenceOriginalStartsAt,
+    p_expected_selected_starts_at: input.selected.startsAt,
+    p_expected_occurrence_count: selection.blocks.length,
+    p_expected_row_count: selection.rows.length,
+    p_expected_rows: expectedGroupOccurrenceRows(selection.rows),
+    p_new_starts_at: input.action === "update" ? input.newStartsAt : null,
+    p_new_date_label: input.action === "update" ? input.newDateLabel : null,
+    p_new_time_label: input.action === "update" ? input.newTimeLabel : null
   });
   if (response.error) throw setupError(response.error.message);
   return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);

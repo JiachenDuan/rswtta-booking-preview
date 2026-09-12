@@ -38,12 +38,14 @@ import {
   registerParentAccount,
   resetPasswordForEmail,
   requestBookingAsParent,
+  manageGroupOccurrencesAtomically,
   rescheduleBookingsAtomically,
   updateUserPassword,
   updateParentAccount,
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
+import { isFutureActiveGroupBlock, selectGroupOccurrenceTargets, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
@@ -1296,6 +1298,40 @@ export function ClubApp() {
     }
   }
 
+  async function manageGroupOccurrence(
+    booking: Booking,
+    action: GroupOccurrenceAction,
+    scope: GroupOccurrenceScope,
+    schedule?: { slot: CalendarSlot; durationMinutes: number }
+  ) {
+    setSaving(true);
+    setNotice(copy(language, action === "update" ? "Updating group occurrence..." : "Cancelling group occurrence...", action === "update" ? "正在更新团体课..." : "正在取消团体课..."));
+    try {
+      const changed = await manageGroupOccurrencesAtomically({
+        bookings,
+        selected: booking,
+        action,
+        scope,
+        now: currentTime,
+        newStartsAt: schedule?.slot.startsAt,
+        newDateLabel: schedule?.slot.dateLabel,
+        newTimeLabel: schedule ? rangeLabel(schedule.slot, schedule.durationMinutes) : undefined
+      });
+      await loadAll();
+      setNotice(copy(
+        language,
+        `${action === "update" ? "Updated" : "Cancelled"} ${changed.length} group row${changed.length === 1 ? "" : "s"}.`,
+        `已${action === "update" ? "更新" : "取消"} ${changed.length} 条团体课记录。`
+      ));
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not manage group occurrence.", "无法管理团体课。"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function generateBills() {
     setNotice("Generating weekly student bill notifications...");
     try {
@@ -1582,6 +1618,7 @@ export function ClubApp() {
             onCancelClass={cancelClubClass}
             onCoachComplete={(booking) => updateBooking(booking.id, "coach_confirmed", booking.assignedCoach)}
             onUpdateClassTime={updateClassTime}
+            onManageGroupOccurrence={manageGroupOccurrence}
             onAddClass={addClubClass}
             onAddNewStudentClass={addClubNewStudentClass}
             onBlockTime={blockCoachTime}
@@ -2569,6 +2606,7 @@ function ClubAppView({
   onCancelClass,
   onCoachComplete,
   onUpdateClassTime,
+  onManageGroupOccurrence,
   onAddClass,
   onAddNewStudentClass,
   onBlockTime,
@@ -2603,6 +2641,7 @@ function ClubAppView({
   onCancelClass: (booking: Booking, recurring: boolean) => void;
   onCoachComplete: (booking: Booking) => void;
   onUpdateClassTime: (booking: Booking, slot: CalendarSlot, durationMinutes: number, recurring: boolean) => void;
+  onManageGroupOccurrence: (booking: Booking, action: GroupOccurrenceAction, scope: GroupOccurrenceScope, schedule?: { slot: CalendarSlot; durationMinutes: number }) => Promise<boolean>;
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onAddNewStudentClass: (input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
@@ -3116,6 +3155,10 @@ function ClubAppView({
             onUpdateClassTime(selectedClubBooking, slot, durationMinutes, recurring);
             setSelectedClubBooking(null);
           }}
+          onManageGroupOccurrence={async (action, scope, schedule) => {
+            const saved = await onManageGroupOccurrence(selectedClubBooking, action, scope, schedule);
+            if (saved) setSelectedClubBooking(null);
+          }}
         />
       ) : null}
     </section>
@@ -3410,6 +3453,7 @@ function ClubBookingActionModal({
   onCompleteEnrollment,
   onAddDropIn,
   onAddNewStudent,
+  onManageGroupOccurrence,
   saving
 }: {
   booking: Booking;
@@ -3425,6 +3469,7 @@ function ClubBookingActionModal({
   onCompleteEnrollment: (booking: Booking) => void;
   onAddDropIn: (groupClass: Booking, students: ParentAccount[]) => Promise<boolean>;
   onAddNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) => Promise<boolean>;
+  onManageGroupOccurrence: (action: GroupOccurrenceAction, scope: GroupOccurrenceScope, schedule?: { slot: CalendarSlot; durationMinutes: number }) => Promise<void>;
   saving: boolean;
 }) {
   const bookingStart = new Date(booking.startsAt);
@@ -3436,6 +3481,7 @@ function ClubBookingActionModal({
   const [updateRecurring, setUpdateRecurring] = useState(false);
   const [cancelRecurring, setCancelRecurring] = useState(false);
   const [confirmAction, setConfirmAction] = useState<"update" | "cancel" | null>(null);
+  const [groupAction, setGroupAction] = useState<{ action: GroupOccurrenceAction; scope: GroupOccurrenceScope } | null>(null);
   const typedEditSlot = makeSlotFromTypedInput(dateValue, startTime);
   const typedDurationMinutes = typedTimeDurationMinutes(dateValue, startTime, endTime);
   const editSlot = typedEditSlot ?? makeSlotFromInput(dateValue, initialStartTime || timeLabel(bookingStart));
@@ -3497,9 +3543,20 @@ function ClubBookingActionModal({
   const canCreateGroupStudent = newGroupStudentName.trim().length > 0 && !newGroupDuplicateBlocked;
 
   if (isGroupClassBlock(booking)) {
+    const manageableGroup = Boolean(
+      isFutureActiveGroupBlock(booking) &&
+      booking.seriesId &&
+      booking.recurrenceOccurrenceId &&
+      booking.recurrenceOriginalStartsAt &&
+      booking.groupClassId
+    );
+    const singleSelection = manageableGroup ? selectGroupOccurrenceTargets(bookings, booking, "single") : null;
+    const futureSelection = manageableGroup ? selectGroupOccurrenceTargets(bookings, booking, "future") : null;
+    const activeSelection = groupAction?.scope === "future" ? futureSelection : singleSelection;
+    const groupUpdateChanged = timeInputValid && (editSlot.startsAt !== booking.startsAt || rangeLabel(editSlot, durationMinutes) !== booking.timeLabel);
     return (
       <div className="modal-backdrop" role="presentation">
-        <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="club-group-class-title">
+        <section className="confirm-modal class-action-modal group-class-action-modal" role="dialog" aria-modal="true" aria-labelledby="club-group-class-title">
           <button className="modal-close-icon" type="button" aria-label="Close" onClick={onClose}>
             <X size={20} />
           </button>
@@ -3518,6 +3575,60 @@ function ClubBookingActionModal({
             <div><dt>{copy(language, "Enrolled", "已确认")}</dt><dd>{confirmedGroupEnrollments.length}</dd></div>
             <div><dt>{copy(language, "Complete", "完成")}</dt><dd>{completedGroupEnrollments.length}</dd></div>
           </dl>
+          {manageableGroup ? (
+            <div className="group-occurrence-management">
+              <div className="section-head compact">
+                <div>
+                  <p className="eyebrow">{copy(language, "Recurring group management", "重复团体课管理")}</p>
+                  <h3>{copy(language, "Update or cancel this series", "更新或取消本系列")}</h3>
+                </div>
+              </div>
+              <div className="modal-edit-time">
+                <div className="modal-field-grid">
+                  <label><span>{copy(language, "New date", "新日期")}</span><input className="modal-input" type="date" value={dateValue} onChange={(event) => setDateValue(event.target.value)} /></label>
+                  <label><span>{copy(language, "Start time", "开始时间")}</span><input className="modal-input" value={startTime} onChange={(event) => setStartTime(event.target.value)} placeholder="4:10 PM" /></label>
+                </div>
+                <label className="modal-duration-picker"><span>{copy(language, "End time", "结束时间")}</span><input className="modal-input" value={endTime} onChange={(event) => setEndTime(event.target.value)} placeholder="5:25 PM" /></label>
+                <p className={!timeInputValid ? "modal-warning" : "modal-info"}>
+                  {timeInputValid ? `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}` : copy(language, "Enter a valid start and end time.", "请输入有效的开始和结束时间。")}
+                </p>
+              </div>
+              <div className="group-occurrence-actions">
+                <button className="primary-button" type="button" disabled={saving || !groupUpdateChanged} onClick={() => setGroupAction({ action: "update", scope: "single" })}>{copy(language, "Update this group occurrence only", "仅更新本次团体课")}</button>
+                <button className="primary-button" type="button" disabled={saving || !groupUpdateChanged} onClick={() => setGroupAction({ action: "update", scope: "future" })}>{copy(language, "Update this and future occurrences", "更新本次及未来团体课")}</button>
+                <button className="decline" type="button" disabled={saving} onClick={() => setGroupAction({ action: "cancel", scope: "single" })}>{copy(language, "Cancel this group occurrence only", "仅取消本次团体课")}</button>
+                <button className="decline" type="button" disabled={saving} onClick={() => setGroupAction({ action: "cancel", scope: "future" })}>{copy(language, "Cancel this and future occurrences", "取消本次及未来团体课")}</button>
+              </div>
+              {groupAction && activeSelection ? (
+                <div className="action-confirm-panel group-occurrence-confirm">
+                  <strong>{copy(language, groupAction.action === "cancel" ? "Final cancellation confirmation" : "Confirm group update", groupAction.action === "cancel" ? "最终取消确认" : "确认团体课更新")}</strong>
+                  <p>{copy(
+                    language,
+                    `${groupAction.scope === "single" ? "This occurrence" : "This and future occurrences"}: ${activeSelection.blocks.length} group occurrence${activeSelection.blocks.length === 1 ? "" : "s"}, ${activeSelection.rows.length} total row${activeSelection.rows.length === 1 ? "" : "s"}.`,
+                    `${groupAction.scope === "single" ? "本次" : "本次及未来"}：${activeSelection.blocks.length} 次团体课，共 ${activeSelection.rows.length} 条记录。`
+                  )}</p>
+                  <p>{groupAction.action === "update"
+                    ? `${booking.dateLabel} ${booking.timeLabel} → ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`
+                    : copy(language, "This soft-cancels the complete selected scope and preserves its history.", "这会软取消所选范围内的全部记录，并保留历史。")}</p>
+                  <div className="modal-actions">
+                    <button className="filter-button" type="button" onClick={() => setGroupAction(null)}>{copy(language, "Back", "返回")}</button>
+                    <button
+                      className={groupAction.action === "cancel" ? "decline" : "primary-button"}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => onManageGroupOccurrence(
+                        groupAction.action,
+                        groupAction.scope,
+                        groupAction.action === "update" ? { slot: editSlot, durationMinutes } : undefined
+                      )}
+                    >
+                      {copy(language, groupAction.action === "cancel" ? "Yes, cancel selected scope" : "Confirm update", groupAction.action === "cancel" ? "确认取消所选范围" : "确认更新")}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="group-roster-list">
             {groupEnrollments.length === 0 ? (
               <p className="empty-state">{copy(language, "No student requests yet.", "还没有学生申请。")}</p>
