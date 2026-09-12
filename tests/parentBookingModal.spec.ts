@@ -48,5 +48,6 @@ test("existing group enrollments remain read-only without a leave action", () =>
   expect(groupRequestModal).toContain("hasExistingEnrollment");
   expect(groupRequestModal).not.toContain("Leave group class");
   expect(groupRequestModal).not.toContain("onCancelEnrollment");
-  expect(groupRequestModal).toContain('copy(language, "Close", "关闭")');
+  expect(groupRequestModal).toContain('type="button" aria-label={copy(language, "Close", "关闭")}');
+  expect(groupRequestModal).not.toContain('copy(language, "Close", "关闭")}</button>');
 });

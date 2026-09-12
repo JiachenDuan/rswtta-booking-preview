@@ -2693,8 +2693,13 @@ button.student-result.selected {
   overflow: hidden;
 }
 
-.class-action-modal {
+.class-action-modal,
+.parent-request-modal,
+.parent-group-request-modal {
   position: relative;
+}
+
+.class-action-modal {
   padding-top: 22px;
 }
 
@@ -2733,6 +2738,10 @@ button.student-result.selected {
 
 .class-action-head {
   padding-right: 52px;
+}
+
+.parent-request-head {
+  padding-right: 58px;
 }
 
 .complete-hero-button {

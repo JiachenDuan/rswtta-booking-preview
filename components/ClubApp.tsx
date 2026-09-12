@@ -721,6 +721,12 @@ export function ClubApp() {
     setSelectedSlots([slot]);
   }
 
+  function closeParentRequestModal() {
+    setShowRequestConfirm(false);
+    setSelectedSlots([]);
+    setSelectedDurationMinutes(60);
+  }
+
   function applyParentSession(account: ParentAccount) {
     setParentSession(account);
     setStudentName(account.studentName);
@@ -1640,10 +1646,10 @@ export function ClubApp() {
             saving={saving}
             onSlotChange={selectSingleSlot}
             onDurationChange={setSelectedDurationMinutes}
-            onCancel={() => setShowRequestConfirm(false)}
+            onCancel={closeParentRequestModal}
             onConfirm={async () => {
               const saved = await requestBooking();
-              if (saved) setShowRequestConfirm(false);
+              if (saved) closeParentRequestModal();
             }}
           />
         ) : null}
@@ -4010,7 +4016,6 @@ function CoachBookingRestrictionNotice({ language, onClose }: { language: Langua
 }
 
 function ConfirmRequestModal({
-  action = "request",
   language,
   studentName,
   coach,
@@ -4025,7 +4030,6 @@ function ConfirmRequestModal({
   onCancel,
   onConfirm
 }: {
-  action?: "request" | "add";
   language: Language;
   studentName: string;
   coach: string;
@@ -4040,14 +4044,27 @@ function ConfirmRequestModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && !saving) onCancel();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onCancel, saving]);
+
   return (
-    <div className="modal-backdrop" role="presentation">
-      <section className={`confirm-modal ${action === "request" ? "parent-request-modal" : ""}`} role="dialog" aria-modal="true" aria-labelledby="confirm-booking-title">
-        <div className="section-head compact">
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+      if (!saving && event.currentTarget === event.target) onCancel();
+    }}>
+      <section className="confirm-modal parent-request-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-booking-title">
+        <button className="modal-close-icon" type="button" aria-label={copy(language, "Close", "关闭")} onClick={onCancel} disabled={saving}>
+          <span aria-hidden="true">×</span>
+        </button>
+        <div className="section-head compact parent-request-head">
           <div>
-            <p className="eyebrow">{copy(language, action === "add" ? "Confirm class" : "Confirm request", action === "add" ? "确认课程" : "确认预约")}</p>
+            <p className="eyebrow">{copy(language, "Confirm request", "确认预约")}</p>
             <h2 id="confirm-booking-title">
-              {copy(language, action === "add" ? "Add this class?" : "Send this class request?", action === "add" ? "添加这节课？" : "发送这个预约请求？")}
+              {copy(language, "Send this class request?", "发送这个预约请求？")}
             </h2>
           </div>
         </div>
@@ -4101,15 +4118,12 @@ function ConfirmRequestModal({
           </div>
         ) : null}
         {unavailable ? <p className="modal-warning">{copy(language, "This time is not available.", "这个时间不可预约。")}</p> : null}
-        <div className="modal-actions">
-          <button className="filter-button" onClick={onCancel} disabled={saving}>
-            {copy(language, "Cancel", "取消")}
-          </button>
+        <div className="modal-actions single-action">
           <button className="primary-button" onClick={onConfirm} disabled={saving || unavailable}>
             <Check size={18} />
             {saving
-              ? copy(language, action === "add" ? "Adding..." : "Sending...", action === "add" ? "添加中..." : "发送中...")
-              : copy(language, action === "add" ? "Add class" : "Confirm request", action === "add" ? "添加课程" : "确认请求")}
+              ? copy(language, "Sending...", "发送中...")
+              : copy(language, "Confirm request", "确认请求")}
           </button>
         </div>
       </section>
@@ -4135,10 +4149,23 @@ function GroupClassRequestModal({
   onConfirm: () => void;
 }) {
   const hasExistingEnrollment = Boolean(existingEnrollment);
+  useEffect(() => {
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && !saving) onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose, saving]);
+
   return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="group-class-request-title">
-        <div className="section-head compact">
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => {
+      if (!saving && event.currentTarget === event.target) onClose();
+    }}>
+      <section className="confirm-modal parent-group-request-modal" role="dialog" aria-modal="true" aria-labelledby="group-class-request-title">
+        <button className="modal-close-icon" type="button" aria-label={copy(language, "Close", "关闭")} onClick={onClose} disabled={saving}>
+          <span aria-hidden="true">×</span>
+        </button>
+        <div className="section-head compact parent-request-head">
           <div>
             <p className="eyebrow">{copy(language, "Group class", "团体课")}</p>
             <h2 id="group-class-request-title">{hasExistingEnrollment ? copy(language, "Group class request status", "团体课申请状态") : copy(language, "Request to join this group class?", "申请加入这节团体课？")}</h2>
@@ -4153,15 +4180,14 @@ function GroupClassRequestModal({
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
           {existingEnrollment ? <div><dt>{copy(language, "Status", "状态")}</dt><dd>{statusText(existingEnrollment.status, language)}</dd></div> : null}
         </dl>
-        <div className={`modal-actions ${hasExistingEnrollment ? "single-action" : ""}`}>
-          <button className="filter-button" onClick={onClose} disabled={saving}>{copy(language, "Close", "关闭")}</button>
-          {!hasExistingEnrollment ? (
+        {!hasExistingEnrollment ? (
+          <div className="modal-actions single-action">
             <button className="primary-button" onClick={onConfirm} disabled={saving}>
               <Check size={18} />
               {saving ? copy(language, "Sending...", "发送中...") : copy(language, "Request to join", "申请加入")}
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );

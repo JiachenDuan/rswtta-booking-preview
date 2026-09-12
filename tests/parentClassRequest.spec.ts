@@ -105,3 +105,59 @@ test("request modal remains bilingual and collapses to one column on narrow scre
   expect(modal).toContain('"这个时间不可预约。"');
   expect(css).toMatch(/@media \(max-width: 760px\)[\s\S]*?\.modal-field-grid[\s\S]*?grid-template-columns:\s*1fr/);
 });
+
+test("private and Group Parent requests use one accessible top-right close without footer cancellation", () => {
+  const privateModal = appSource.slice(appSource.indexOf("function ConfirmRequestModal"), appSource.indexOf("function GroupClassRequestModal"));
+  const groupModal = appSource.slice(appSource.indexOf("function GroupClassRequestModal"), appSource.indexOf("function ParentClassActionModal"));
+  const css = readFileSync("app/globals.css", "utf8");
+  const closeRule = css.match(/\.modal-close-icon \{([\s\S]*?)\n\}/)?.[1] ?? "";
+  const focusRule = css.match(/\.modal-close-icon:focus-visible \{([\s\S]*?)\n\}/)?.[1] ?? "";
+
+  expect(privateModal.match(/className="modal-close-icon"/g)).toHaveLength(1);
+  expect(privateModal).toContain('type="button" aria-label={copy(language, "Close", "关闭")}');
+  expect(privateModal).toContain('<span aria-hidden="true">×</span>');
+  expect(privateModal).not.toContain('copy(language, "Cancel", "取消")');
+  expect(privateModal).toContain('className="modal-actions single-action"');
+  expect(privateModal).toContain("onClick={onConfirm} disabled={saving || unavailable}");
+
+  expect(groupModal.match(/className="modal-close-icon"/g)).toHaveLength(1);
+  expect(groupModal).not.toContain('copy(language, "Cancel", "取消")');
+  expect(groupModal).not.toContain('copy(language, "Close", "关闭")}</button>');
+  expect(groupModal).toContain("onClick={onConfirm} disabled={saving}");
+  expect(groupModal).toContain('className="confirm-modal parent-group-request-modal"');
+
+  expect(closeRule).toContain("width: 44px");
+  expect(closeRule).toContain("height: 44px");
+  expect(closeRule).toContain("position: absolute");
+  expect(closeRule).toContain("top: 14px");
+  expect(closeRule).toContain("right: 14px");
+  expect(focusRule).toContain("outline: 3px solid var(--gold)");
+  expect(css).toMatch(/\.parent-request-head \{[\s\S]*?padding-right:\s*58px/);
+  expect(css).toMatch(/\.parent-request-modal,[\s\S]*?\.parent-group-request-modal \{[\s\S]*?position:\s*relative/);
+});
+
+test("Parent request close paths dismiss, clear selection, and restore duration while Club add stays separate", () => {
+  const closeHandler = appSource.slice(appSource.indexOf("function closeParentRequestModal"), appSource.indexOf("function applyParentSession"));
+  const parentRequestRender = appSource.slice(appSource.indexOf("{showRequestConfirm && parentPrivateClassRequestsEnabled"), appSource.indexOf("{showTianYeRestriction"));
+  const clubAddModal = appSource.slice(appSource.indexOf("function ClubAddClassModal"), appSource.indexOf("function ClubBookingActionModal"));
+  const restriction = appSource.slice(appSource.indexOf("function CoachBookingRestrictionNotice"), appSource.indexOf("function ConfirmRequestModal"));
+
+  expect(closeHandler).toContain("setShowRequestConfirm(false)");
+  expect(closeHandler).toContain("setSelectedSlots([])");
+  expect(closeHandler).toContain("setSelectedDurationMinutes(60)");
+  expect(parentRequestRender).toContain("onCancel={closeParentRequestModal}");
+  expect(parentRequestRender).toContain("if (saved) closeParentRequestModal()");
+  expect(privateModalEscapeAndBackdrop(appSource)).toBe(true);
+  expect(clubAddModal).toContain('copy(language, "Cancel", "取消")');
+  expect(clubAddModal).not.toContain("parent-request-modal");
+  expect(clubAddModal).not.toContain('aria-label={copy(language, "Close", "关闭")}');
+  expect(restriction).toContain('role="alertdialog"');
+  expect(restriction).toContain('copy(language, "Got it", "知道了")');
+  expect(restriction).not.toContain("onConfirm");
+});
+
+function privateModalEscapeAndBackdrop(source: string) {
+  const modal = source.slice(source.indexOf("function ConfirmRequestModal"), source.indexOf("function GroupClassRequestModal"));
+  return modal.includes('event.key === "Escape" && !saving') &&
+    modal.includes('event.currentTarget === event.target) onCancel()');
+}
