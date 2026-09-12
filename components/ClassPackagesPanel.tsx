@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Clock3, Plus, Search, ShieldCheck, X } from "lucide-react";
-import { addLocalPackageHours, listLocalPackageHoursLedger } from "@/lib/projectStore";
+import { addPackageHours, listPackageHourBalances } from "@/lib/projectStore";
 import {
   classPackageAccountRows,
   DEFAULT_PACKAGE_HOURS,
@@ -11,13 +11,14 @@ import {
   safeAccountSuffix,
   searchClassPackageAccounts
 } from "@/lib/classPackages";
-import type { PackageHoursLedgerEntry, ParentAccount } from "@/lib/types";
+import type { PackageHoursBalance, ParentAccount } from "@/lib/types";
 
 type Language = "en" | "zh";
 const copy = (language: Language, en: string, zh: string) => language === "zh" ? zh : en;
 
 export function ClassPackagesPanel({ students, language }: { students: ParentAccount[]; language: Language }) {
-  const [entries, setEntries] = useState<PackageHoursLedgerEntry[]>(() => listLocalPackageHoursLedger());
+  const [balances, setBalances] = useState<PackageHoursBalance[]>([]);
+  const [loadingBalances, setLoadingBalances] = useState(true);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<ParentAccount | null>(null);
   const [hours, setHours] = useState(String(DEFAULT_PACKAGE_HOURS));
@@ -27,9 +28,35 @@ export function ClassPackagesPanel({ students, language }: { students: ParentAcc
   const [error, setError] = useState("");
   const idempotencyKey = useRef(crypto.randomUUID());
 
-  useEffect(() => setEntries(listLocalPackageHoursLedger()), []);
+  async function refreshBalances() {
+    const next = await listPackageHourBalances();
+    const expectedIds = new Set(students.map((student) => student.id));
+    const receivedIds = new Set(next.map((balance) => balance.studentAccountId));
+    if (receivedIds.size !== expectedIds.size || [...expectedIds].some((id) => !receivedIds.has(id))) {
+      throw new Error(copy(language, "Package balance response omitted a student account.", "课时余额响应遗漏了学生账号。"));
+    }
+    setBalances(next);
+  }
 
-  const rows = useMemo(() => classPackageAccountRows(students, entries), [students, entries]);
+  useEffect(() => {
+    let active = true;
+    setLoadingBalances(true);
+    listPackageHourBalances()
+      .then((next) => {
+        if (!active) return;
+        const expectedIds = new Set(students.map((student) => student.id));
+        const receivedIds = new Set(next.map((balance) => balance.studentAccountId));
+        if (receivedIds.size !== expectedIds.size || [...expectedIds].some((id) => !receivedIds.has(id))) {
+          throw new Error(copy(language, "Package balance response omitted a student account.", "课时余额响应遗漏了学生账号。"));
+        }
+        setBalances(next);
+      })
+      .catch((caught) => active && setError(caught instanceof Error ? caught.message : copy(language, "Could not load package balances.", "无法加载课时余额。")))
+      .finally(() => active && setLoadingBalances(false));
+    return () => { active = false; };
+  }, [students, language]);
+
+  const rows = useMemo(() => classPackageAccountRows(students, balances), [students, balances]);
   const visibleRows = useMemo(() => searchClassPackageAccounts(rows, query), [rows, query]);
   const selectedRow = selected ? rows.find((row) => row.account.id === selected.id) : null;
   const parsedHours = Number(hours);
@@ -41,14 +68,14 @@ export function ClassPackagesPanel({ students, language }: { students: ParentAcc
     setSaving(true);
     setError("");
     try {
-      await addLocalPackageHours({
+      await addPackageHours({
         studentAccountId: selected.id,
         hours: parsedHours,
         note,
         reference,
         idempotencyKey: idempotencyKey.current
       });
-      setEntries(listLocalPackageHoursLedger());
+      await refreshBalances();
       setSelected(null);
       setHours(String(DEFAULT_PACKAGE_HOURS));
       setNote("");
@@ -72,11 +99,15 @@ export function ClassPackagesPanel({ students, language }: { students: ParentAcc
               {copy(language, "Every current student account is shown. Balances are derived from an append-only minutes ledger.", "显示所有当前学生账号。余额由只追加的分钟账本计算。")}
             </p>
           </div>
-          <span className="status-chip good"><ShieldCheck size={15} /> {copy(language, "Local review", "本地审核")}</span>
+          <span className="status-chip good"><ShieldCheck size={15} /> {copy(language, "Shared ledger", "共享账本")}</span>
         </div>
         <div className="package-scope-note">
           <strong>{copy(language, "Phase 1 scope", "第一阶段范围")}</strong>
           <span>{copy(language, "Add prepaid hours only. No automatic lesson deductions, payment amounts, refunds, or arbitrary balance edits.", "仅增加预付课时。不包含自动扣课时、付款金额、退款或任意修改余额。")}</span>
+        </div>
+        <div className="package-scope-note warning" role="note">
+          <strong>{copy(language, "Temporary security limitation", "临时安全限制")}</strong>
+          <span>{copy(language, "Club access still uses the legacy unverified session. Package credits are audited accordingly until server-verified Club sign-in ships.", "俱乐部访问暂时仍使用未验证的旧会话。在服务器验证登录上线前，增加课时会按此风险如实记录审计信息。")}</span>
         </div>
         <label className="search package-search">
           <Search size={18} />
@@ -92,7 +123,9 @@ export function ClassPackagesPanel({ students, language }: { students: ParentAcc
           <span>{copy(language, "Last package update", "最近更新")}</span>
           <span />
         </div>
-        <div className="package-account-list">
+        {loadingBalances ? <p className="empty-state" aria-live="polite">{copy(language, "Loading shared balances…", "正在加载共享余额…")}</p> : null}
+        {error && !selected ? <p className="form-error" role="alert">{error}</p> : null}
+        <div className="package-account-list" aria-busy={loadingBalances}>
           {visibleRows.map((row) => (
             <article className="package-account-row" key={row.account.id} data-account-id={row.account.id}>
               <div className="package-identity">
@@ -104,7 +137,7 @@ export function ClassPackagesPanel({ students, language }: { students: ParentAcc
               </span>
               <strong className="package-balance">{minutesToHoursText(row.balanceMinutes)} <small>{copy(language, "hours", "课时")}</small></strong>
               <span className="package-updated">{row.lastUpdatedAt ? new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(row.lastUpdatedAt)) : copy(language, "No updates yet", "暂无更新")}</span>
-              <button className="primary-button package-add-button" onClick={() => { setSelected(row.account); setError(""); idempotencyKey.current = crypto.randomUUID(); }}>
+              <button className="primary-button package-add-button" disabled={loadingBalances || Boolean(error)} onClick={() => { setSelected(row.account); setError(""); idempotencyKey.current = crypto.randomUUID(); }}>
                 <Plus size={17} /> {copy(language, "Add hours", "增加课时")}
               </button>
             </article>

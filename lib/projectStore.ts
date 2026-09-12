@@ -4,8 +4,8 @@ import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
 import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
-import { appendPackageLedgerEntry, hoursToMinutes } from "@/lib/classPackages";
-import type { ActivityLog, BillNotification, Booking, BookingStatus, PackageHoursLedgerEntry, ParentAccount } from "@/lib/types";
+import { hoursToMinutes } from "@/lib/classPackages";
+import type { ActivityLog, AddPackageHoursResult, BillNotification, Booking, BookingStatus, PackageHoursBalance, ParentAccount } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
 const projectName = "Rising Stars World Table Tennis Academy";
@@ -84,8 +84,6 @@ type ProjectRow<T> = {
 
 let schemaPromise: Promise<Record<keyof typeof tableDefinitions, string>> | null = null;
 const localStoreKey = "rswtta-local-data";
-// Local-review only. Publication is blocked until Club auth and package-ledger RLS/RPC are deployed.
-const localPackageLedgerKey = "rswtta-local-package-hours-ledger-v1";
 
 export const preregisteredStudentNames = [
   "Abinav",
@@ -1402,42 +1400,55 @@ export async function listActivityLogs() {
   return rows.map(activityLogFromRow).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 }
 
-export function listLocalPackageHoursLedger(): PackageHoursLedgerEntry[] {
-  if (!isBrowser()) return [];
-  const raw = window.localStorage.getItem(localPackageLedgerKey);
-  if (!raw) return [];
-  try {
-    const value = JSON.parse(raw);
-    return Array.isArray(value) ? value as PackageHoursLedgerEntry[] : [];
-  } catch {
-    return [];
-  }
+export async function listPackageHourBalances(): Promise<PackageHoursBalance[]> {
+  const response = await supabase.rpc("list_class_package_balances");
+  if (response.error) throw setupError(response.error.message);
+  return ((response.data ?? []) as Array<{
+    student_account_id: string;
+    balance_minutes: number | string;
+    last_package_update: string | null;
+  }>).map((row) => ({
+    studentAccountId: row.student_account_id,
+    balanceMinutes: Number(row.balance_minutes),
+    lastPackageUpdate: row.last_package_update
+  }));
 }
 
-export async function addLocalPackageHours(input: {
+export async function addPackageHours(input: {
   studentAccountId: string;
   hours: number;
   note?: string;
   reference?: string;
   idempotencyKey: string;
-}) {
-  const accounts = await listParentAccounts();
-  if (!accounts.some((account) => account.id === input.studentAccountId)) {
-    throw new Error("Student account does not exist.");
-  }
-  const current = listLocalPackageHoursLedger();
-  const result = appendPackageLedgerEntry(current, {
-    studentAccountId: input.studentAccountId,
-    deltaMinutes: hoursToMinutes(input.hours),
-    operationType: "package_purchase",
-    actorId: "local-review-club",
-    actorType: "club_user",
-    note: input.note?.trim() ?? "",
-    reference: input.reference?.trim() ?? "",
-    idempotencyKey: input.idempotencyKey.trim()
+}): Promise<AddPackageHoursResult> {
+  const deltaMinutes = hoursToMinutes(input.hours);
+  const response = await supabase.rpc("add_class_package_hours", {
+    p_student_account_id: input.studentAccountId,
+    p_delta_minutes: deltaMinutes,
+    p_note: input.note?.trim() ?? "",
+    p_reference: input.reference?.trim() ?? "",
+    p_idempotency_key: input.idempotencyKey
   });
-  if (result.inserted) window.localStorage.setItem(localPackageLedgerKey, JSON.stringify(result.entries));
-  return result;
+  if (response.error) throw setupError(response.error.message);
+  const row = (Array.isArray(response.data) ? response.data[0] : response.data) as {
+    ledger_entry_id: string;
+    student_account_id: string;
+    added_minutes: number;
+    old_balance_minutes: number | string;
+    new_balance_minutes: number | string;
+    created_at: string;
+    replayed: boolean;
+  } | null;
+  if (!row) throw new Error("Database returned no package-hours result.");
+  return {
+    ledgerEntryId: row.ledger_entry_id,
+    studentAccountId: row.student_account_id,
+    addedMinutes: Number(row.added_minutes),
+    oldBalanceMinutes: Number(row.old_balance_minutes),
+    newBalanceMinutes: Number(row.new_balance_minutes),
+    createdAt: row.created_at,
+    replayed: Boolean(row.replayed)
+  };
 }
 
 export async function createActivityLog(input: Omit<ActivityLog, "id" | "createdAt">) {

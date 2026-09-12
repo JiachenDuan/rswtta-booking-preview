@@ -62,18 +62,18 @@ export type ParentAccount = {
   createdAt: string;
 };
 
-export type PackageHoursOperation = "package_purchase" | "correction";
-
-/** Append-only class-package audit row. Balances are always derived by summing deltaMinutes. */
-export type PackageHoursLedgerEntry = {
-  id: string;
+export type PackageHoursBalance = {
   studentAccountId: string;
-  deltaMinutes: number;
-  operationType: PackageHoursOperation;
-  actorId: string;
-  actorType: "club_user" | "system";
-  note: string;
-  reference: string;
-  idempotencyKey: string;
+  balanceMinutes: number;
+  lastPackageUpdate: string | null;
+};
+
+export type AddPackageHoursResult = {
+  ledgerEntryId: string;
+  studentAccountId: string;
+  addedMinutes: number;
+  oldBalanceMinutes: number;
+  newBalanceMinutes: number;
   createdAt: string;
+  replayed: boolean;
 };

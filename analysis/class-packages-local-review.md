@@ -1,42 +1,37 @@
-# Class packages / 课时包 — local review v1
+# Class packages / 课时包 — persistent production design
 
 ## Existing-solutions preflight
 
-The repository already has the needed maintained building blocks: React/Next.js UI, Supabase/Postgres, `projectStore`, Playwright, and the existing identity-safe `parent_accounts` records. This version reuses them and adds no dependency or paid service. The proposed production design uses a dedicated normalized Postgres ledger and one guarded Supabase RPC rather than adding a mutable balance to JSON project rows.
+This version stays on the repository's maintained Next.js, Supabase/Postgres, `projectStore`, and Playwright stack. It adds no dependency or paid service. A dedicated normalized ledger plus two narrow RPCs avoids a mutable balance field and avoids routing package writes through generic `project_rows` mutations.
 
-## Implemented locally
+## Application behavior
 
-- A Club-only `Class packages / 课时包` navigation section; the Parent surface never mounts the panel.
-- All current student accounts are included by permanent account ID, including setup-required and profile-complete records. Duplicate display names get a safe six-character ID suffix. Search uses name or account ID; no contact details render in this directory.
-- Remaining hours are derived only by summing integer minute deltas; no entries means exactly `0 hours / 0课时`. No ledger rows are seeded and no credits are inferred from booking history. Last package update is the latest ledger timestamp.
-- `Add hours / 增加课时` starts at 0 so staff must explicitly enter a positive value (for example, 10 after receiving a 10-hour package payment). It permits 0.5-hour increments from 0.5–500 hours, previews account identity/current/add/result balances, disables during submit, uses an idempotency key, and surfaces errors.
-- Phase 1 intentionally excludes automatic lesson deductions, payment-dollar handling, refunds, and arbitrary balance edits. Corrections remain compensating ledger entries, not edits.
-- For review only, UI writes use the isolated browser's localStorage ledger. No Supabase package write is attempted by this code.
+- The bilingual section remains Club-only; the Parent surface never mounts it.
+- Every current student account is identified by permanent account UUID. Setup-required and profile-complete accounts are included; duplicate names receive a safe short UUID suffix. No contacts render in the directory.
+- `list_class_package_balances()` left-joins all account rows and derives `coalesce(sum(delta_minutes), 0)`. It never seeds credits or infers them from historical bookings.
+- `Add hours / 增加课时` starts at 0 and requires staff to explicitly enter a positive amount in 0.5-hour increments, up to 500 hours. Confirmation shows permanent identity, current balance, addition, and result. The server returns transactional old/new balances.
+- Phase 1 supports positive package purchases only. It has no automatic deductions, dollar handling, refunds, corrections, arbitrary balance sets, or direct update/delete path.
 
-## Schema / RPC proposal
+## Migration and rollback
 
-`sql/proposals/class-package-hours-ledger.sql` is deliberately outside `supabase/migrations` and begins with `DO NOT APPLY`. It proposes:
+- Migration: `supabase/migrations/20260912123000_class_package_hours_ledger.sql`
+- Emergency rollback: `sql/rollback/20260912123000_class_package_hours_ledger.rollback.sql`
 
-- immutable `class_package_hours_ledger` rows with UUID student account, nonzero integer `delta_minutes`, operation type, authenticated actor, note/reference, idempotency UUID, and server timestamp;
-- unique `(actor_id, idempotency_key)`, project/table ownership checks, length and package-increment bounds;
-- a security-definer RPC that rechecks server-controlled Club authorization, account ownership, validation, and replay behavior in one transaction;
-- RLS read access for Club staff only, no direct insert/update/delete grants, and a trigger rejecting update/delete;
-- a derived balance view using `coalesce(sum(delta_minutes), 0)`.
+The migration takes a transaction-scoped advisory lock and stops unless production still has the exact reviewed project UUID, account-table UUID, 73 account IDs, and ordered identity SHA-256. It creates an append-only ledger with server UUID/timestamp, positive integer 30-minute deltas, a 30,000-minute maximum, project/account ownership validation, global project idempotency, and mutation-rejection trigger. The add RPC serializes idempotency and per-account balance computation with advisory locks, rejects replay payload mismatches, and returns the ledger ID, added minutes, old/new balances, server timestamp, and replay flag.
 
-## Production security gate
+The table grants no direct access. Only the balance-list and positive-add RPCs are executable by the current browser roles. The rollback is safe only before any credit exists; it refuses to destroy a nonempty immutable ledger.
 
-**Publication is blocked.** Before exposing or connecting this feature to Supabase, replace the known bypassable hard-coded Club login/session with Supabase Auth (or equivalent server-verified identities) and a server-controlled `club_staff` authorization source. Then review and test RLS/RPC policies in staging so:
+## Accepted security limitation
 
-1. only authenticated Club staff can list all student balances and execute the add-hours RPC;
-2. Parent/anonymous clients cannot discover the route/data or read/insert/update/delete ledger rows;
-3. actor identity comes from `auth.uid()` rather than client input;
-4. account ownership, idempotency, immutable history, concurrent replay, and denial cases pass database integration tests.
+**Production still uses a bypassable, client-controlled legacy Club session. Anyone who bypasses that UI gate can call the positive-credit RPC until server-verified Club authentication and Club-only RLS/RPC authorization ship.** The accepted interim schema does not fabricate an authenticated actor: each entry records `actor_kind = 'legacy_club_session_unverified'`.
 
-Only after that gate should the proposal be converted into a timestamped migration and applied through the normal reviewed release process.
+Required follow-up: replace anon RPC execution with server-verified Club identities and authorization, revoke anon execute, and bind audit actor identity to the verified server identity.
 
-## Local review artifacts
+## Review artifacts
 
-- `artifacts/class-packages/class-packages-desktop.png` — 1440 × 980
-- `artifacts/class-packages/class-packages-mobile.png` — 390 × 844
-- `artifacts/class-packages/class-packages-mobile-add-hours.png` — 390 × 844, showing the explicit zero-default add form
-- `scripts/capture-class-packages.mjs` — deterministic local capture helper; seeds review-only accounts but deliberately no package-ledger rows
+The checked-in local screenshots document the approved layout. After deployment they must be replaced or supplemented with production captures:
+
+- `artifacts/class-packages/class-packages-desktop.png`
+- `artifacts/class-packages/class-packages-mobile.png`
+- `artifacts/class-packages/class-packages-mobile-add-hours.png`
+- `scripts/capture-class-packages.mjs` captures the deployed shared-ledger surface and seeds no account or package data.
