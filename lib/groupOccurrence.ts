@@ -66,3 +66,22 @@ export function expectedGroupOccurrenceRows(rows: Booking[]) {
     updatedAt: booking.updatedAt
   }));
 }
+
+export function groupOccurrenceTargetStartsAt(block: Booking, selected: Booking, selectedTargetStartsAt: string) {
+  const selectedOriginal = new Date(selected.recurrenceOriginalStartsAt || selected.startsAt).getTime();
+  const blockOriginal = new Date(block.recurrenceOriginalStartsAt || block.startsAt).getTime();
+  const seriesOffset = new Date(selectedTargetStartsAt).getTime() - selectedOriginal;
+  return new Date(blockOriginal + seriesOffset).toISOString();
+}
+
+export function groupOccurrenceScheduleWouldChange(
+  blocks: Booking[],
+  selected: Booking,
+  selectedTargetStartsAt: string,
+  targetTimeLabel: string
+) {
+  return blocks.some((block) =>
+    block.startsAt !== groupOccurrenceTargetStartsAt(block, selected, selectedTargetStartsAt) ||
+    block.timeLabel !== targetTimeLabel
+  );
+}

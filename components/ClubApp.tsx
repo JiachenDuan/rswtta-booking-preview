@@ -45,7 +45,7 @@ import {
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
-import { isFutureActiveGroupBlock, selectGroupOccurrenceTargets, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
+import { groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, selectGroupOccurrenceTargets, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
@@ -3553,7 +3553,18 @@ function ClubBookingActionModal({
     const singleSelection = manageableGroup ? selectGroupOccurrenceTargets(bookings, booking, "single") : null;
     const futureSelection = manageableGroup ? selectGroupOccurrenceTargets(bookings, booking, "future") : null;
     const activeSelection = groupAction?.scope === "future" ? futureSelection : singleSelection;
-    const groupUpdateChanged = timeInputValid && (editSlot.startsAt !== booking.startsAt || rangeLabel(editSlot, durationMinutes) !== booking.timeLabel);
+    const targetGroupTimeLabel = rangeLabel(editSlot, durationMinutes);
+    const singleGroupUpdateChanged = timeInputValid && singleSelection
+      ? groupOccurrenceScheduleWouldChange(singleSelection.blocks, booking, editSlot.startsAt, targetGroupTimeLabel)
+      : false;
+    const futureGroupUpdateChanged = timeInputValid && futureSelection
+      ? groupOccurrenceScheduleWouldChange(futureSelection.blocks, booking, editSlot.startsAt, targetGroupTimeLabel)
+      : false;
+    const changedPreviewBlock = groupAction?.action === "update"
+      ? activeSelection?.blocks.find((block) => block.startsAt !== groupOccurrenceTargetStartsAt(block, booking, editSlot.startsAt) || block.timeLabel !== targetGroupTimeLabel)
+      : undefined;
+    const changedPreviewStartsAt = changedPreviewBlock ? groupOccurrenceTargetStartsAt(changedPreviewBlock, booking, editSlot.startsAt) : editSlot.startsAt;
+    const changedPreviewDate = dateLabel(new Date(changedPreviewStartsAt));
     return (
       <div className="modal-backdrop" role="presentation">
         <section className="confirm-modal class-action-modal group-class-action-modal" role="dialog" aria-modal="true" aria-labelledby="club-group-class-title">
@@ -3594,8 +3605,8 @@ function ClubBookingActionModal({
                 </p>
               </div>
               <div className="group-occurrence-actions">
-                <button className="primary-button" type="button" disabled={saving || !groupUpdateChanged} onClick={() => setGroupAction({ action: "update", scope: "single" })}>{copy(language, "Update this group occurrence only", "仅更新本次团体课")}</button>
-                <button className="primary-button" type="button" disabled={saving || !groupUpdateChanged} onClick={() => setGroupAction({ action: "update", scope: "future" })}>{copy(language, "Update this and future occurrences", "更新本次及未来团体课")}</button>
+                <button className="primary-button" type="button" disabled={saving || !singleGroupUpdateChanged} onClick={() => setGroupAction({ action: "update", scope: "single" })}>{copy(language, "Update this group occurrence only", "仅更新本次团体课")}</button>
+                <button className="primary-button" type="button" disabled={saving || !futureGroupUpdateChanged} onClick={() => setGroupAction({ action: "update", scope: "future" })}>{copy(language, "Update this and future occurrences", "更新本次及未来团体课")}</button>
                 <button className="decline" type="button" disabled={saving} onClick={() => setGroupAction({ action: "cancel", scope: "single" })}>{copy(language, "Cancel this group occurrence only", "仅取消本次团体课")}</button>
                 <button className="decline" type="button" disabled={saving} onClick={() => setGroupAction({ action: "cancel", scope: "future" })}>{copy(language, "Cancel this and future occurrences", "取消本次及未来团体课")}</button>
               </div>
@@ -3608,7 +3619,7 @@ function ClubBookingActionModal({
                     `${groupAction.scope === "single" ? "本次" : "本次及未来"}：${activeSelection.blocks.length} 次团体课，共 ${activeSelection.rows.length} 条记录。`
                   )}</p>
                   <p>{groupAction.action === "update"
-                    ? `${booking.dateLabel} ${booking.timeLabel} → ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}`
+                    ? `${changedPreviewBlock?.dateLabel || booking.dateLabel} ${changedPreviewBlock?.timeLabel || booking.timeLabel} → ${changedPreviewDate} ${targetGroupTimeLabel}`
                     : copy(language, "This soft-cancels the complete selected scope and preserves its history.", "这会软取消所选范围内的全部记录，并保留历史。")}</p>
                   <div className="modal-actions">
                     <button className="filter-button" type="button" onClick={() => setGroupAction(null)}>{copy(language, "Back", "返回")}</button>

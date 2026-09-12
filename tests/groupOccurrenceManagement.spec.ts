@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
-import { expectedGroupOccurrenceRows, isFutureActiveGroupBlock, selectGroupOccurrenceTargets } from "../lib/groupOccurrence";
+import { expectedGroupOccurrenceRows, groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, selectGroupOccurrenceTargets } from "../lib/groupOccurrence";
 import { occurrenceId, recurrenceIdentity } from "../lib/recurrence";
 import { planClassReportExport } from "../lib/classReport";
 import type { Booking } from "../lib/types";
@@ -104,8 +104,21 @@ test("moving group schedule metadata preserves IDs, account links, and billing/C
   expect(after.linkedBookings[0].id).toBe(before.linkedBookings[0].id);
 });
 
+test("future update remains enabled and realigns later originals after the selected occurrence moved alone", () => {
+  const movedSelected = {
+    ...blockA,
+    startsAt: "2026-09-20T20:30:00.000Z",
+    timeLabel: "1:30 PM - 2:30 PM"
+  };
+  const future = selectGroupOccurrenceTargets([movedSelected, enrollmentA, blockB, enrollmentB], movedSelected, "future", now);
+  expect(groupOccurrenceScheduleWouldChange([movedSelected], movedSelected, movedSelected.startsAt, movedSelected.timeLabel)).toBe(false);
+  expect(groupOccurrenceScheduleWouldChange(future.blocks, movedSelected, movedSelected.startsAt, movedSelected.timeLabel)).toBe(true);
+  expect(groupOccurrenceTargetStartsAt(movedSelected, movedSelected, movedSelected.startsAt)).toBe("2026-09-20T20:30:00.000Z");
+  expect(groupOccurrenceTargetStartsAt(blockB, movedSelected, movedSelected.startsAt)).toBe("2026-09-27T20:30:00.000Z");
+});
+
 test("one Club-only RPC enforces atomic move/cancel, complete membership, conflicts, stale values, history, and soft cancellation", () => {
-  const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260911233500_manage_recurring_group_occurrences.sql"), "utf8");
+  const sql = fs.readFileSync(path.join(process.cwd(), "supabase/migrations/20260912070000_repair_group_future_update_after_single_move.sql"), "utf8");
   expect(sql).toContain("create or replace function public.manage_group_occurrences");
   expect(sql).toContain("for update");
   expect(sql).toContain("pg_advisory_xact_lock");
@@ -119,7 +132,10 @@ test("one Club-only RPC enforces atomic move/cancel, complete membership, confli
   expect(sql).not.toMatch(/delete\s+from\s+public\.project_rows/i);
   expect(sql).toContain("group_occurrence_updated");
   expect(sql).toContain("group_occurrence_cancelled");
-  expect(sql).toContain("Group management booking-count baseline guard failed: expected 1997");
+  expect(sql).toContain("Group future-update repair booking-count guard failed: expected 1997");
+  const functionSql = sql.slice(sql.indexOf("create or replace function"));
+  expect(functionSql).toContain("recurrenceOriginalStartsAt')::timestamptz + v_series_offset");
+  expect(functionSql).not.toContain("v_delta := v_new_selected - v_old_selected");
 });
 
 test("four controls are confined to the future active Group class branch and Parent request behavior remains separate", () => {
