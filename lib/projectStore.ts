@@ -465,15 +465,21 @@ async function verifyPassword(password: string, saltBase64: string, expectedHash
   return hash === expectedHash;
 }
 
-async function seedPreregisteredAccounts(rows: Array<ProjectRow<AccountValues>>, create: (values: AccountValues) => Promise<ProjectRow<AccountValues>> | ProjectRow<AccountValues>) {
-  const existingNames = new Set(
+export function missingPreregisteredStudentNames(
+  rows: Array<{ values: Pick<Partial<ParentAccount>, "studentName" | "preregisteredName"> }>,
+  seedNames: readonly string[] = preregisteredStudentNames
+) {
+  const satisfiedNames = new Set(
     rows.flatMap((row) => [row.values.studentName, row.values.preregisteredName]).map((value) => String(value ?? "").trim().toLowerCase()).filter(Boolean)
   );
+  return seedNames.filter((studentName) => !satisfiedNames.has(studentName.trim().toLowerCase()));
+}
+
+async function seedPreregisteredAccounts(rows: Array<ProjectRow<AccountValues>>, create: (values: AccountValues) => Promise<ProjectRow<AccountValues>> | ProjectRow<AccountValues>) {
   const password = await hashPassword(preregisteredPasswordTemplate);
   const created: Array<ProjectRow<AccountValues>> = [];
 
-  for (const studentName of preregisteredStudentNames) {
-    if (existingNames.has(studentName.toLowerCase())) continue;
+  for (const studentName of missingPreregisteredStudentNames(rows)) {
     const row = await create({
       id: "",
       preregisteredName: studentName,
@@ -489,7 +495,6 @@ async function seedPreregisteredAccounts(rows: Array<ProjectRow<AccountValues>>,
       createdAt: ""
     });
     created.push(row);
-    existingNames.add(studentName.toLowerCase());
   }
 
   return rows.concat(created);
