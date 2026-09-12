@@ -38,6 +38,7 @@ import {
   registerParentAccount,
   resetPasswordForEmail,
   requestBookingAsParent,
+  addStudentToGroupOccurrencesAtomically,
   manageGroupOccurrencesAtomically,
   rescheduleBookingsAtomically,
   updateUserPassword,
@@ -45,7 +46,7 @@ import {
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
-import { groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, selectGroupOccurrenceTargets, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
+import { groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, searchGroupEnrollmentAccounts, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
@@ -187,6 +188,14 @@ function firstNameDuplicateStudents(students: ParentAccount[], identifier: strin
 
 function studentDisplayContact(student: ParentAccount, language: Language) {
   return student.email || student.phone || copy(language, "Profile incomplete", "资料待完善");
+}
+
+function studentAccountDisambiguator(student: ParentAccount, language: Language) {
+  return `${copy(language, "Account", "账号")} ${student.id.slice(0, 8)}`;
+}
+
+function bookingDateText(booking: Booking, language: Language) {
+  return copy(language, booking.dateLabel, dateZh(new Date(booking.startsAt)));
 }
 
 function downloadTextFile(filename: string, content: string, mimeType: string) {
@@ -1007,39 +1016,29 @@ export function ClubApp() {
     }
   }
 
-  async function addGroupDropIn(groupClass: Booking, selectedStudents: ParentAccount[], note = "") {
-    if (selectedStudents.length === 0) {
-      setNotice(copy(language, "Select at least one student.", "请选择至少一名学生。"));
+  async function addGroupDropIn(
+    groupClass: Booking,
+    selectedStudent: ParentAccount | undefined,
+    scope: GroupEnrollmentScope = "single",
+    idempotencyKey = crypto.randomUUID()
+  ) {
+    if (!selectedStudent) {
+      setNotice(copy(language, "Select one student account.", "请选择一个学生账号。"));
       return false;
     }
-    const coach = groupClass.assignedCoach || groupClass.requestedCoach;
     setSaving(true);
-    const enrollmentStatus: BookingStatus = Date.now() >= new Date(groupClass.startsAt).getTime() ? "coach_confirmed" : "club_confirmed";
-    setNotice(copy(language, "Adding students...", "正在添加学生..."));
+    setNotice(copy(language, "Adding student to group classes...", "正在将学生添加到团体课..."));
     try {
-      const createdBookings: Booking[] = [];
-      for (const student of selectedStudents) {
-        const booking = await createBooking({
-          studentAccountId: student.id,
-          studentName: student.studentName,
-          familyName: student.studentName,
-          studentEmail: student.email,
-          phone: student.phone,
-          requestedCoach: coach,
-          assignedCoach: coach,
-          program: "Group enrollment",
-          groupClassId: groupClass.groupClassId || groupClass.id,
-          dateLabel: groupClass.dateLabel,
-          timeLabel: groupClass.timeLabel,
-          startsAt: groupClass.startsAt,
-          priceCents: 7500,
-          parentNote: note ? `Added to group class by club: ${note}` : "Added to group class by club."
-        });
-        createdBookings.push(await updateStoredBooking(booking.id, { status: enrollmentStatus, assignedCoach: coach }));
-      }
-      await recordClassActivity("created", createdBookings, createdBookings[0] ?? groupClass);
+      const createdBookings = await addStudentToGroupOccurrencesAtomically({
+        bookings,
+        selected: groupClass,
+        student: selectedStudent,
+        scope,
+        idempotencyKey,
+        now: currentTime
+      });
       await loadAll();
-      setNotice(copy(language, `Added ${selectedStudents.length} student${selectedStudents.length === 1 ? "" : "s"} to group class.`, `已添加 ${selectedStudents.length} 名学生到团体课。`));
+      setNotice(copy(language, `Added ${selectedStudent.studentName} to ${createdBookings.length} group class${createdBookings.length === 1 ? "" : "es"}.`, `已将 ${selectedStudent.studentName} 添加到 ${createdBookings.length} 节团体课。`));
       return true;
     } catch (error) {
       setNotice(error instanceof Error ? error.message : copy(language, "Could not add students.", "无法添加学生。"));
@@ -1053,7 +1052,7 @@ export function ClubApp() {
     const { result } = await createStudentAccountThenPersist({
       student: input,
       createOrReuseAccount: createClubStudentAccount,
-      persist: (account) => addGroupDropIn(groupClass, [account], input.note)
+      persist: (account) => addGroupDropIn(groupClass, account, "single")
     });
     return result;
   }
@@ -2645,7 +2644,7 @@ function ClubAppView({
   onAddClass: (student: ParentAccount, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onAddNewStudentClass: (input: { studentName: string; email: string; phone: string; note: string }, coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
   onBlockTime: (coach: string, slots: CalendarSlot[], durationMinutes: number) => Promise<void>;
-  onAddGroupDropIn: (groupClass: Booking, students: ParentAccount[]) => Promise<boolean>;
+  onAddGroupDropIn: (groupClass: Booking, student: ParentAccount | undefined, scope?: GroupEnrollmentScope, idempotencyKey?: string) => Promise<boolean>;
   onAddGroupNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) => Promise<boolean>;
   onNotice: (message: string) => void;
 }) {
@@ -3467,7 +3466,7 @@ function ClubBookingActionModal({
   onConfirmEnrollment: (booking: Booking) => void;
   onRejectEnrollment: (booking: Booking) => void;
   onCompleteEnrollment: (booking: Booking) => void;
-  onAddDropIn: (groupClass: Booking, students: ParentAccount[]) => Promise<boolean>;
+  onAddDropIn: (groupClass: Booking, student: ParentAccount | undefined, scope: GroupEnrollmentScope, idempotencyKey: string) => Promise<boolean>;
   onAddNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) => Promise<boolean>;
   onManageGroupOccurrence: (action: GroupOccurrenceAction, scope: GroupOccurrenceScope, schedule?: { slot: CalendarSlot; durationMinutes: number }) => Promise<void>;
   saving: boolean;
@@ -3502,28 +3501,18 @@ function ClubBookingActionModal({
   const [dropInMode, setDropInMode] = useState<"existing" | "new">("existing");
   const [dropInQuery, setDropInQuery] = useState("");
   const [selectedDropInStudents, setSelectedDropInStudents] = useState<ParentAccount[]>([]);
+  const [groupEnrollmentScope, setGroupEnrollmentScope] = useState<GroupEnrollmentScope>("single");
+  const [groupEnrollmentConfirm, setGroupEnrollmentConfirm] = useState(false);
+  const [groupEnrollmentIdempotencyKey, setGroupEnrollmentIdempotencyKey] = useState("");
   const [newGroupStudentName, setNewGroupStudentName] = useState("");
   const [newGroupStudentEmail, setNewGroupStudentEmail] = useState("");
   const [newGroupStudentPhone, setNewGroupStudentPhone] = useState("");
   const [newGroupStudentNote, setNewGroupStudentNote] = useState("");
   const [newGroupDuplicateConfirmed, setNewGroupDuplicateConfirmed] = useState(false);
-  const enrolledAccountIds = new Set(groupEnrollments.map((item) => item.studentAccountId).filter(Boolean));
+  const enrolledAccountIds = new Set(groupEnrollments.map((item) => item.studentAccountId).filter((id): id is string => Boolean(id)));
   const selectedDropInAccountIds = new Set(selectedDropInStudents.map((student) => student.id));
   const dropInSearch = dropInQuery.trim().toLowerCase();
-  const dropInResults = dropInSearch
-    ? students
-        .filter((student) => {
-          const studentName = student.studentName.trim().toLowerCase();
-          return (
-            !enrolledAccountIds.has(student.id) &&
-            !selectedDropInAccountIds.has(student.id) &&
-            (studentName.includes(dropInSearch) ||
-              student.email.toLowerCase().includes(dropInSearch) ||
-              student.phone.toLowerCase().includes(dropInSearch))
-          );
-        })
-        .slice(0, 8)
-    : [];
+  const dropInResults = searchGroupEnrollmentAccounts(students, dropInSearch, new Set([...enrolledAccountIds, ...selectedDropInAccountIds]));
   const newGroupNameKey = newGroupStudentName.trim().toLowerCase();
   const newGroupDuplicateCandidates = newGroupNameKey
     ? students.filter((student) => {
@@ -3553,6 +3542,7 @@ function ClubBookingActionModal({
     const singleSelection = manageableGroup ? selectGroupOccurrenceTargets(bookings, booking, "single") : null;
     const futureSelection = manageableGroup ? selectGroupOccurrenceTargets(bookings, booking, "future") : null;
     const activeSelection = groupAction?.scope === "future" ? futureSelection : singleSelection;
+    const groupEnrollmentSelection = groupEnrollmentScope === "future" ? futureSelection : singleSelection;
     const targetGroupTimeLabel = rangeLabel(editSlot, durationMinutes);
     const singleGroupUpdateChanged = timeInputValid && singleSelection
       ? groupOccurrenceScheduleWouldChange(singleSelection.blocks, booking, editSlot.startsAt, targetGroupTimeLabel)
@@ -3672,7 +3662,7 @@ function ClubBookingActionModal({
               ))
             )}
           </div>
-          <div className="group-dropin-panel">
+          {manageableGroup ? <div className="group-dropin-panel">
             <div className="mode-switch modal-mode-switch" aria-label="Group student add mode">
               <button type="button" className={dropInMode === "existing" ? "selected" : ""} onClick={() => setDropInMode("existing")}>
                 {copy(language, "Existing student", "现有学生")}
@@ -3684,14 +3674,14 @@ function ClubBookingActionModal({
             {dropInMode === "existing" ? (
               <>
                 <label>
-                  <span>{copy(language, "Add students", "添加学生")}</span>
-                  <p className="modal-info">{copy(language, "Search and select registered students.", "搜索并选择已注册学生。")}</p>
+                  <span>{copy(language, "Add student", "添加学生")}</span>
+                  <p className="modal-info">{copy(language, "Search by student name or account ID. Contact details stay hidden.", "按学生姓名或账号 ID 搜索；不会显示联系方式。")}</p>
                   <div className="input-shell">
                     <Search size={18} />
                     <input
                       value={dropInQuery}
                       onChange={(event) => setDropInQuery(event.target.value)}
-                      placeholder={copy(language, "Search enrolled students", "搜索已注册学生")}
+                      placeholder={copy(language, "Search student accounts", "搜索学生账号")}
                     />
                   </div>
                 </label>
@@ -3703,19 +3693,16 @@ function ClubBookingActionModal({
                           type="button"
                           className="group-dropin-selected"
                           key={student.id}
-                          onClick={() => setSelectedDropInStudents((current) => current.filter((item) => item.id !== student.id))}
+                          onClick={() => { setSelectedDropInStudents([]); setGroupEnrollmentConfirm(false); }}
                         >
-                          <span>{student.studentName}</span>
+                          <span>{student.studentName} · {studentAccountDisambiguator(student, language)}</span>
                           <X size={14} />
                         </button>
                       ))}
                     </div>
                   ) : null}
-                  {selectedDropInStudents.length > 0 ? (
-                    <p className="modal-info">{copy(language, "Selected students are shown above. Search again to add more, then press Add students once.", "已选择的学生显示在上方。继续搜索可添加更多学生，然后点击一次添加学生。")}</p>
-                  ) : null}
                   {!dropInSearch ? null : dropInResults.length === 0 ? (
-                    <p className="empty-state">{copy(language, "No enrolled students found, or students are already selected/in this group class.", "未找到已注册学生，或学生已选择/已在本节团体课中。")}</p>
+                    <p className="empty-state">{copy(language, "No matching eligible student account.", "没有符合条件的学生账号。")}</p>
                   ) : (
                     dropInResults.map((student) => (
                       <button
@@ -3723,34 +3710,63 @@ function ClubBookingActionModal({
                         className="student-result"
                         key={student.id}
                         onClick={() => {
-                          setSelectedDropInStudents((current) => [...current, student]);
+                          setSelectedDropInStudents([student]);
                           setDropInQuery("");
+                          setGroupEnrollmentConfirm(false);
                         }}
                       >
                         <span>
                           <strong>{student.studentName}</strong>
-                          <em>{studentDisplayContact(student, language)}</em>
+                          <em>{studentAccountDisambiguator(student, language)}</em>
                         </span>
                         <Plus size={17} />
                       </button>
                     ))
                   )}
                 </div>
+                <div className="mode-switch modal-mode-switch" aria-label="Group enrollment scope">
+                  <button type="button" className={groupEnrollmentScope === "single" ? "selected" : ""} onClick={() => { setGroupEnrollmentScope("single"); setGroupEnrollmentConfirm(false); }}>
+                    {copy(language, "This group class only", "仅本次团体课")}
+                  </button>
+                  <button type="button" className={groupEnrollmentScope === "future" ? "selected" : ""} onClick={() => { setGroupEnrollmentScope("future"); setGroupEnrollmentConfirm(false); }}>
+                    {copy(language, "This and future group classes", "本次及未来团体课")}
+                  </button>
+                </div>
                 <button
                   className="primary-button"
                   type="button"
                   disabled={saving || selectedDropInStudents.length === 0}
-                  onClick={async () => {
-                    const saved = await onAddDropIn(booking, selectedDropInStudents);
-                    if (saved) {
-                      setSelectedDropInStudents([]);
-                      setDropInQuery("");
-                    }
+                  onClick={() => {
+                    setGroupEnrollmentIdempotencyKey(crypto.randomUUID());
+                    setGroupEnrollmentConfirm(true);
                   }}
                 >
                   <Plus size={17} />
-                  {copy(language, selectedDropInStudents.length > 1 ? `Add ${selectedDropInStudents.length} students` : "Add students", selectedDropInStudents.length > 1 ? `添加 ${selectedDropInStudents.length} 名学生` : "添加学生")}
+                  {copy(language, "Add student", "添加学生")}
                 </button>
+                {groupEnrollmentConfirm && selectedDropInStudents[0] && groupEnrollmentSelection ? (
+                  <div className="action-confirm-panel group-enrollment-confirm">
+                    <strong>{copy(language, "Confirm group enrollment", "确认团体课报名")}</strong>
+                    <p>{copy(
+                      language,
+                      `Add ${selectedDropInStudents[0].studentName} (${studentAccountDisambiguator(selectedDropInStudents[0], language)}) to exactly ${groupEnrollmentSelection.blocks.length} group class${groupEnrollmentSelection.blocks.length === 1 ? "" : "es"}, ${bookingDateText(groupEnrollmentSelection.blocks[0], language)}${groupEnrollmentSelection.blocks.length === 1 ? "" : ` through ${bookingDateText(groupEnrollmentSelection.blocks[groupEnrollmentSelection.blocks.length - 1], language)}`}?`,
+                      `将 ${selectedDropInStudents[0].studentName}（${studentAccountDisambiguator(selectedDropInStudents[0], language)}）添加到共 ${groupEnrollmentSelection.blocks.length} 节团体课：${bookingDateText(groupEnrollmentSelection.blocks[0], language)}${groupEnrollmentSelection.blocks.length === 1 ? "" : ` 至 ${bookingDateText(groupEnrollmentSelection.blocks[groupEnrollmentSelection.blocks.length - 1], language)}`}？`
+                    )}</p>
+                    <p>{copy(language, `Current roster: ${groupEnrollments.length ? groupEnrollments.map((item) => item.studentName).join(", ") : "None"}.`, `当前名单：${groupEnrollments.length ? groupEnrollments.map((item) => item.studentName).join("、") : "无"}。`)}</p>
+                    <div className="modal-actions">
+                      <button className="filter-button" type="button" onClick={() => setGroupEnrollmentConfirm(false)}>{copy(language, "Back", "返回")}</button>
+                      <button className="primary-button" type="button" disabled={saving} onClick={async () => {
+                        const saved = await onAddDropIn(booking, selectedDropInStudents[0], groupEnrollmentScope, groupEnrollmentIdempotencyKey);
+                        if (saved) {
+                          setSelectedDropInStudents([]);
+                          setDropInQuery("");
+                          setGroupEnrollmentConfirm(false);
+                          setGroupEnrollmentIdempotencyKey("");
+                        }
+                      }}>{copy(language, "Confirm add student", "确认添加学生")}</button>
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : (
               <div className="tryout-fields">
@@ -3783,7 +3799,7 @@ function ClubBookingActionModal({
                           className="student-result"
                           key={student.id}
                           onClick={() => {
-                            if (!enrolledAccountIds.has(student.id)) setSelectedDropInStudents((current) => [...current, student]);
+                            if (!enrolledAccountIds.has(student.id)) setSelectedDropInStudents([student]);
                             setDropInMode("existing");
                             setNewGroupStudentName("");
                             setNewGroupStudentEmail("");
@@ -3830,7 +3846,7 @@ function ClubBookingActionModal({
                 </button>
               </div>
             )}
-          </div>
+          </div> : null}
         </section>
       </div>
     );

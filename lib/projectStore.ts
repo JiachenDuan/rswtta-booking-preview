@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { canonicalizeStudentReference, prepareStudentReferenceForCreation } from "@/lib/studentIdentity";
 import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
-import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
+import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 
@@ -1280,6 +1280,30 @@ export async function manageGroupOccurrencesAtomically(input: {
     p_new_starts_at: input.action === "update" ? input.newStartsAt : null,
     p_new_date_label: input.action === "update" ? input.newDateLabel : null,
     p_new_time_label: input.action === "update" ? input.newTimeLabel : null
+  });
+  if (response.error) throw setupError(response.error.message);
+  return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);
+}
+
+export async function addStudentToGroupOccurrencesAtomically(input: {
+  bookings: Booking[];
+  selected: Booking;
+  student: ParentAccount;
+  scope: GroupEnrollmentScope;
+  idempotencyKey: string;
+  now?: Date;
+}) {
+  const selection = selectGroupOccurrenceTargets(input.bookings, input.selected, input.scope, input.now);
+  const response = await supabase.rpc("add_student_to_group_occurrences", {
+    p_selected_block_id: input.selected.id,
+    p_scope: input.scope,
+    p_student_account_id: input.student.id,
+    p_expected_series_id: input.selected.seriesId ?? null,
+    p_expected_occurrence_id: input.selected.recurrenceOccurrenceId ?? null,
+    p_expected_original_starts_at: input.selected.recurrenceOriginalStartsAt ?? null,
+    p_expected_occurrence_count: selection.blocks.length,
+    p_expected_blocks: expectedGroupOccurrenceRows(selection.blocks),
+    p_idempotency_key: input.idempotencyKey
   });
   if (response.error) throw setupError(response.error.message);
   return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);

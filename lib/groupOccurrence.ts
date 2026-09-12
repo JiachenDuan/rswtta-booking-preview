@@ -1,7 +1,8 @@
-import type { Booking } from "@/lib/types";
+import type { Booking, ParentAccount } from "@/lib/types";
 
 export type GroupOccurrenceAction = "update" | "cancel";
 export type GroupOccurrenceScope = "single" | "future";
+export type GroupEnrollmentScope = GroupOccurrenceScope;
 
 export function isGroupBlock(booking: Booking) {
   return booking.program === "Group class" && booking.studentName.trim().toLowerCase() === "group class";
@@ -84,4 +85,13 @@ export function groupOccurrenceScheduleWouldChange(
     block.startsAt !== groupOccurrenceTargetStartsAt(block, selected, selectedTargetStartsAt) ||
     block.timeLabel !== targetTimeLabel
   );
+}
+
+export function searchGroupEnrollmentAccounts(accounts: ParentAccount[], query: string, excludedAccountIds: Set<string>) {
+  const key = query.trim().toLowerCase();
+  if (!key) return [];
+  return accounts
+    .filter((account) => !excludedAccountIds.has(account.id))
+    .filter((account) => account.studentName.trim().toLowerCase().includes(key) || account.id.toLowerCase().includes(key))
+    .slice(0, 8);
 }
