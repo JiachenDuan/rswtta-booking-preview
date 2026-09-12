@@ -50,3 +50,30 @@ test("database prevention is claim-only, completion-gated, and bound for stale c
   expect(migration).toContain("before insert or update of project_table_id, values");
   expect(migration).toContain("existing.id <> new.id");
 });
+
+test("Oaur two-client seed race is serialized even when stale payloads omit preregisteredName", () => {
+  const migration = fs.readFileSync(
+    path.join(process.cwd(), "supabase/migrations/20260912164500_lock_legacy_student_seed_claims.sql"),
+    "utf8"
+  );
+  const lockAt = migration.indexOf("pg_advisory_xact_lock(hashtextextended(v_accounts_table_id::text || ':' || v_claim, 0))");
+  const ownerCheckAt = migration.indexOf("existing.values->>'preregisteredName'");
+
+  expect(migration).toContain("coalesce(nullif(new.values->>'preregisteredName', ''), new.values->>'studentName', '')");
+  expect(lockAt).toBeGreaterThan(0);
+  expect(ownerCheckAt).toBeGreaterThan(lockAt);
+  expect(migration).toContain("jsonb_set(new.values, '{preregisteredName}'");
+  expect(migration).toContain("create unique index if not exists project_rows_unique_legacy_seed_claim");
+  expect(migration).toContain("Preregistered roster claim is immutable");
+});
+
+test("remote account listing never invokes preregistered seed insertion", () => {
+  const source = fs.readFileSync(path.join(process.cwd(), "lib/projectStore.ts"), "utf8");
+  const listStart = source.indexOf("async function listAccountRowsWithSeeds()");
+  const listEnd = source.indexOf("export async function registerParentAccount", listStart);
+  const implementation = source.slice(listStart, listEnd);
+
+  expect(implementation).toContain('() => listRows<AccountValues>("parent_accounts")');
+  expect(implementation).toContain("seedLocalPreregisteredAccounts(rows)");
+  expect(implementation).not.toContain('createRow("parent_accounts"');
+});

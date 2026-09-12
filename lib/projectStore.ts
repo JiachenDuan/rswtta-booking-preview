@@ -475,12 +475,12 @@ export function missingPreregisteredStudentNames(
   return seedNames.filter((studentName) => !satisfiedNames.has(studentName.trim().toLowerCase()));
 }
 
-async function seedPreregisteredAccounts(rows: Array<ProjectRow<AccountValues>>, create: (values: AccountValues) => Promise<ProjectRow<AccountValues>> | ProjectRow<AccountValues>) {
+async function seedLocalPreregisteredAccounts(rows: Array<ProjectRow<AccountValues>>) {
   const password = await hashPassword(preregisteredPasswordTemplate);
   const created: Array<ProjectRow<AccountValues>> = [];
 
   for (const studentName of missingPreregisteredStudentNames(rows)) {
-    const row = await create({
+    const row = createLocalRow<AccountValues>("parent_accounts", {
       id: "",
       preregisteredName: studentName,
       studentName,
@@ -505,7 +505,7 @@ async function listAccountRowsWithSeeds() {
     () => listRows<AccountValues>("parent_accounts"),
     async () => {
       const rows = localRows<AccountValues>("parent_accounts");
-      return seedPreregisteredAccounts(rows, (values) => createLocalRow("parent_accounts", values));
+      return seedLocalPreregisteredAccounts(rows);
     }
   );
 }
@@ -684,7 +684,7 @@ export async function loginParentAccount(identifier: string, password: string, o
       return accountFromRow(row);
     },
     async () => {
-      const rows = await seedPreregisteredAccounts(localRows<AccountValues>("parent_accounts"), (values) => createLocalRow("parent_accounts", values));
+      const rows = await seedLocalPreregisteredAccounts(localRows<AccountValues>("parent_accounts"));
       const normalizedIdentifier = identifier.trim().toLowerCase();
       const isEmail = normalizedIdentifier.includes("@");
       if (!isEmail && options.allowPreregisteredName) {
