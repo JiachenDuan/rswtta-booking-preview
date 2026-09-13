@@ -6,7 +6,7 @@ select jsonb_pretty(jsonb_build_object(
  'anon_execute',has_function_privilege('anon','public.add_student_to_group_occurrences(uuid,text,uuid,text,text,text,integer,jsonb,uuid)','execute'),
  'authenticated_execute',has_function_privilege('authenticated','public.add_student_to_group_occurrences(uuid,text,uuid,text,text,text,integer,jsonb,uuid)','execute'),
  'live_hashes',(select jsonb_agg(to_jsonb(hashes) order by project_table_id) from hashes),
- 'backup_hashes',(select jsonb_agg(to_jsonb(m) order by kind) from private_migration_backups.past_group_manifest_20260913_0930 m),
+ 'backup_hashes',(select jsonb_agg(to_jsonb(m) order by kind) from private_migration_backups.past_group_manifest_20260913_0952 m),
  'active_duplicates',(select count(*) from(select values->>'groupClassId',values->>'studentAccountId' from public.project_rows r cross join ids i where r.project_table_id=i.bookings and values->>'program'='Group enrollment' and coalesce(values->>'status','')<>'cancelled' group by 1,2 having count(*)>1)x),
  'package_keys',(select count(*) from public.class_package_keys),'package_events',(select count(*) from public.class_package_events)
 ));

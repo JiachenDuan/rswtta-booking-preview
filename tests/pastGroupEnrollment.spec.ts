@@ -12,6 +12,8 @@ function enrollment(selected: Booking, status: Booking["status"]="club_confirmed
   return {...selected,id:crypto.randomUUID(),studentAccountId:"11111111-1111-4111-8111-111111111111",studentName:"Alex Kim",familyName:"Alex Kim",program:"Group enrollment",status,priceCents};
 }
 const migration=fs.readFileSync(path.join(process.cwd(),"supabase/migrations/20260913093000_allow_past_single_group_enrollment.sql"),"utf8");
+const acceptance=fs.readFileSync(path.join(process.cwd(),"sql/verification/20260913093000_past_group_enrollment.acceptance-rollback.sql"),"utf8");
+const recurrenceGuard=fs.readFileSync(path.join(process.cwd(),"supabase/migrations/20260910200000_recurring_occurrence_identity.sql"),"utf8");
 const club=fs.readFileSync(path.join(process.cwd(),"components/ClubApp.tsx"),"utf8");
 const store=fs.readFileSync(path.join(process.cwd(),"lib/projectStore.ts"),"utf8");
 
@@ -21,6 +23,9 @@ test("past canonical noncancelled block permits single existing-student selectio
   expect(selectGroupEnrollmentTargets([selected],selected,"single",now).blocks).toEqual([selected]);
   expect(()=>selectGroupEnrollmentTargets([selected],selected,"future",now)).toThrow(/limited to this group class only/);
   expect(isPastActiveGroupBlock(block({status:"cancelled"}),now)).toBe(false);
+  for(const identityField of ["groupClassId","seriesId","recurrenceOccurrenceId","recurrenceOriginalStartsAt"] as const) {
+    expect(isPastActiveGroupBlock(block({[identityField]:undefined}),now),identityField).toBe(false);
+  }
   expect(()=>selectGroupEnrollmentTargets([selected,block({id:crypto.randomUUID()})],selected,"single",now)).toThrow(/exactly one canonical/);
 });
 
@@ -67,5 +72,20 @@ test("replacement RPC is transactional, authoritative, race-safe and package-neu
 test("migration freezes production counts and compares complete ordered hashes to private backup",()=>{
   for(const count of ["1993 bookings","65 accounts","66 activity rows","141 group blocks","33 group enrollments","15 past group blocks"]){ expect(migration).toContain(count); }
   expect(migration).toContain("ordered hash changed after backup");
-  expect(migration).toContain("private_migration_backups.past_group_manifest_20260913_0930");
+  expect(migration).toContain("private_migration_backups.past_group_manifest_20260913_0952");
+});
+
+test("rollback acceptance fixtures satisfy the production recurrence identity guard",()=>{
+  for(const productionGuard of [
+    "Recurring rows require complete occurrence identity",
+    "Occurrence identity requires seriesId",
+    "Series, occurrence, original-slot, and group-class identities are immutable"
+  ]) expect(recurrenceGuard).toContain(productionGuard);
+  expect(acceptance).toContain("Acceptance fixture recurrence identity is incomplete");
+  expect(acceptance).toContain("Acceptance conflict fixture immutable recurrence identity changed");
+  expect(acceptance).toContain("\"seriesId\":\"series:acceptance:private-conflict\"");
+  expect(acceptance).toContain("\"recurrenceOccurrenceId\":\"series:acceptance:private-conflict@2026-08-03T17:30:00.000Z\"");
+  expect(acceptance).toContain("\"recurrenceOriginalStartsAt\":\"2026-08-03T17:30:00.000Z\"");
+  expect(acceptance.indexOf("Acceptance fixture recurrence identity is incomplete")).toBeLessThan(acceptance.indexOf("select '20000000-0000-4000-8000-000000009303'"));
+  expect(acceptance).toContain("Acceptance failed: incomplete occurrence identity accepted");
 });

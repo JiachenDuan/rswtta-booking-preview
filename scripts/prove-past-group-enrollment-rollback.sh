@@ -6,7 +6,7 @@ set -eu
 command -v psql >/dev/null 2>&1 || { echo 'psql is required' >&2; exit 2; }
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 migration="$root/supabase/migrations/20260913093000_allow_past_single_group_enrollment.sql"
-backup="$root/sql/backups/20260913093000_past_group_enrollment.private-backup.sql"
+backup="$root/sql/backups/20260913095200_past_group_enrollment.private-backup.sql"
 tmp=$(mktemp "${TMPDIR:-/tmp}/past-group-enrollment.XXXXXX.sql")
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 python3 - "$migration" "$tmp" <<'PY'
