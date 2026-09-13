@@ -46,7 +46,7 @@ import {
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
-import { groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, searchGroupEnrollmentAccounts, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
+import { groupEnrollmentPreflight, groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, isPastActiveGroupBlock, searchGroupEnrollmentAccounts, selectGroupEnrollmentTargets, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
@@ -3531,7 +3531,11 @@ function ClubBookingActionModal({
   const enrolledAccountIds = new Set(groupEnrollments.map((item) => item.studentAccountId).filter((id): id is string => Boolean(id)));
   const selectedDropInAccountIds = new Set(selectedDropInStudents.map((student) => student.id));
   const dropInSearch = dropInQuery.trim().toLowerCase();
-  const dropInResults = searchGroupEnrollmentAccounts(students, dropInSearch, new Set([...enrolledAccountIds, ...selectedDropInAccountIds]));
+  const pastGroupEnrollment = isPastActiveGroupBlock(booking);
+  const dropInResults = searchGroupEnrollmentAccounts(students, dropInSearch, new Set([
+    ...(pastGroupEnrollment ? [] : enrolledAccountIds),
+    ...selectedDropInAccountIds
+  ]));
   const newGroupNameKey = newGroupStudentName.trim().toLowerCase();
   const newGroupDuplicateCandidates = newGroupNameKey
     ? students.filter((student) => {
@@ -3558,10 +3562,15 @@ function ClubBookingActionModal({
       booking.recurrenceOriginalStartsAt &&
       booking.groupClassId
     );
+    const enrollmentManageable = manageableGroup || pastGroupEnrollment;
     const singleSelection = manageableGroup ? selectGroupOccurrenceTargets(bookings, booking, "single") : null;
     const futureSelection = manageableGroup ? selectGroupOccurrenceTargets(bookings, booking, "future") : null;
+    const enrollmentSingleSelection = enrollmentManageable ? selectGroupEnrollmentTargets(bookings, booking, "single") : null;
     const activeSelection = groupAction?.scope === "future" ? futureSelection : singleSelection;
-    const groupEnrollmentSelection = groupEnrollmentScope === "future" ? futureSelection : singleSelection;
+    const groupEnrollmentSelection = groupEnrollmentScope === "future" && !pastGroupEnrollment ? futureSelection : enrollmentSingleSelection;
+    const enrollmentPreflight = selectedDropInStudents[0]
+      ? groupEnrollmentPreflight(bookings, booking, selectedDropInStudents[0].id)
+      : null;
     const targetGroupTimeLabel = rangeLabel(editSlot, durationMinutes);
     const singleGroupUpdateChanged = timeInputValid && singleSelection
       ? groupOccurrenceScheduleWouldChange(singleSelection.blocks, booking, editSlot.startsAt, targetGroupTimeLabel)
@@ -3681,16 +3690,16 @@ function ClubBookingActionModal({
               ))
             )}
           </div>
-          {manageableGroup ? <div className="group-dropin-panel">
-            <div className="mode-switch modal-mode-switch" aria-label="Group student add mode">
+          {enrollmentManageable ? <div className="group-dropin-panel">
+            {!pastGroupEnrollment ? <div className="mode-switch modal-mode-switch" aria-label="Group student add mode">
               <button type="button" className={dropInMode === "existing" ? "selected" : ""} onClick={() => setDropInMode("existing")}>
                 {copy(language, "Existing student", "现有学生")}
               </button>
               <button type="button" className={dropInMode === "new" ? "selected" : ""} onClick={() => setDropInMode("new")}>
                 {copy(language, "New student", "新学生")}
               </button>
-            </div>
-            {dropInMode === "existing" ? (
+            </div> : <p className="modal-warning">{copy(language, "Backdate an existing student to this historical occurrence only.", "仅可将现有学生补录到这一次历史团体课。")}</p>}
+            {pastGroupEnrollment || dropInMode === "existing" ? (
               <>
                 <label>
                   <span>{copy(language, "Add student", "添加学生")}</span>
@@ -3743,18 +3752,21 @@ function ClubBookingActionModal({
                     ))
                   )}
                 </div>
-                <div className="mode-switch modal-mode-switch" aria-label="Group enrollment scope">
+                {!pastGroupEnrollment ? <div className="mode-switch modal-mode-switch" aria-label="Group enrollment scope">
                   <button type="button" className={groupEnrollmentScope === "single" ? "selected" : ""} onClick={() => { setGroupEnrollmentScope("single"); setGroupEnrollmentConfirm(false); }}>
                     {copy(language, "This group class only", "仅本次团体课")}
                   </button>
                   <button type="button" className={groupEnrollmentScope === "future" ? "selected" : ""} onClick={() => { setGroupEnrollmentScope("future"); setGroupEnrollmentConfirm(false); }}>
                     {copy(language, "This and future group classes", "本次及未来团体课")}
                   </button>
-                </div>
+                </div> : null}
+                {enrollmentPreflight?.blockingReasons.map((reason) => (
+                  <p className="modal-warning" key={reason}>{copy(language, reason, reason === "This student already has active or cancelled enrollment history for this occurrence." ? "该学生在本次课程中已有有效或已取消的报名记录。" : reason === "This student has another class that overlaps this occurrence." ? "该学生有另一节课程与本次时间重叠。" : reason === "This group occurrence is at capacity." ? "本次团体课已满员。" : "本次团体课的容量设置无效。")}</p>
+                ))}
                 <button
                   className="primary-button"
                   type="button"
-                  disabled={saving || selectedDropInStudents.length === 0}
+                  disabled={saving || selectedDropInStudents.length === 0 || Boolean(enrollmentPreflight?.blockingReasons.length)}
                   onClick={() => {
                     setGroupEnrollmentIdempotencyKey(crypto.randomUUID());
                     setGroupEnrollmentConfirm(true);
@@ -3771,11 +3783,16 @@ function ClubBookingActionModal({
                       `Add ${selectedDropInStudents[0].studentName} (${studentAccountDisambiguator(selectedDropInStudents[0], language)}) to exactly ${groupEnrollmentSelection.blocks.length} group class${groupEnrollmentSelection.blocks.length === 1 ? "" : "es"}, ${bookingDateText(groupEnrollmentSelection.blocks[0], language)}${groupEnrollmentSelection.blocks.length === 1 ? "" : ` through ${bookingDateText(groupEnrollmentSelection.blocks[groupEnrollmentSelection.blocks.length - 1], language)}`}?`,
                       `将 ${selectedDropInStudents[0].studentName}（${studentAccountDisambiguator(selectedDropInStudents[0], language)}）添加到共 ${groupEnrollmentSelection.blocks.length} 节团体课：${bookingDateText(groupEnrollmentSelection.blocks[0], language)}${groupEnrollmentSelection.blocks.length === 1 ? "" : ` 至 ${bookingDateText(groupEnrollmentSelection.blocks[groupEnrollmentSelection.blocks.length - 1], language)}`}？`
                     )}</p>
+                    {pastGroupEnrollment ? <>
+                      <p>{copy(language, `Historical date/time: ${bookingDateText(booking, language)}, ${booking.timeLabel}. Coach: ${coachDisplayName(booking.assignedCoach || booking.requestedCoach, language)}.`, `历史日期/时间：${bookingDateText(booking, language)}，${booking.timeLabel}。教练：${coachDisplayName(booking.assignedCoach || booking.requestedCoach, language)}。`)}</p>
+                      <p>{copy(language, `Server-derived preview: $${((enrollmentPreflight?.priceCents ?? 7500) / 100).toFixed(2)}; status ${statusText(enrollmentPreflight?.status ?? "club_confirmed", language)}. Billing and CSV eligible rows: +1.`, `服务器推导预览：$${((enrollmentPreflight?.priceCents ?? 7500) / 100).toFixed(2)}；状态 ${statusText(enrollmentPreflight?.status ?? "club_confirmed", language)}。账单及 CSV 合格记录：+1。`)}</p>
+                      <p className="modal-warning">{copy(language, "This backdates attendance/billing history. No class package credit will be deducted automatically.", "此操作会补记历史出勤/账单记录，不会自动扣除课包额度。")}</p>
+                    </> : null}
                     <p>{copy(language, `Current roster: ${groupEnrollments.length ? groupEnrollments.map((item) => item.studentName).join(", ") : "None"}.`, `当前名单：${groupEnrollments.length ? groupEnrollments.map((item) => item.studentName).join("、") : "无"}。`)}</p>
                     <div className="modal-actions">
                       <button className="filter-button" type="button" onClick={() => setGroupEnrollmentConfirm(false)}>{copy(language, "Back", "返回")}</button>
                       <button className="primary-button" type="button" disabled={saving} onClick={async () => {
-                        const saved = await onAddDropIn(booking, selectedDropInStudents[0], groupEnrollmentScope, groupEnrollmentIdempotencyKey);
+                        const saved = await onAddDropIn(booking, selectedDropInStudents[0], pastGroupEnrollment ? "single" : groupEnrollmentScope, groupEnrollmentIdempotencyKey);
                         if (saved) {
                           setSelectedDropInStudents([]);
                           setDropInQuery("");

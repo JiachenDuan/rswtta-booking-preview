@@ -25,6 +25,9 @@ export type Booking = {
   timeLabel: string;
   startsAt: string;
   priceCents: number;
+  /** Optional production capacity fields; absent in the audited baseline. */
+  capacity?: number;
+  maxCapacity?: number;
   status: BookingStatus;
   parentNote: string;
   createdAt: string;

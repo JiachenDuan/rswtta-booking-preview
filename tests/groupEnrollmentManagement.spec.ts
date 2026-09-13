@@ -120,7 +120,7 @@ test("billing/export increases exactly by inserted enrollments with no unresolve
 });
 
 test("add-student controls are confined to manageable Club Group blocks and stay out of Parent/private surfaces", () => {
-  expect(club).toContain("{manageableGroup ? <div className=\"group-dropin-panel\">");
+  expect(club).toContain("{enrollmentManageable ? <div className=\"group-dropin-panel\">");
   expect(club).toContain('"This group class only"');
   expect(club).toContain('"This and future group classes"');
   expect(club).toContain('"Confirm group enrollment"');

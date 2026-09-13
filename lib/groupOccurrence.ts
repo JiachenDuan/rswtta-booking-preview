@@ -3,6 +3,11 @@ import type { Booking, ParentAccount } from "@/lib/types";
 export type GroupOccurrenceAction = "update" | "cancel";
 export type GroupOccurrenceScope = "single" | "future";
 export type GroupEnrollmentScope = GroupOccurrenceScope;
+export type GroupEnrollmentPreflight = {
+  blockingReasons: string[];
+  priceCents: number;
+  status: Booking["status"];
+};
 
 export function isGroupBlock(booking: Booking) {
   return booking.program === "Group class" && booking.studentName.trim().toLowerCase() === "group class";
@@ -14,6 +19,16 @@ export function isFutureActiveGroupBlock(booking: Booking, now = new Date()) {
     booking.status !== "cancelled" &&
     booking.status !== "coach_confirmed" &&
     new Date(booking.startsAt).getTime() > now.getTime()
+  );
+}
+
+/** Past enrollment is deliberately narrower than recurring management: one canonical, non-cancelled block only. */
+export function isPastActiveGroupBlock(booking: Booking, now = new Date()) {
+  return (
+    isGroupBlock(booking) &&
+    booking.status !== "cancelled" &&
+    new Date(booking.startsAt).getTime() <= now.getTime() &&
+    Boolean(booking.groupClassId && booking.seriesId && booking.recurrenceOccurrenceId && booking.recurrenceOriginalStartsAt)
   );
 }
 
@@ -66,6 +81,68 @@ export function expectedGroupOccurrenceRows(rows: Booking[]) {
     studentAccountId: booking.studentAccountId ?? null,
     updatedAt: booking.updatedAt
   }));
+}
+
+export function selectGroupEnrollmentTargets(
+  bookings: Booking[],
+  selected: Booking,
+  scope: GroupEnrollmentScope,
+  now = new Date()
+) {
+  if (isPastActiveGroupBlock(selected, now)) {
+    if (scope !== "single") throw new Error("Past group enrollment is limited to this group class only");
+    const canonicalBlocks = bookings.filter((booking) => isGroupBlock(booking) && booking.groupClassId === selected.groupClassId);
+    if (canonicalBlocks.length !== 1 || canonicalBlocks[0].id !== selected.id) {
+      throw new Error("Past group occurrence must have exactly one canonical group block");
+    }
+    return { blocks: [selected], rows: bookings.filter((booking) => booking.groupClassId === selected.groupClassId) };
+  }
+  return selectGroupOccurrenceTargets(bookings, selected, scope, now);
+}
+
+function enrollmentBookingEndsAt(booking: Booking) {
+  const match = booking.timeLabel.match(/^\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(AM|PM)\s*$/i);
+  if (!match) return new Date(booking.startsAt).getTime() + 60 * 60 * 1000;
+  let hour = Number(match[4]) % 12;
+  if (match[6].toUpperCase() === "PM") hour += 12;
+  const end = new Date(booking.startsAt);
+  end.setHours(hour, Number(match[5] || 0), 0, 0);
+  if (end.getTime() <= new Date(booking.startsAt).getTime()) end.setDate(end.getDate() + 1);
+  return end.getTime();
+}
+
+export function groupEnrollmentPreflight(bookings: Booking[], selected: Booking, studentAccountId: string): GroupEnrollmentPreflight {
+  const groupRows = bookings.filter((booking) => booking.groupClassId === selected.groupClassId);
+  const blockingReasons: string[] = [];
+  if (groupRows.some((booking) => booking.program === "Group enrollment" && booking.studentAccountId === studentAccountId)) {
+    blockingReasons.push("This student already has active or cancelled enrollment history for this occurrence.");
+  }
+  const startsAt = new Date(selected.startsAt).getTime();
+  const endsAt = enrollmentBookingEndsAt(selected);
+  if (bookings.some((booking) =>
+    booking.studentAccountId === studentAccountId && booking.status !== "cancelled" &&
+    new Date(booking.startsAt).getTime() < endsAt && enrollmentBookingEndsAt(booking) > startsAt
+  )) blockingReasons.push("This student has another class that overlaps this occurrence.");
+
+  const capacitySource = selected as Booking & { capacity?: number | string; maxCapacity?: number | string };
+  const rawCapacity = capacitySource.capacity ?? capacitySource.maxCapacity;
+  if (rawCapacity !== undefined) {
+    const capacity = Number(rawCapacity);
+    const activeRoster = groupRows.filter((booking) => booking.program === "Group enrollment" && booking.status !== "cancelled").length;
+    if (!Number.isInteger(capacity) || capacity < 1) blockingReasons.push("This group occurrence has an invalid capacity value.");
+    else if (activeRoster >= capacity) blockingReasons.push("This group occurrence is at capacity.");
+  }
+  const establishedPrice = groupRows
+    .filter((booking) => booking.program === "Group enrollment" && booking.priceCents > 0)
+    .sort((left, right) => {
+      const createdOrder = new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+      return createdOrder || left.id.localeCompare(right.id);
+    })[0]?.priceCents;
+  return {
+    blockingReasons,
+    priceCents: establishedPrice ?? 7500,
+    status: selected.status === "coach_confirmed" ? "coach_confirmed" : "club_confirmed"
+  };
 }
 
 export function groupOccurrenceTargetStartsAt(block: Booking, selected: Booking, selectedTargetStartsAt: string) {

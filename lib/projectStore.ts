@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { canonicalizeStudentReference, prepareStudentReferenceForCreation } from "@/lib/studentIdentity";
 import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
-import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
+import { expectedGroupOccurrenceRows, selectGroupEnrollmentTargets, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
 import { openingAmountToBaseUnits, PACKAGE_UNIT_BASIS } from "@/lib/classPackages";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, PackageBalance, PackageCategory, PackageLedgerEvent, ParentAccount, SetPackageOpeningResult } from "@/lib/types";
@@ -366,6 +366,8 @@ function bookingFromRow(row: ProjectRow<Booking>): Booking {
     timeLabel: String(row.values.timeLabel ?? "4:30 PM"),
     startsAt: String(row.values.startsAt ?? new Date().toISOString()),
     priceCents: Number(row.values.priceCents ?? 0),
+    capacity: row.values.capacity === undefined ? undefined : Number(row.values.capacity),
+    maxCapacity: row.values.maxCapacity === undefined ? undefined : Number(row.values.maxCapacity),
     status: String(row.values.status ?? "requested") as BookingStatus,
     parentNote: String(row.values.parentNote ?? ""),
     createdAt: row.created_at,
@@ -1302,7 +1304,7 @@ export async function addStudentToGroupOccurrencesAtomically(input: {
   idempotencyKey: string;
   now?: Date;
 }) {
-  const selection = selectGroupOccurrenceTargets(input.bookings, input.selected, input.scope, input.now);
+  const selection = selectGroupEnrollmentTargets(input.bookings, input.selected, input.scope, input.now);
   const response = await supabase.rpc("add_student_to_group_occurrences", {
     p_selected_block_id: input.selected.id,
     p_scope: input.scope,
