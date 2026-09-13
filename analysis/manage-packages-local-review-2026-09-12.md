@@ -51,12 +51,20 @@ Hashes below are regenerated after final verification and before commit.
 - `sql/backups/20260913043700_manage_class_packages.private-backup.sql` — `bdca4b3aa41ef1947fea48b80111fdbcc7a1ca7301b972dfdd1135197854e037`
 - `sql/rollback/20260913043700_manage_class_packages.rollback.sql` — `07285fe267d881ac9afbb69c42e382e37c6c677816e4448c2defe9cba8f1d5bd`
 - `sql/verification/20260913043700_manage_class_packages.verify.sql` — `491df58a1b3eadc9f075677b6367981e155e1e4ae83c74163fbe7ca9283be1bc`
-- `supabase/migrations/20260913043700_manage_class_packages.sql` — `79377f0e05cf67210d4c43c917c1640a6fa370e5f63819189321ee7a74fe20ec`
-- terminal-rollback migration variant — `bfa9b74f5126f8b8478955d796d637864678c2bac0517d6dfbfbf569443f663c`
-- `tests/classPackages.spec.ts` — `3ff415528fbd3fd4615b39212869bf58bda56747d8f42d577658a18f6f56037b`
+- `supabase/migrations/20260913043700_manage_class_packages.sql` — `333014581e24e2b004a13f8fedeedf7a05ab4584bb5159e93f4d8fd2ae4c636e`
+- terminal-rollback migration variant — `7a1d383195d04eafaffef5d22569d19a5820778d9975dcdf007e111a2b1b127e`
+- `tests/classPackages.spec.ts` — `ecb484f2796b72eb3f4f2da6bb22d4c96508d4e0619491a7e20710bbfab0e31c`
 
 The review document itself is excluded from its embedded manifest to avoid a recursive self-hash.
 <!-- HASH_MANIFEST_END -->
+
+## Guarded rollout attempt — stopped and rolled back
+
+The approved rollout began after the baseline matched. The timestamped private backup committed successfully with 65 account rows, zero legacy ledger rows, four RLS-enabled backup tables, no browser-role schema usage, and matching source/backup digest `5e2e529f06612f9b87e1139f7d13346f`. The rollback-only migration proof left every v2 object absent and all page hashes unchanged.
+
+The first committed migration created empty v2 tables and passed read-only object/ACL/resolver verification, but disposable rollback-only acceptance exposed a PL/pgSQL output-column ambiguity in the opening RPC conflict target. The acceptance transaction aborted before any fixture or event committed. Per the stop gate, the emergency rollback restored the exact pre-migration schema and legacy grants. Post-rollback proof found zero fixture accounts, zero legacy package rows, 65 zero legacy balances, no v2 objects, and the protected backup intact. No client was pushed or deployed.
+
+The local migration now uses the named unique constraint and fully qualified event/key columns; a static regression covers the ambiguity. This corrected migration has not been applied to production and requires a new guarded rollout authorization/attempt.
 
 ## Guarded future rollout (not executed)
 

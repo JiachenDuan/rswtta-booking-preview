@@ -161,6 +161,9 @@ test("authoritative SQL resolver is immutable, group-first, alias-reviewed, ACL-
 
 test("opening RPC preserves stale, idempotency, category, unit, and account isolation", () => {
   for (const text of ["rswtta:package:v2:idempotency:", "rswtta:package:v2:account-category:", "stale package opening: expected opening/version", "idempotency key was already used with different input", "stored category/unit basis mismatch", "legacy_club_session_unverified"]) expect(migration).toContain(text);
+  expect(migration).toContain("on conflict on constraint class_package_keys_account_category do nothing");
+  expect(migration).toContain("where e.package_id=v_package.id");
+  expect(migration).not.toContain("on conflict(project_id,student_account_id,category)");
   expect(store).toContain('supabase.rpc("set_class_package_opening"');
   expect(store).toContain("p_unit_basis: unitBasis");
 });
