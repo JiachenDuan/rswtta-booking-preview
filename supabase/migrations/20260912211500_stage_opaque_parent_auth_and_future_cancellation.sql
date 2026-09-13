@@ -246,16 +246,16 @@ end $$;
 -- guessed. Such accounts remain migrated but cannot log in until an administrator
 -- adds a uniquely verified alias through a separately reviewed recovery process.
 do $migrate$
-declare v_accounts uuid; r public.project_rows%rowtype; v_principal uuid; v_household uuid;
+declare v_accounts uuid; v_account_row public.project_rows%rowtype; v_principal uuid; v_household uuid;
 begin
   select t.id into strict v_accounts from public.project_tables t join public.projects p on p.id=t.project_id
   where p.slug='rswtta-booking' and t.slug='parent_accounts';
-  for r in select * from public.project_rows where project_table_id=v_accounts order by id for update loop
+  for v_account_row in select * from public.project_rows where project_table_id=v_accounts order by id for update loop
     insert into rswtta_private.auth_principals(actor_kind) values('parent') returning id into v_principal;
     insert into rswtta_private.households default values returning id into v_household;
-    insert into rswtta_private.household_accounts(principal_id,household_id,account_id) values(v_principal,v_household,r.id);
+    insert into rswtta_private.household_accounts(principal_id,household_id,account_id) values(v_principal,v_household,v_account_row.id);
     insert into rswtta_private.credentials(principal_id,algorithm,iterations,salt,password_hash)
-    values(v_principal,'pbkdf2-sha256',100000,decode(r.values->>'passwordSalt','base64'),decode(r.values->>'passwordHash','base64'));
+    values(v_principal,'pbkdf2-sha256',100000,decode(v_account_row.values->>'passwordSalt','base64'),decode(v_account_row.values->>'passwordHash','base64'));
   end loop;
 
   insert into rswtta_private.login_aliases(alias_digest,principal_id,alias_kind)

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
 const client = readFileSync("lib/parentClient.ts", "utf8");
+const stageMigration = readFileSync("supabase/migrations/20260912211500_stage_opaque_parent_auth_and_future_cancellation.sql", "utf8");
 const sql = [
   "supabase/migrations/20260912211500_stage_opaque_parent_auth_and_future_cancellation.sql",
   "supabase/migrations/20260912213000_activate_opaque_parent_and_club_sessions.sql"
@@ -55,4 +56,10 @@ test("activation grants exactly the Parent browser RPCs used by the frontend", (
   for (const name of frontendContracts().keys()) {
     expect(sql).toMatch(new RegExp(`grant execute on function public\\.${name}\\(`, "i"));
   }
+});
+
+test("login alias seeding does not shadow SQL row aliases with a PL/pgSQL record", () => {
+  const migrationBlock = /do \$migrate\$([\s\S]*?)end \$migrate\$;/.exec(stageMigration)?.[1] ?? "";
+  expect(migrationBlock).toContain("v_account_row public.project_rows%rowtype");
+  expect(migrationBlock).not.toMatch(/declare[^;]*\br\s+public\.project_rows%rowtype/i);
 });
