@@ -62,18 +62,47 @@ export type ParentAccount = {
   createdAt: string;
 };
 
-export type PackageHoursBalance = {
+export type PackageCategory = "coach_director" | "national_coach" | "group_class";
+
+export type PackageBalance = {
+  packageId: string | null;
   studentAccountId: string;
-  balanceMinutes: number;
-  lastPackageUpdate: string | null;
+  category: PackageCategory;
+  openingMinutes: number;
+  adjustmentMinutes: number;
+  usageMinutes: number;
+  remainingMinutes: number;
+  version: number;
+  lastEventAt: string | null;
 };
 
-export type AddPackageHoursResult = {
-  ledgerEntryId: string;
+export type PackageLedgerEvent = {
+  eventId: string;
+  packageId: string;
   studentAccountId: string;
-  addedMinutes: number;
-  oldBalanceMinutes: number;
-  newBalanceMinutes: number;
+  category: PackageCategory;
+  eventType: "opening_set" | "adjustment" | "usage";
+  amountMinutes: number;
+  oldOpeningMinutes: number | null;
+  newOpeningMinutes: number | null;
+  version: number;
+  note: string;
+  reference: string;
+  actorKind: "legacy_club_session_unverified" | "service_role";
+  createdAt: string;
+};
+
+export type SetPackageOpeningResult = {
+  eventId: string;
+  packageId: string;
+  studentAccountId: string;
+  category: PackageCategory;
+  oldOpeningMinutes: number;
+  newOpeningMinutes: number;
+  oldRemainingMinutes: number;
+  newRemainingMinutes: number;
+  oldVersion: number;
+  newVersion: number;
   createdAt: string;
   replayed: boolean;
 };

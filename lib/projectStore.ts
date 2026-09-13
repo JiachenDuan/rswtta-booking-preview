@@ -4,8 +4,8 @@ import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
 import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
-import { hoursToMinutes } from "@/lib/classPackages";
-import type { ActivityLog, AddPackageHoursResult, BillNotification, Booking, BookingStatus, PackageHoursBalance, ParentAccount } from "@/lib/types";
+import { openingHoursToMinutes } from "@/lib/classPackages";
+import type { ActivityLog, BillNotification, Booking, BookingStatus, PackageBalance, PackageCategory, PackageLedgerEvent, ParentAccount, SetPackageOpeningResult } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
 const projectName = "Rising Stars World Table Tennis Academy";
@@ -1405,52 +1405,117 @@ export async function listActivityLogs() {
   return rows.map(activityLogFromRow).sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
 }
 
-export async function listPackageHourBalances(): Promise<PackageHoursBalance[]> {
-  const response = await supabase.rpc("list_class_package_balances");
+export async function listPackageBalances(): Promise<PackageBalance[]> {
+  const response = await supabase.rpc("list_class_package_balances_v2");
   if (response.error) throw setupError(response.error.message);
   return ((response.data ?? []) as Array<{
+    package_id: string | null;
     student_account_id: string;
-    balance_minutes: number | string;
-    last_package_update: string | null;
+    category: PackageCategory;
+    opening_minutes: number | string;
+    adjustment_minutes: number | string;
+    usage_minutes: number | string;
+    remaining_minutes: number | string;
+    version: number | string;
+    last_event_at: string | null;
   }>).map((row) => ({
+    packageId: row.package_id,
     studentAccountId: row.student_account_id,
-    balanceMinutes: Number(row.balance_minutes),
-    lastPackageUpdate: row.last_package_update
+    category: row.category,
+    openingMinutes: Number(row.opening_minutes),
+    adjustmentMinutes: Number(row.adjustment_minutes),
+    usageMinutes: Number(row.usage_minutes),
+    remainingMinutes: Number(row.remaining_minutes),
+    version: Number(row.version),
+    lastEventAt: row.last_event_at
   }));
 }
 
-export async function addPackageHours(input: {
+export async function listPackageHistory(studentAccountId: string, category: PackageCategory): Promise<PackageLedgerEvent[]> {
+  const response = await supabase.rpc("list_class_package_history", {
+    p_student_account_id: studentAccountId,
+    p_category: category
+  });
+  if (response.error) throw setupError(response.error.message);
+  return ((response.data ?? []) as Array<{
+    event_id: string;
+    package_id: string;
+    student_account_id: string;
+    category: PackageCategory;
+    event_type: PackageLedgerEvent["eventType"];
+    amount_minutes: number | string;
+    old_opening_minutes: number | string | null;
+    new_opening_minutes: number | string | null;
+    version: number | string;
+    note: string;
+    reference: string;
+    actor_kind: PackageLedgerEvent["actorKind"];
+    created_at: string;
+  }>).map((row) => ({
+    eventId: row.event_id,
+    packageId: row.package_id,
+    studentAccountId: row.student_account_id,
+    category: row.category,
+    eventType: row.event_type,
+    amountMinutes: Number(row.amount_minutes),
+    oldOpeningMinutes: row.old_opening_minutes === null ? null : Number(row.old_opening_minutes),
+    newOpeningMinutes: row.new_opening_minutes === null ? null : Number(row.new_opening_minutes),
+    version: Number(row.version),
+    note: row.note,
+    reference: row.reference,
+    actorKind: row.actor_kind,
+    createdAt: row.created_at
+  }));
+}
+
+export async function setPackageOpening(input: {
   studentAccountId: string;
-  hours: number;
+  category: PackageCategory;
+  openingHours: number;
+  expectedOpeningMinutes: number;
+  expectedVersion: number;
   note?: string;
   reference?: string;
   idempotencyKey: string;
-}): Promise<AddPackageHoursResult> {
-  const deltaMinutes = hoursToMinutes(input.hours);
-  const response = await supabase.rpc("add_class_package_hours", {
+}): Promise<SetPackageOpeningResult> {
+  const openingMinutes = openingHoursToMinutes(input.openingHours);
+  const response = await supabase.rpc("set_class_package_opening", {
     p_student_account_id: input.studentAccountId,
-    p_delta_minutes: deltaMinutes,
+    p_category: input.category,
+    p_new_opening_minutes: openingMinutes,
+    p_expected_opening_minutes: input.expectedOpeningMinutes,
+    p_expected_version: input.expectedVersion,
     p_note: input.note?.trim() ?? "",
     p_reference: input.reference?.trim() ?? "",
     p_idempotency_key: input.idempotencyKey
   });
   if (response.error) throw setupError(response.error.message);
   const row = (Array.isArray(response.data) ? response.data[0] : response.data) as {
-    ledger_entry_id: string;
+    event_id: string;
+    package_id: string;
     student_account_id: string;
-    added_minutes: number;
-    old_balance_minutes: number | string;
-    new_balance_minutes: number | string;
+    category: PackageCategory;
+    old_opening_minutes: number | string;
+    new_opening_minutes: number | string;
+    old_remaining_minutes: number | string;
+    new_remaining_minutes: number | string;
+    old_version: number | string;
+    new_version: number | string;
     created_at: string;
     replayed: boolean;
   } | null;
-  if (!row) throw new Error("Database returned no package-hours result.");
+  if (!row) throw new Error("Database returned no package opening result.");
   return {
-    ledgerEntryId: row.ledger_entry_id,
+    eventId: row.event_id,
+    packageId: row.package_id,
     studentAccountId: row.student_account_id,
-    addedMinutes: Number(row.added_minutes),
-    oldBalanceMinutes: Number(row.old_balance_minutes),
-    newBalanceMinutes: Number(row.new_balance_minutes),
+    category: row.category,
+    oldOpeningMinutes: Number(row.old_opening_minutes),
+    newOpeningMinutes: Number(row.new_opening_minutes),
+    oldRemainingMinutes: Number(row.old_remaining_minutes),
+    newRemainingMinutes: Number(row.new_remaining_minutes),
+    oldVersion: Number(row.old_version),
+    newVersion: Number(row.new_version),
     createdAt: row.created_at,
     replayed: Boolean(row.replayed)
   };

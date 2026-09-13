@@ -1,19 +1,30 @@
-import type { PackageHoursBalance, ParentAccount } from "@/lib/types";
+import type { PackageBalance, PackageCategory, PackageLedgerEvent, ParentAccount } from "@/lib/types";
 
-export const DEFAULT_PACKAGE_HOURS = 0;
+export const DEFAULT_PACKAGE_OPENING_HOURS = 0;
 export const PACKAGE_HOUR_INCREMENT = 0.5;
-export const MAX_PACKAGE_HOURS_PER_ENTRY = 500;
+export const MAX_PACKAGE_HOURS = 500;
+
+export const PACKAGE_CATEGORIES: readonly PackageCategory[] = [
+  "coach_director",
+  "national_coach",
+  "group_class"
+] as const;
+
+export const PACKAGE_CATEGORY_LABELS: Record<PackageCategory, { en: string; zh: string }> = {
+  coach_director: { en: "Coach Director prepaid package", zh: "教练主管预付课时包" },
+  national_coach: { en: "National Coach package", zh: "国家级教练课时包" },
+  group_class: { en: "Group Class package", zh: "团体课课时包" }
+};
 
 export type ClassPackageAccountRow = {
   account: ParentAccount;
-  balanceMinutes: number;
-  lastUpdatedAt: string | null;
+  packages: Record<PackageCategory, PackageBalance>;
   duplicateName: boolean;
 };
 
-export function hoursToMinutes(hours: number) {
-  if (!Number.isFinite(hours) || hours <= 0 || hours > MAX_PACKAGE_HOURS_PER_ENTRY) {
-    throw new Error(`Hours must be between ${PACKAGE_HOUR_INCREMENT} and ${MAX_PACKAGE_HOURS_PER_ENTRY}.`);
+export function openingHoursToMinutes(hours: number) {
+  if (!Number.isFinite(hours) || hours < 0 || hours > MAX_PACKAGE_HOURS) {
+    throw new Error(`Hours must be between 0 and ${MAX_PACKAGE_HOURS}.`);
   }
   const minutes = hours * 60;
   if (!Number.isInteger(minutes) || minutes % (PACKAGE_HOUR_INCREMENT * 60) !== 0) {
@@ -27,25 +38,36 @@ export function minutesToHoursText(minutes: number) {
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(1).replace(/\.0$/, "");
 }
 
-export function classPackageAccountRows(accounts: ParentAccount[], balances: PackageHoursBalance[]) {
+export function emptyPackageBalance(studentAccountId: string, category: PackageCategory): PackageBalance {
+  return {
+    packageId: null,
+    studentAccountId,
+    category,
+    openingMinutes: 0,
+    adjustmentMinutes: 0,
+    usageMinutes: 0,
+    remainingMinutes: 0,
+    version: 0,
+    lastEventAt: null
+  };
+}
+
+export function classPackageAccountRows(accounts: ParentAccount[], balances: PackageBalance[]) {
   const nameCounts = new Map<string, number>();
-  const balancesByAccountId = new Map(balances.map((balance) => [balance.studentAccountId, balance]));
+  const balancesByKey = new Map(balances.map((balance) => [`${balance.studentAccountId}:${balance.category}`, balance]));
   for (const account of accounts) {
     const key = account.studentName.trim().toLocaleLowerCase();
     nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
   }
 
-  return accounts.map((account): ClassPackageAccountRow => {
-    const balance = balancesByAccountId.get(account.id);
-    return {
-      account,
-      // The RPC returns every account with COALESCE(SUM(...), 0). This fallback is only
-      // for the initial render before that response arrives; it never infers booking credits.
-      balanceMinutes: balance?.balanceMinutes ?? 0,
-      lastUpdatedAt: balance?.lastPackageUpdate ?? null,
-      duplicateName: (nameCounts.get(account.studentName.trim().toLocaleLowerCase()) ?? 0) > 1
-    };
-  });
+  return accounts.map((account): ClassPackageAccountRow => ({
+    account,
+    packages: Object.fromEntries(PACKAGE_CATEGORIES.map((category) => [
+      category,
+      balancesByKey.get(`${account.id}:${category}`) ?? emptyPackageBalance(account.id, category)
+    ])) as Record<PackageCategory, PackageBalance>,
+    duplicateName: (nameCounts.get(account.studentName.trim().toLocaleLowerCase()) ?? 0) > 1
+  }));
 }
 
 export function searchClassPackageAccounts(rows: ClassPackageAccountRow[], query: string) {
@@ -59,4 +81,27 @@ export function searchClassPackageAccounts(rows: ClassPackageAccountRow[], query
 export function safeAccountSuffix(accountId: string) {
   const compact = accountId.replace(/[^a-z0-9]/gi, "");
   return compact.slice(-6) || accountId.slice(-6);
+}
+
+/** Pure audit helper used by direct tests; production totals are calculated by the RPC. */
+export function summarizePackageEvents(events: PackageLedgerEvent[]) {
+  let openingMinutes = 0;
+  let adjustmentMinutes = 0;
+  let usageMinutes = 0;
+  let remainingMinutes = 0;
+  let version = 0;
+  for (const event of [...events].sort((left, right) => left.version - right.version)) {
+    if (event.version !== version + 1) throw new Error("Package event versions must be contiguous.");
+    version = event.version;
+    if (event.eventType === "opening_set") {
+      if (event.oldOpeningMinutes !== openingMinutes || event.newOpeningMinutes === null) throw new Error("Opening event is stale or incomplete.");
+      openingMinutes = event.newOpeningMinutes;
+    } else if (event.eventType === "adjustment") {
+      adjustmentMinutes += event.amountMinutes;
+    } else {
+      usageMinutes += -event.amountMinutes;
+    }
+    remainingMinutes += event.amountMinutes;
+  }
+  return { openingMinutes, adjustmentMinutes, usageMinutes, remainingMinutes, version };
 }

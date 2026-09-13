@@ -16,10 +16,10 @@ try {
   await enterLegacyClubSession(desktop);
   await desktop.goto(baseURL, { waitUntil: "networkidle" });
   await desktop.getByRole("button", { name: /Class packages/ }).click();
-  await desktop.getByRole("heading", { name: /Prepaid hours by student account/ }).waitFor();
+  await desktop.getByRole("heading", { name: /Explicit package hours by account and category/ }).waitFor();
   await desktop.waitForFunction(() =>
     document.querySelector(".package-account-list")?.getAttribute("aria-busy") === "false" &&
-    document.querySelectorAll(".package-account-row").length === 73
+    document.querySelectorAll(".package-account-row").length === 65
   , undefined, { timeout: 15000 });
   await desktop.screenshot({ path: `${outputDir}/class-packages-desktop.png`, fullPage: false });
 
@@ -27,15 +27,15 @@ try {
   await enterLegacyClubSession(mobile);
   await mobile.goto(baseURL, { waitUntil: "networkidle" });
   await mobile.getByRole("button", { name: /Class packages/ }).click();
-  await mobile.getByRole("heading", { name: /Prepaid hours by student account/ }).waitFor();
+  await mobile.getByRole("heading", { name: /Explicit package hours by account and category/ }).waitFor();
   await mobile.waitForFunction(() =>
     document.querySelector(".package-account-list")?.getAttribute("aria-busy") === "false" &&
-    document.querySelectorAll(".package-account-row").length === 73
+    document.querySelectorAll(".package-account-row").length === 65
   , undefined, { timeout: 15000 });
   await mobile.screenshot({ path: `${outputDir}/class-packages-mobile.png`, fullPage: false });
-  await mobile.locator(".package-account-row").first().getByRole("button", { name: /Add hours/ }).click();
+  await mobile.locator(".package-account-row").first().getByRole("button", { name: /Manage/ }).first().click();
   await mobile.getByRole("dialog").waitFor();
-  await mobile.screenshot({ path: `${outputDir}/class-packages-mobile-add-hours.png`, fullPage: false });
+  await mobile.screenshot({ path: `${outputDir}/class-packages-mobile-manage.png`, fullPage: false });
 } finally {
   await browser.close();
 }
