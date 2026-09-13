@@ -75,5 +75,7 @@ test("Parent UI offers scoped exact bilingual counts and a second final confirma
   expect(parentModal).toContain('"Selected class only — 1 class", "仅所选课程 — 1 节课"');
   expect(parentModal).toContain("recurringTargets.length");
   expect(parentModal).toContain('`Final confirmation: cancel ${countText}?`, `最终确认：取消 ${countText}？`');
+  expect(parentModal).toContain('`Original-slot boundary: ${boundaryText}.`, `原始时段边界：${boundaryText}。`');
+  expect(parentModal).toContain("originalOccurrenceBoundary(booking)");
   expect(parentModal).toContain("cancellationIdempotencyKey.current");
 });

@@ -40,7 +40,7 @@ import {
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, searchGroupEnrollmentAccounts, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
-import { isPersistedParentCancellationCandidate, parentCancellationTargets, type ParentCancellationScope } from "@/lib/parentCancellation";
+import { isPersistedParentCancellationCandidate, originalOccurrenceBoundary, parentCancellationTargets, type ParentCancellationScope } from "@/lib/parentCancellation";
 import { cancelParentRecurring, clearStoredParentSession, completeParentBooking, completeParentProfile, loginParentSession, logoutParentSession, readParentSession, refreshParentSession, requestParentBooking, requestParentGroupClass, requestParentPasswordReset, updateParentProfile, type ParentDashboard, type ParentSession } from "@/lib/parentClient";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
@@ -802,7 +802,7 @@ export function ClubApp() {
     window.localStorage.setItem(clubSessionKey, "true");
     setMode("club");
     subscribeClubRealtime();
-    await loadAll(true);
+    void loadAll(true);
   }
 
   async function loginUnified(identifier: string, password: string, allowPreregisteredName = false) {
@@ -1352,9 +1352,7 @@ export function ClubApp() {
       setClubAuthenticated(true);
       setMode("club");
       subscribeClubRealtime();
-      Promise.all([listBookings(), listBillNotifications(), listParentAccounts(), listActivityLogs()]).then(([nextBookings, nextBills, nextStudents, nextLogs]) => {
-        setBookings(nextBookings); setBills(nextBills); setStudents(nextStudents); setActivityLogs(nextLogs);
-      });
+      void loadAll(true);
     }
     const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
     return () => {
@@ -1632,6 +1630,12 @@ function UnifiedAuth({
   const firstNameMatches = intent === "parent" && preregisteredLogin ? firstNameDuplicateStudents(students, identifier) : [];
   const firstNameLoginBlocked = firstNameMatches.length > 1;
   const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;
+
+  useEffect(() => {
+    if (intent === "parent") {
+      setNotice(copy(language, "Login with username and password.", "请用用户名和密码登录。"));
+    }
+  }, [intent, language]);
 
   async function handleRegister() {
     setBusy(true);
@@ -4111,6 +4115,10 @@ function ParentClassActionModal({
   const recurringTargets = parentCancellationTargets(bookings, booking, "selected_and_future", now);
   const isRecurring = Boolean(booking.seriesId && recurringTargets.length > 1);
   const selectedCount = parentCancellationTargets(bookings, booking, scope, now).length;
+  const boundaryText = new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "en-US", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(new Date(originalOccurrenceBoundary(booking)));
   const countText = copy(
     language,
     `${selectedCount} class${selectedCount === 1 ? "" : "es"}`,
@@ -4163,6 +4171,7 @@ function ParentClassActionModal({
         ) : cancellationStep === "final" ? (
           <div className="action-confirm-panel">
             <strong>{copy(language, `Final confirmation: cancel ${countText}?`, `最终确认：取消 ${countText}？`)}</strong>
+            <p>{copy(language, `Original-slot boundary: ${boundaryText}.`, `原始时段边界：${boundaryText}。`)}</p>
             <p>{copy(language, "This cannot be undone.", "此操作无法撤销。")}</p>
             <div className="modal-actions">
               <button type="button" className="filter-button" disabled={saving} onClick={() => setCancellationStep("scope")}>{copy(language, "Back", "返回")}</button>
