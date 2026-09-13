@@ -10,8 +10,8 @@ union all select 'zero_balances',count(*) filter(where opening_amount_base_units
 select category,unit_basis,count(*) from public.list_class_package_balances_v2() group by category,unit_basis order by category;
 -- Expected exactly 65 each: coach_director_private/hours, national_coach_private/hours, group_class/class_credit.
 
-select public.resolve_class_package_consumption('{"id":"verify-private","assignedCoachId":"coach_tian_ye","assignedCoach":"wrong display","program":"Private lesson","startsAt":"2026-09-20T16:00:00Z","timeLabel":"1.5h","status":"coach_confirmed"}'::jsonb) as immutable_id_private,
- public.resolve_class_package_consumption('{"id":"verify-group","groupClassId":"group-1","assignedCoachId":"coach_tian_ye","program":"Group lesson","startsAt":"2026-09-20T16:00:00Z","timeLabel":"2h","status":"coach_confirmed"}'::jsonb) as group_precedence;
+select public.resolve_class_package_consumption('{"id":"verify-private","assignedCoachId":"coach_tian_ye","assignedCoach":"wrong display","program":"Private lesson","startsAt":"2026-09-20T16:00:00Z","timeLabel":"7 PM - 8:30 PM","status":"coach_confirmed"}'::jsonb) as immutable_id_private,
+ public.resolve_class_package_consumption('{"id":"verify-group","groupClassId":"group-1","assignedCoachId":"coach_tian_ye","program":"Group lesson","startsAt":"2026-09-20T16:00:00Z","timeLabel":"10 AM - 12 PM","status":"coach_confirmed"}'::jsonb) as group_precedence;
 
 select n.nspname schema_name,c.relname,c.relrowsecurity rls_enabled,owner.rolname owner,c.relacl
 from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_roles owner on owner.oid=c.relowner

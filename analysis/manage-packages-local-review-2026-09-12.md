@@ -50,7 +50,7 @@ Hashes below are regenerated after final verification and before commit.
 - `scripts/prove-manage-packages-rollback.sh` — `c37c3b82712ca49900e4cc1de301ebf24db8c9b8d733a07994fce7b256b1a8e9`
 - `sql/backups/20260913043700_manage_class_packages.private-backup.sql` — `bdca4b3aa41ef1947fea48b80111fdbcc7a1ca7301b972dfdd1135197854e037`
 - `sql/rollback/20260913043700_manage_class_packages.rollback.sql` — `07285fe267d881ac9afbb69c42e382e37c6c677816e4448c2defe9cba8f1d5bd`
-- `sql/verification/20260913043700_manage_class_packages.verify.sql` — `73254f9c268db501c4793120569f4f0db2b6aaa0f3c821e84d396b2b363c83a3`
+- `sql/verification/20260913043700_manage_class_packages.verify.sql` — `491df58a1b3eadc9f075677b6367981e155e1e4ae83c74163fbe7ca9283be1bc`
 - `supabase/migrations/20260913043700_manage_class_packages.sql` — `79377f0e05cf67210d4c43c917c1640a6fa370e5f63819189321ee7a74fe20ec`
 - terminal-rollback migration variant — `bfa9b74f5126f8b8478955d796d637864678c2bac0517d6dfbfbf569443f663c`
 - `tests/classPackages.spec.ts` — `3ff415528fbd3fd4615b39212869bf58bda56747d8f42d577658a18f6f56037b`
