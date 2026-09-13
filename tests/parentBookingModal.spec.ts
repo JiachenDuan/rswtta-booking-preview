@@ -23,7 +23,7 @@ test("Calendar and My Classes remain explicitly separated action surfaces", () =
 
 test("Calendar Class Actions restores Mark complete and conditionally renders cancellation", () => {
   expect(classActionsModal).toContain("parentCancellationBlockReason(booking, now)");
-  expect(classActionsModal).toContain('className={`modal-actions ${!canCancel && !canCancelRecurring ? "single-action" : ""}`}');
+  expect(classActionsModal).toContain('className={`modal-actions ${!canCancel ? "single-action" : ""}`}');
   expect(classActionsModal).toContain("{canCancel ? (");
   expect(classActionsModal).toContain('copy(language, "Cancel class", "取消课程")');
   expect(classActionsModal).not.toContain("disabled={!canCancel}");
