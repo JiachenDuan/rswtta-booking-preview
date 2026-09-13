@@ -24,8 +24,6 @@ import {
 import {
   authoritativeCurrentTime,
   cancelBookingAsClub,
-  cancelBookingAsParent,
-  completeParentProfileSetup,
   createActivityLog,
   createBillNotification,
   createBooking,
@@ -34,26 +32,22 @@ import {
   listBillNotifications,
   listBookings,
   listParentAccounts,
-  loginParentAccount,
-  registerParentAccount,
-  resetPasswordForEmail,
-  requestBookingAsParent,
   addStudentToGroupOccurrencesAtomically,
   manageGroupOccurrencesAtomically,
   rescheduleBookingsAtomically,
-  updateUserPassword,
-  updateParentAccount,
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, searchGroupEnrollmentAccounts, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
+import { isPersistedParentCancellationCandidate, parentCancellationTargets, type ParentCancellationScope } from "@/lib/parentCancellation";
+import { cancelParentRecurring, completeParentBooking, completeParentProfile, loginParentSession, logoutParentSession, parentSessionStorageKey, refreshParentSession, requestParentBooking, requestParentGroupClass, requestParentPasswordReset, updateParentProfile, type ParentDashboard } from "@/lib/parentClient";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
-import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
+import { partitionStudentReferencesByIdentity } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
@@ -103,10 +97,9 @@ type CalendarSlot = CalendarDay & {
 };
 
 type ClubCalendarTab = (typeof clubCalendarTabs)[number];
-type AuthMode = "login" | "register" | "forgot" | "updatePassword";
+type AuthMode = "login" | "register" | "forgot";
 type Language = "en" | "zh";
 
-const parentSessionKey = "rswtta-parent-session";
 const clubSessionKey = "rswtta-club-session";
 const clubEmail = "rswtta";
 const clubPassword = "rswttatian";
@@ -673,6 +666,7 @@ const parentSelfRegistrationEnabled = false;
 export function ClubApp() {
   const [mode, setMode] = useState<"parent" | "club">("parent");
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [parentBookings, setParentBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [students, setStudents] = useState<ParentAccount[]>([]);
@@ -697,15 +691,12 @@ export function ClubApp() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [saving, setSaving] = useState(false);
   const realtimeRefreshTimer = useRef<number | null>(null);
+  const clubRealtimeChannel = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const parentSessionToken = useRef("");
   const authoritativeClockOffsetMs = useRef(0);
   const calendarDays = useMemo(() => weekDays(visibleWeekStart), [visibleWeekStart]);
   const canGoPrevious = addDays(visibleWeekStart, -7) >= startOfWeek(minCalendarDate);
   const canGoNext = addDays(visibleWeekStart, 7) <= startOfWeek(maxCalendarDate);
-
-  const parentBookings = useMemo(() => {
-    if (!parentSession?.id) return [];
-    return bookings.filter((booking) => studentReferenceBelongsToAccount(booking, parentSession.id));
-  }, [bookings, parentSession?.id]);
 
   const completedTotal = parentBookings
     .filter((booking) => booking.status === "coach_confirmed")
@@ -727,50 +718,57 @@ export function ClubApp() {
     setSelectedDurationMinutes(60);
   }
 
-  function applyParentSession(account: ParentAccount) {
+  function applyParentDashboard(dashboard: ParentDashboard) {
+    const account = dashboard.account;
     setParentSession(account);
+    setParentBookings(dashboard.bookings.filter((booking) => !booking.id.startsWith("virtual-")));
+    setBookings(dashboard.calendarBookings);
     setStudentName(account.studentName);
     setFamilyName(account.studentName);
     setStudentEmail(account.email);
     setParentName(account.parentName);
     setPhone(account.phone);
-    window.localStorage.setItem(parentSessionKey, JSON.stringify(account));
+    const databaseTime = new Date(dashboard.serverNow);
+    if (Number.isFinite(databaseTime.getTime())) {
+      authoritativeClockOffsetMs.current = databaseTime.getTime() - Date.now();
+      setCurrentTime(databaseTime);
+    }
   }
 
-  async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
-    const result = await registerParentAccount(input);
-    applyParentSession(result.account);
+  function clearParentSession() {
+    parentSessionToken.current = "";
+    window.sessionStorage.removeItem(parentSessionStorageKey);
+    setParentSession(null);
+    setParentBookings([]);
+    setBookings([]);
     setMode("parent");
   }
 
-  async function loginParent(identifier: string, password: string, allowPreregisteredName = false) {
-    const account = await loginParentAccount(identifier, password, { allowPreregisteredName });
-    applyParentSession(account);
+  async function registerParent() {
+    throw new Error(copy(language, "Registration is not available. Contact the club.", "暂不开放注册。请联系俱乐部。"));
   }
 
-  async function requestPasswordReset(email: string) {
-    await resetPasswordForEmail(email);
+  async function loginParent(identifier: string, password: string) {
+    try {
+      const session = await loginParentSession(identifier, password);
+      parentSessionToken.current = session.sessionToken;
+      window.sessionStorage.setItem(parentSessionStorageKey, session.sessionToken);
+      applyParentDashboard(session);
+    } catch {
+      throw new Error(copy(language, "Unable to sign in. Check your username and password.", "无法登录。请检查用户名和密码。"));
+    }
   }
 
-  async function updatePassword(password: string) {
-    await updateUserPassword(password);
+  async function requestPasswordReset(username: string) {
+    await requestParentPasswordReset(username);
   }
-
 
   async function updateParentInfo(input: { studentName: string; parentName: string; email: string; phone: string }) {
-    if (!parentSession) return;
+    if (!parentSessionToken.current) return;
     setSaving(true);
     setNotice(copy(language, "Updating student info...", "正在更新学生信息..."));
     try {
-      const account = await updateParentAccount({
-        accountId: parentSession.id,
-        studentName: input.studentName,
-        parentName: input.parentName,
-        email: input.email,
-        phone: input.phone
-      });
-      applyParentSession(account);
-      await loadAll();
+      applyParentDashboard(await updateParentProfile(parentSessionToken.current, input));
       setNotice(copy(language, "Student info updated.", "学生信息已更新。"));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : copy(language, "Could not update student info.", "无法更新学生信息。"));
@@ -780,18 +778,20 @@ export function ClubApp() {
   }
 
   async function completeFirstLoginSetup(input: { studentName: string; parentName: string; email: string; phone: string; password: string }) {
-    if (!parentSession) return;
-    const account = await completeParentProfileSetup({
-      accountId: parentSession.id,
-      studentName: input.studentName,
-      parentName: input.parentName,
-      email: input.email,
-      phone: input.phone,
-      password: input.password
-    });
-    applyParentSession(account);
-    await loadAll();
+    if (!parentSessionToken.current) return;
+    applyParentDashboard(await completeParentProfile(parentSessionToken.current, input));
     setNotice(copy(language, "Profile setup complete. You can now use the dashboard.", "资料设置完成。现在可以使用主页。"));
+  }
+
+  async function logoutParent() {
+    const token = parentSessionToken.current;
+    if (!token) return clearParentSession();
+    try {
+      await logoutParentSession(token);
+      clearParentSession();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not log out.", "无法退出。"));
+    }
   }
 
   async function loginClub(identifier: string, password: string) {
@@ -801,6 +801,8 @@ export function ClubApp() {
     setClubAuthenticated(true);
     window.localStorage.setItem(clubSessionKey, "true");
     setMode("club");
+    subscribeClubRealtime();
+    await loadAll(true);
   }
 
   async function loginUnified(identifier: string, password: string, allowPreregisteredName = false) {
@@ -808,19 +810,19 @@ export function ClubApp() {
       await loginClub(identifier, password);
       return;
     }
-    await loginParent(identifier, password, allowPreregisteredName);
+    await loginParent(identifier, password);
     setMode("parent");
   }
 
-  async function loadAll() {
+  async function loadAll(forceClub = false) {
     try {
+      if (parentSessionToken.current) {
+        applyParentDashboard(await refreshParentSession(parentSessionToken.current));
+        return;
+      }
+      if (!clubAuthenticated && !forceClub) return;
       const [nextBookings, nextBills, nextStudents, nextActivityLogs, databaseTime] = await Promise.all([
-        listBookings(),
-        listBillNotifications(),
-        listParentAccounts(),
-        listActivityLogs(),
-        // Keep the established local projectStore fallback usable for isolated review.
-        authoritativeCurrentTime().catch(() => new Date())
+        listBookings(), listBillNotifications(), listParentAccounts(), listActivityLogs(), authoritativeCurrentTime().catch(() => new Date())
       ]);
       authoritativeClockOffsetMs.current = databaseTime.getTime() - Date.now();
       setCurrentTime(databaseTime);
@@ -828,12 +830,9 @@ export function ClubApp() {
       setBills(nextBills);
       setStudents(nextStudents);
       setActivityLogs(nextActivityLogs);
-      const storedParent = window.localStorage.getItem(parentSessionKey);
-      const storedAccount = storedParent ? (JSON.parse(storedParent) as ParentAccount) : parentSession;
-      const canonicalAccount = storedAccount ? nextStudents.find((account) => account.id === storedAccount.id) : undefined;
-      if (canonicalAccount && canonicalAccount.studentName !== storedAccount?.studentName) applyParentSession(canonicalAccount);
       setNotice(copy(language, "Supabase backend connected.", "Supabase 已连接。"));
     } catch (error) {
+      if (parentSessionToken.current) clearParentSession();
       setNotice(error instanceof Error ? error.message : copy(language, "Database is not ready.", "数据库暂时不可用。"));
     }
   }
@@ -876,27 +875,19 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, "Saving parent request...", "正在保存家长请求..."));
     try {
-      await Promise.all(
-        slots.map((slot) =>
-          requestBookingAsParent({
-            studentAccountId: parentSession?.id,
-            studentName,
-            familyName,
-            studentEmail,
-            phone,
-            requestedCoach,
-            assignedCoach: requestedCoach,
-            program: lessonProgram(requestedCoach),
-            dateLabel: slot.dateLabel,
-            timeLabel: rangeLabel(slot, selectedDurationMinutes),
-            startsAt: slot.startsAt,
-            priceCents: lessonPriceCents(requestedCoach),
-            parentNote
-          }, parentSession?.id ?? "")
-        )
+      const [dashboard] = await Promise.all(
+        slots.map((slot) => requestParentBooking(parentSessionToken.current, {
+          requestedCoach,
+          assignedCoach: requestedCoach,
+          program: lessonProgram(requestedCoach),
+          dateLabel: slot.dateLabel,
+          timeLabel: rangeLabel(slot, selectedDurationMinutes),
+          startsAt: slot.startsAt,
+          priceCents: lessonPriceCents(requestedCoach),
+          parentNote
+        }))
       );
-
-      await loadAll();
+      applyParentDashboard(dashboard);
       setNotice(copy(language, `Saved ${slots.length} request${slots.length === 1 ? "" : "s"}. Club can see it now.`, `已保存 ${slots.length} 个请求。Club 现在可以看到。`));
       return true;
     } catch (error) {
@@ -926,23 +917,7 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, "Saving group class request...", "正在保存团体课请求..."));
     try {
-      await createBooking({
-        studentAccountId: parentSession?.id,
-        studentName,
-        familyName: studentName,
-        studentEmail,
-        phone,
-        requestedCoach: coach,
-        assignedCoach: coach,
-        program: "Group enrollment",
-        groupClassId: groupClass.groupClassId || groupClass.id,
-        dateLabel: groupClass.dateLabel,
-        timeLabel: groupClass.timeLabel,
-        startsAt: groupClass.startsAt,
-        priceCents: 7500,
-        parentNote: "Parent requested to join group class."
-      });
-      await loadAll();
+      applyParentDashboard(await requestParentGroupClass(parentSessionToken.current, groupClass.id));
       setNotice(copy(language, "Saved group class request. Club can confirm or reject it.", "已保存团体课请求，Club 可以确认或拒绝。"));
       return true;
     } catch (error) {
@@ -953,36 +928,20 @@ export function ClubApp() {
     }
   }
 
-  async function cancelParentClass(booking: Booking) {
-    const blockReason = parentCancellationBlockReason(booking, currentTime.getTime());
-    if (blockReason) {
-      setNotice(parentCancellationWarning(blockReason, language));
+  async function cancelParentClass(booking: Booking, scope: ParentCancellationScope, idempotencyKey: string) {
+    if (!isPersistedParentCancellationCandidate(booking, currentTime.getTime())) {
+      setNotice(parentCancellationWarning(parentCancellationBlockReason(booking, currentTime.getTime()) ?? "past", language));
       return false;
     }
-
     setSaving(true);
     setNotice(copy(language, "Cancelling class...", "正在取消课程..."));
     try {
-      if (booking.id.startsWith("virtual-") && !booking.studentAccountId) {
-        throw new Error("This recurring class has unresolved student identity.");
-      }
-      const cancelled = await cancelBookingAsParent(booking, parentSession?.id ?? "");
-      await recordClassActivity("cancelled", [cancelled], cancelled, "parent/student");
-      await loadAll();
-      setNotice(copy(language, "Class cancelled.", "课程已取消。"));
+      const result = await cancelParentRecurring(parentSessionToken.current, booking, scope, idempotencyKey);
+      applyParentDashboard(result);
+      setNotice(copy(language, `Cancelled ${result.cancelledCount} class${result.cancelledCount === 1 ? "" : "es"}.`, `已取消 ${result.cancelledCount} 节课。`));
       return true;
     } catch (error) {
-      let message = error instanceof Error ? error.message : copy(language, "Could not cancel class.", "无法取消课程。");
-      try {
-        const databaseTime = await authoritativeCurrentTime();
-        authoritativeClockOffsetMs.current = databaseTime.getTime() - Date.now();
-        setCurrentTime(databaseTime);
-        const authoritativeBlockReason = parentCancellationBlockReason(booking, databaseTime.getTime());
-        if (authoritativeBlockReason) message = parentCancellationWarning(authoritativeBlockReason, language);
-      } catch {
-        // Preserve the mutation error if the database clock cannot be refreshed.
-      }
-      setNotice(message);
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not cancel class.", "无法取消课程。"));
       return false;
     } finally {
       setSaving(false);
@@ -992,32 +951,7 @@ export function ClubApp() {
   async function completeParentClass(booking: Booking) {
     setNotice(copy(language, "Marking class complete...", "正在标记课程完成..."));
     try {
-      if (booking.id.startsWith("virtual-")) {
-        if (!booking.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
-        const created = await createBooking({
-          studentAccountId: booking.studentAccountId,
-          seriesId: booking.seriesId,
-          recurrenceOccurrenceId: booking.recurrenceOccurrenceId,
-          recurrenceOriginalStartsAt: booking.recurrenceOriginalStartsAt,
-          groupClassId: booking.groupClassId,
-          studentName: booking.studentName,
-          familyName: booking.familyName,
-          studentEmail: booking.studentEmail,
-          phone: booking.phone,
-          requestedCoach: booking.requestedCoach,
-          assignedCoach: booking.assignedCoach,
-          program: booking.program,
-          dateLabel: booking.dateLabel,
-          timeLabel: booking.timeLabel,
-          startsAt: booking.startsAt,
-          priceCents: booking.priceCents,
-          parentNote: `${booking.parentNote} Marked complete by student.`
-        });
-        await updateStoredBooking(created.id, { status: "coach_confirmed", assignedCoach: booking.assignedCoach });
-      } else {
-        await updateStoredBooking(booking.id, { status: "coach_confirmed", assignedCoach: booking.assignedCoach });
-      }
-      await loadAll();
+      applyParentDashboard(await completeParentBooking(parentSessionToken.current, booking));
       setNotice(copy(language, "Class marked complete.", "课程已标记完成。"));
     } catch {
       setNotice(copy(language, "Could not mark class complete.", "无法标记课程完成。"));
@@ -1391,33 +1325,41 @@ export function ClubApp() {
     }
   }
 
-  useEffect(() => {
-    const storedParent = window.localStorage.getItem(parentSessionKey);
-    const storedClub = window.localStorage.getItem(clubSessionKey) === "true";
-    if (storedParent) {
-      applyParentSession(JSON.parse(storedParent) as ParentAccount);
-      setMode("parent");
-    }
-    if (storedClub) {
-      setClubAuthenticated(true);
-      setMode("club");
-    }
-    loadAll();
+  function subscribeClubRealtime() {
+    if (clubRealtimeChannel.current) return;
     const refreshFromPush = () => {
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       realtimeRefreshTimer.current = window.setTimeout(() => {
         realtimeRefreshTimer.current = null;
-        loadAll();
+        void loadAll(true);
       }, 250);
     };
-    const realtimeChannel = supabase
+    clubRealtimeChannel.current = supabase
       .channel("rswtta-project-rows-push")
       .on("postgres_changes", { event: "*", schema: "public", table: "project_rows" }, refreshFromPush)
       .subscribe();
+  }
+
+  useEffect(() => {
+    const storedToken = window.sessionStorage.getItem(parentSessionStorageKey) ?? "";
+    const storedClub = window.localStorage.getItem(clubSessionKey) === "true";
+    if (storedToken) {
+      parentSessionToken.current = storedToken;
+      setMode("parent");
+      refreshParentSession(storedToken).then(applyParentDashboard).catch(clearParentSession);
+    } else if (storedClub) {
+      setClubAuthenticated(true);
+      setMode("club");
+      subscribeClubRealtime();
+      Promise.all([listBookings(), listBillNotifications(), listParentAccounts(), listActivityLogs()]).then(([nextBookings, nextBills, nextStudents, nextLogs]) => {
+        setBookings(nextBookings); setBills(nextBills); setStudents(nextStudents); setActivityLogs(nextLogs);
+      });
+    }
     const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
     return () => {
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
-      supabase.removeChannel(realtimeChannel);
+      if (clubRealtimeChannel.current) supabase.removeChannel(clubRealtimeChannel.current);
+      clubRealtimeChannel.current = null;
       window.clearInterval(clock);
     };
   }, []);
@@ -1472,9 +1414,7 @@ export function ClubApp() {
               <button
                 className="filter-button"
                 onClick={() => {
-                  setParentSession(null);
-                  window.localStorage.removeItem(parentSessionKey);
-                  setMode("parent");
+                  void logoutParent();
                 }}
               >
                 <LogOut size={17} />
@@ -1506,7 +1446,6 @@ export function ClubApp() {
             onRegister={registerParent}
             onLogin={loginUnified}
             onRequestPasswordReset={requestPasswordReset}
-            onUpdatePassword={updatePassword}
           />
         ) : mode === "parent" && parentSession?.profileSetupRequired ? (
           <FirstLoginSetup
@@ -1514,9 +1453,7 @@ export function ClubApp() {
             language={language}
             onComplete={completeFirstLoginSetup}
             onLogout={() => {
-              setParentSession(null);
-              window.localStorage.removeItem(parentSessionKey);
-              setMode("parent");
+              void logoutParent();
             }}
           />
         ) : mode === "parent" && parentSession ? (
@@ -1669,7 +1606,6 @@ function UnifiedAuth({
   onRegister,
   onLogin,
   onRequestPasswordReset,
-  onUpdatePassword
 }: {
   initialAuthMode: "login" | "register";
   intent: "parent" | "club";
@@ -1678,14 +1614,12 @@ function UnifiedAuth({
   onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogin: (identifier: string, password: string, allowPreregisteredName?: boolean) => Promise<void>;
   onRequestPasswordReset: (email: string) => Promise<void>;
-  onUpdatePassword: (password: string) => Promise<void>;
 }) {
   const [authMode, setAuthMode] = useState<AuthMode>(initialAuthMode);
   const [studentName, setStudentName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
   const [identifier, setIdentifier] = useState("");
   const [preregisteredLogin, setPreregisteredLogin] = useState(false);
   const [notice, setNotice] = useState(
@@ -1697,25 +1631,6 @@ function UnifiedAuth({
   const firstNameMatches = intent === "parent" && preregisteredLogin ? firstNameDuplicateStudents(students, identifier) : [];
   const firstNameLoginBlocked = firstNameMatches.length > 1;
   const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;
-
-  useEffect(() => {
-    const isRecoveryLink =
-      window.location.hash.includes("type=recovery") || window.location.search.includes("type=recovery");
-    setAuthMode(isRecoveryLink && intent === "parent" ? "updatePassword" : initialAuthMode);
-    if (intent === "club") {
-      setNotice(copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。"));
-    }
-  }, [initialAuthMode, intent]);
-
-  useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" && intent === "parent") {
-        setAuthMode("updatePassword");
-        setNotice(copy(language, "Enter a new password.", "请输入新密码。"));
-      }
-    });
-    return () => data.subscription.unsubscribe();
-  }, [intent]);
 
   async function handleRegister() {
     setBusy(true);
@@ -1748,30 +1663,15 @@ function UnifiedAuth({
   async function handleResetRequest() {
     setBusy(true);
     try {
-      await onRequestPasswordReset(email);
-      setNotice(copy(language, "If this email is registered, a reset link was sent. Check the inbox and spam folder.", "如果此邮箱已注册，重置链接已发送。请查看收件箱和垃圾邮件。"));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : copy(language, "Could not send password reset email.", "无法发送重置邮件。");
-      setNotice(copy(language, `Could not send password reset email: ${message}`, `无法发送重置邮件：${message}`));
+      await onRequestPasswordReset(identifier);
+      setNotice(copy(language, "If this username is registered, reset instructions were sent.", "如果此用户名已注册，重置说明已发送。"));
+    } catch {
+      setNotice(copy(language, "If this username is registered, reset instructions were sent.", "如果此用户名已注册，重置说明已发送。"));
     } finally {
       setBusy(false);
     }
   }
 
-  async function handleUpdatePassword() {
-    setBusy(true);
-    try {
-      await onUpdatePassword(newPassword);
-      setNewPassword("");
-      setAuthMode("login");
-      setNotice(copy(language, "Password updated. You can log in with the new password.", "密码已更新。请用新密码登录。"));
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } catch {
-      setNotice(copy(language, "Could not update password. Open the latest reset link and try again.", "无法更新密码。请打开最新重置链接再试。"));
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <section className="auth-panel">
@@ -1887,10 +1787,10 @@ function UnifiedAuth({
         {effectiveAuthMode === "forgot" && intent === "parent" ? (
           <div className="simple-form auth-form">
             <label>
-              <span>{copy(language, "Email", "邮箱")}</span>
+              <span>{copy(language, "Username", "用户名")}</span>
               <div className="input-shell">
-                <Mail size={18} />
-                <input value={email} onChange={(event) => setEmail(event.target.value)} />
+                <UserRound size={18} />
+                <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} />
               </div>
             </label>
             <button type="button" className="primary-button auth-submit" disabled={busy} onClick={handleResetRequest}>
@@ -1903,19 +1803,6 @@ function UnifiedAuth({
           </div>
         ) : null}
 
-        {effectiveAuthMode === "updatePassword" && intent === "parent" ? (
-          <div className="simple-form auth-form">
-            <label>
-              <span>{copy(language, "New password", "新密码")}</span>
-              <PasswordField value={newPassword} onChange={setNewPassword} placeholder={copy(language, "New password", "新密码")} />
-            </label>
-            <button type="button" className="primary-button auth-submit" disabled={busy || newPassword.length < 6} onClick={handleUpdatePassword}>
-              <KeyRound size={18} />
-              {copy(language, "Update password", "更新密码")}
-            </button>
-            <p className="helper-line">{copy(language, "Open this page from the latest Supabase reset email.", "请从最新的 Supabase 重置邮件打开这个页面。")}</p>
-          </div>
-        ) : null}
 
         <p className="system-note">{notice}</p>
       </div>
@@ -2138,7 +2025,7 @@ function ParentApp({
   onPreviousWeek: () => void;
   onNextWeek: () => void;
   onToday: () => void;
-  onCancel: (booking: Booking) => Promise<boolean>;
+  onCancel: (booking: Booking, scope: ParentCancellationScope, idempotencyKey: string) => Promise<boolean>;
   onComplete: (booking: Booking) => void;
   onRestrictedCoachSelect: () => void;
   onGroupClassRequest: (booking: Booking) => Promise<boolean>;
@@ -2345,13 +2232,15 @@ function ParentApp({
               booking={selectedParentBooking}
               language={language}
               now={currentTime.getTime()}
+              bookings={bookings}
+              saving={saving}
               onClose={() => setSelectedParentBooking(null)}
               onComplete={() => {
                 onComplete(selectedParentBooking);
                 setSelectedParentBooking(null);
               }}
-              onCancel={async () => {
-                const cancelled = await onCancel(selectedParentBooking);
+              onCancel={async (scope, idempotencyKey) => {
+                const cancelled = await onCancel(selectedParentBooking, scope, idempotencyKey);
                 if (cancelled) setSelectedParentBooking(null);
               }}
             />
@@ -4195,33 +4084,53 @@ function GroupClassRequestModal({
 
 function ParentClassActionModal({
   booking,
+  bookings,
   language,
   now,
+  saving,
   onClose,
   onComplete,
   onCancel
 }: {
   booking: Booking;
+  bookings: Booking[];
   language: Language;
   now: number;
+  saving: boolean;
   onClose: () => void;
   onComplete: () => void;
-  onCancel: () => void;
+  onCancel: (scope: ParentCancellationScope, idempotencyKey: string) => Promise<void>;
 }) {
+  const [cancellationStep, setCancellationStep] = useState<"actions" | "scope" | "final">("actions");
+  const [scope, setScope] = useState<ParentCancellationScope>("selected");
+  const cancellationIdempotencyKey = useRef(crypto.randomUUID());
   const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking);
   const cancellationBlockReason = parentCancellationBlockReason(booking, now);
-  const canCancel = canParentRequestChange(booking) && !cancellationBlockReason;
+  const canCancel = isPersistedParentCancellationCandidate(booking, now) && !cancellationBlockReason;
+  const recurringTargets = parentCancellationTargets(bookings, booking, "selected_and_future", now);
+  const isRecurring = Boolean(booking.seriesId && recurringTargets.length > 1);
+  const selectedCount = parentCancellationTargets(bookings, booking, scope, now).length;
+  const countText = copy(
+    language,
+    `${selectedCount} class${selectedCount === 1 ? "" : "es"}`,
+    `${selectedCount} 节课`
+  );
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
-        <button className="modal-close-icon" type="button" aria-label="Close" onClick={onClose}>
+        <button className="modal-close-icon" type="button" aria-label="Close" onClick={onClose} disabled={saving}>
           <span aria-hidden="true">×</span>
         </button>
         <div className="section-head compact class-action-head">
           <div>
             <p className="eyebrow">{copy(language, "Class actions", "课程操作")}</p>
             <h2 id="student-class-actions-title">{booking.studentName}</h2>
-            <p className="section-subtitle">{copy(language, "Mark this class complete after it is finished.", "课程结束后可以标记完成。")}</p>
+            <p className="section-subtitle">
+              {cancellationStep === "actions"
+                ? copy(language, "Mark this class complete after it is finished.", "课程结束后可以标记完成。")
+                : copy(language, `Cancellation includes ${countText}.`, `本次将取消 ${countText}。`)}
+            </p>
           </div>
           <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
         </div>
@@ -4231,18 +4140,51 @@ function ParentClassActionModal({
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
         </dl>
         {cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
-        <div className={`modal-actions ${!canCancel ? "single-action" : ""}`}>
-          {canCancel ? (
-            <button className="decline" onClick={onCancel}>
-              <X size={18} />
-              {copy(language, "Cancel class", "取消课程")}
+
+        {cancellationStep === "scope" ? (
+          <div className="action-confirm-panel">
+            <strong>{copy(language, "Choose what to cancel", "选择取消范围")}</strong>
+            <label className="checkbox-line">
+              <input type="radio" name="parent-cancel-scope" checked={scope === "selected"} onChange={() => setScope("selected")} />
+              <span>{copy(language, "Selected class only — 1 class", "仅所选课程 — 1 节课")}</span>
+            </label>
+            {isRecurring ? (
+              <label className="checkbox-line">
+                <input type="radio" name="parent-cancel-scope" checked={scope === "selected_and_future"} onChange={() => setScope("selected_and_future")} />
+                <span>{copy(language, `Selected and future — ${recurringTargets.length} classes`, `所选及以后课程 — ${recurringTargets.length} 节课`)}</span>
+              </label>
+            ) : null}
+            <div className="modal-actions">
+              <button type="button" className="filter-button" onClick={() => setCancellationStep("actions")}>{copy(language, "Back", "返回")}</button>
+              <button type="button" className="decline" onClick={() => setCancellationStep("final")}>{copy(language, `Continue (${countText})`, `继续（${countText}）`)}</button>
+            </div>
+          </div>
+        ) : cancellationStep === "final" ? (
+          <div className="action-confirm-panel">
+            <strong>{copy(language, `Final confirmation: cancel ${countText}?`, `最终确认：取消 ${countText}？`)}</strong>
+            <p>{copy(language, "This cannot be undone.", "此操作无法撤销。")}</p>
+            <div className="modal-actions">
+              <button type="button" className="filter-button" disabled={saving} onClick={() => setCancellationStep("scope")}>{copy(language, "Back", "返回")}</button>
+              <button type="button" className="decline" disabled={saving} onClick={() => void onCancel(scope, cancellationIdempotencyKey.current)}>
+                <X size={18} />
+                {saving ? copy(language, "Cancelling...", "正在取消...") : copy(language, `Confirm cancellation (${countText})`, `确认取消（${countText}）`)}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className={`modal-actions ${!canCancel ? "single-action" : ""}`}>
+            {canCancel ? (
+              <button className="decline" onClick={() => setCancellationStep("scope")}>
+                <X size={18} />
+                {copy(language, "Cancel class", "取消课程")}
+              </button>
+            ) : null}
+            <button className="primary-button" disabled={!canComplete} onClick={onComplete}>
+              <Check size={18} />
+              {copy(language, "Mark complete", "标记完成")}
             </button>
-          ) : null}
-          <button className="primary-button" disabled={!canComplete} onClick={onComplete}>
-            <Check size={18} />
-            {copy(language, "Mark complete", "标记完成")}
-          </button>
-        </div>
+          </div>
+        )}
       </section>
     </div>
   );

@@ -1,41 +1,75 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { isPersistedParentCancellationCandidate, originalOccurrenceBoundary, parentCancellationTargets } from "../lib/parentCancellation";
+import type { Booking } from "../lib/types";
 
-const storeSource = readFileSync("lib/projectStore.ts", "utf8");
+const clientSource = readFileSync("lib/parentClient.ts", "utf8");
 const appSource = readFileSync("components/ClubApp.tsx", "utf8");
-const migration = readFileSync("supabase/migrations/20260910220000_restore_parent_calendar_cancellation.sql", "utf8");
-
-const parentStoreMutation = storeSource.slice(
-  storeSource.indexOf("export async function cancelBookingAsParent"),
-  storeSource.indexOf("export async function cancelBookingAsClub")
-);
 const parentHandler = appSource.slice(
   appSource.indexOf("async function cancelParentClass"),
   appSource.indexOf("async function completeParentClass")
 );
+const parentModal = appSource.slice(
+  appSource.indexOf("function ParentClassActionModal"),
+  appSource.indexOf("function BookingList")
+);
 
-test("Calendar cancellation uses one atomic database-clock RPC for persisted and virtual bookings", () => {
-  expect(parentStoreMutation).toContain('supabase.rpc("cancel_booking_as_parent"');
-  expect(parentStoreMutation).toContain("p_booking_id: isVirtual ? null : booking.id");
-  expect(parentStoreMutation).toContain("p_virtual_values: isVirtual ? virtualCancellationValues(booking) : null");
-  expect(parentStoreMutation).not.toContain("Date.now()");
-  expect(parentStoreMutation).not.toContain("updateRow(");
-  expect(parentHandler).toContain('cancelBookingAsParent(booking, parentSession?.id ?? "")');
+function booking(overrides: Partial<Booking>): Booking {
+  return {
+    id: "booking-1",
+    studentName: "Student",
+    familyName: "Student",
+    studentEmail: "private@example.com",
+    phone: "555-0100",
+    requestedCoach: "Coach Jorden",
+    assignedCoach: "Coach Jorden",
+    program: "Private lesson",
+    dateLabel: "Sep 20",
+    timeLabel: "7:00 PM - 8:00 PM",
+    startsAt: "2026-09-21T02:00:00.000Z",
+    priceCents: 7500,
+    status: "club_confirmed",
+    parentNote: "",
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-10T00:00:00.000Z",
+    ...overrides
+  };
+}
+
+test("Parent cancellation accepts only persisted active occurrences strictly beyond 12 hours", () => {
+  const now = Date.parse("2026-09-20T00:00:00.000Z");
+  expect(isPersistedParentCancellationCandidate(booking({ startsAt: "2026-09-20T12:00:00.001Z" }), now)).toBe(true);
+  expect(isPersistedParentCancellationCandidate(booking({ startsAt: "2026-09-20T12:00:00.000Z" }), now)).toBe(false);
+  expect(isPersistedParentCancellationCandidate(booking({ id: "virtual-seed", startsAt: "2026-09-21T00:00:00.000Z" }), now)).toBe(false);
+  expect(isPersistedParentCancellationCandidate(booking({ status: "cancelled", startsAt: "2026-09-21T00:00:00.000Z" }), now)).toBe(false);
+});
+
+test("selected-and-future uses immutable original occurrence boundaries and exact eligible count", () => {
+  const now = Date.parse("2026-09-12T00:00:00.000Z");
+  const selected = booking({ id: "selected", seriesId: "series-a", startsAt: "2026-10-10T17:00:00.000Z", recurrenceOriginalStartsAt: "2026-09-20T17:00:00.000Z" });
+  const earlierMovedLate = booking({ id: "earlier", seriesId: "series-a", startsAt: "2026-10-17T17:00:00.000Z", recurrenceOriginalStartsAt: "2026-09-13T17:00:00.000Z" });
+  const futureMovedEarly = booking({ id: "future", seriesId: "series-a", startsAt: "2026-09-19T17:00:00.000Z", recurrenceOriginalStartsAt: "2026-09-27T17:00:00.000Z" });
+  const cancelledFuture = booking({ id: "cancelled", seriesId: "series-a", status: "cancelled", startsAt: "2026-10-01T17:00:00.000Z", recurrenceOriginalStartsAt: "2026-10-04T17:00:00.000Z" });
+
+  expect(originalOccurrenceBoundary(selected)).toBe("2026-09-20T17:00:00.000Z");
+  expect(parentCancellationTargets([earlierMovedLate, futureMovedEarly, cancelledFuture, selected], selected, "selected_and_future", now).map((item) => item.id)).toEqual(["selected", "future"]);
+});
+
+test("one atomic Parent RPC carries token, idempotency, version, scope, and immutable boundary only", () => {
+  expect(clientSource).toContain('supabase.rpc("parent_cancel_booking_occurrences"');
+  expect(clientSource).toContain("p_session_token: sessionToken");
+  expect(clientSource).toContain("p_idempotency_key: idempotencyKey");
+  expect(clientSource).toContain("p_expected_selected_version: booking.updatedAt");
+  expect(clientSource).toContain("p_expected_original_starts_at: booking.recurrenceOriginalStartsAt ?? booking.startsAt");
+  expect(clientSource).not.toContain("p_student_account_id");
+  expect(parentHandler).toContain("cancelParentRecurring(parentSessionToken.current, booking, scope, idempotencyKey)");
   expect(parentHandler).not.toContain("createBooking(");
 });
 
-test("database mutation rechecks ownership, status, past time, and the inclusive 12-hour boundary", () => {
-  expect(migration).toContain("v_current_time timestamptz := clock_timestamp()");
-  expect(migration).toContain("v_starts_at <= v_current_time then");
-  expect(migration).toContain("v_starts_at <= v_current_time + interval '12 hours' then");
-  expect(migration).toContain("coalesce(v_values->>'studentAccountId', '') <> btrim(p_student_account_id)");
-  expect(migration).toContain("coalesce(v_values->>'status', '') not in ('requested', 'club_confirmed')");
-});
-
-test("direct generic updates remain rejected while club cancellation stays separate", () => {
-  expect(migration).toContain("Booking cancellations must use the parent or club cancellation workflow");
-  expect(migration).toContain("coalesce(v_actor, '') not in ('parent', 'club')");
-  expect(migration).toContain("create or replace function public.cancel_booking_as_club");
-  expect(migration).toContain("set_config('rswtta.cancellation_actor', 'club', true)");
-  expect(storeSource).toContain('supabase.rpc("cancel_booking_as_club"');
+test("Parent UI offers scoped exact bilingual counts and a second final confirmation", () => {
+  expect(parentModal).toContain('"actions" | "scope" | "final"');
+  expect(parentModal).toContain('"Selected class only — 1 class", "仅所选课程 — 1 节课"');
+  expect(parentModal).toContain("recurringTargets.length");
+  expect(parentModal).toContain('`Final confirmation: cancel ${countText}?`, `最终确认：取消 ${countText}？`');
+  expect(parentModal).toContain("cancellationIdempotencyKey.current");
 });
