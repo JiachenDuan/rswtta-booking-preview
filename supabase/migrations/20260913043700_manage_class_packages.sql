@@ -116,8 +116,15 @@ declare
   v_coach_name text := coalesce(nullif(trim(coalesce(p_booking->>'assignedCoach','')), ''), nullif(trim(coalesce(p_booking->>'requestedCoach','')), ''));
   v_alias text;
   v_label text := trim(coalesce(p_booking->>'timeLabel',''));
+  v_parts text[];
+  v_start_hour integer;
+  v_start_minute integer;
+  v_end_hour integer;
+  v_end_minute integer;
+  v_start_clock_minutes integer;
+  v_end_clock_minutes integer;
+  v_duration_minutes integer;
   v_hours numeric;
-  v_minutes numeric;
   v_category text;
 begin
   -- Immutable group identity and explicit programs win before any coach logic. “Group lesson” alone is intentionally private.
@@ -134,13 +141,25 @@ begin
   if v_coach_id is null and v_coach_name is null then
     return jsonb_build_object('eligible',false,'reason','missing_coach','category',null,'unit_basis',null,'consumption_amount',0,'amount_base_units',0,'stable_occurrence_id',v_occurrence_id);
   end if;
-  if v_label !~* '^\s*[0-9]+(\.[0-9]+)?\s*h(ours?)?\s*$' then
+  -- Live bookings store a 12-hour clock range such as “3:30 PM - 4:30 PM”.
+  -- Reject malformed, zero-length, and overnight-like ranges rather than inventing a duration.
+  v_parts := regexp_match(v_label, '^\s*([0-9]{1,2})(?::([0-9]{2}))?\s*(AM|PM)\s*-\s*([0-9]{1,2})(?::([0-9]{2}))?\s*(AM|PM)\s*$', 'i');
+  if v_parts is null then
     return jsonb_build_object('eligible',false,'reason','invalid_duration','category',null,'unit_basis',null,'consumption_amount',0,'amount_base_units',0,'stable_occurrence_id',v_occurrence_id);
   end if;
-  v_hours := substring(v_label from '([0-9]+(?:\.[0-9]+)?)')::numeric; v_minutes := v_hours * 60;
-  if v_hours <= 0 or v_hours >= 24 or v_minutes <> trunc(v_minutes) then
+  v_start_hour := v_parts[1]::integer; v_start_minute := coalesce(v_parts[2]::integer, 0);
+  v_end_hour := v_parts[4]::integer; v_end_minute := coalesce(v_parts[5]::integer, 0);
+  if v_start_hour not between 1 and 12 or v_end_hour not between 1 and 12
+     or v_start_minute not between 0 and 59 or v_end_minute not between 0 and 59 then
     return jsonb_build_object('eligible',false,'reason','invalid_duration','category',null,'unit_basis',null,'consumption_amount',0,'amount_base_units',0,'stable_occurrence_id',v_occurrence_id);
   end if;
+  v_start_clock_minutes := (v_start_hour % 12) * 60 + v_start_minute + case when upper(v_parts[3]) = 'PM' then 720 else 0 end;
+  v_end_clock_minutes := (v_end_hour % 12) * 60 + v_end_minute + case when upper(v_parts[6]) = 'PM' then 720 else 0 end;
+  v_duration_minutes := v_end_clock_minutes - v_start_clock_minutes;
+  if v_duration_minutes <= 0 then
+    return jsonb_build_object('eligible',false,'reason','invalid_duration','category',null,'unit_basis',null,'consumption_amount',0,'amount_base_units',0,'stable_occurrence_id',v_occurrence_id);
+  end if;
+  v_hours := v_duration_minutes::numeric / 60;
   if v_coach_id is not null then
     v_category := case when v_coach_id = 'coach_tian_ye' then 'coach_director_private' else 'national_coach_private' end;
   else
@@ -148,7 +167,7 @@ begin
     v_category := case when v_alias in ('coachtianye','tianye','coachtian','headcoachtian') then 'coach_director_private' else 'national_coach_private' end;
   end if;
   return jsonb_build_object('eligible',v_eligible,'reason',case when v_eligible then 'eligible' else 'ineligible_status' end,
-    'category',v_category,'unit_basis','hours','consumption_amount',v_hours,'amount_base_units',v_minutes::integer,'stable_occurrence_id',v_occurrence_id);
+    'category',v_category,'unit_basis','hours','consumption_amount',v_hours,'amount_base_units',v_duration_minutes,'stable_occurrence_id',v_occurrence_id);
 end; $$;
 comment on function public.resolve_class_package_consumption(jsonb) is 'Authoritative immutable classification contract. Uses current startsAt/timeLabel and stable occurrence identity; never debits.';
 revoke all on function public.resolve_class_package_consumption(jsonb) from public, anon, authenticated;

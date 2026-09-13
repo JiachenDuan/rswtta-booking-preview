@@ -7,7 +7,7 @@ Prepared 2026-09-12 on the isolated `openclaw/club-manage-packages` branch, buil
 - `coach_director_private` / `hours`: private lessons assigned to canonical Tian Ye/Tianye. Prefer immutable `assignedCoachId`, `coachId`, then `requestedCoachId`; the reviewed fallback accepts only `Coach Tian Ye`, `Tian Ye`, `Tianye`, `Coach Tian`, and `Head Coach Tian` after punctuation/whitespace normalization. An explicit non-Tian ID overrides a Tian-like display name.
 - `national_coach_private` / `hours`: every other private coach. Production names observed: Coach Jorden, National A, and National B.
 - `group_class` / `class_credit`: any group class consumes exactly one integer credit, regardless of coach or duration. Group classification runs first. Immutable `groupClassId` wins; exact known programs `Group class` and `Group enrollment` are accepted. Ambiguous legacy `Group lesson` remains private unless `groupClassId` exists.
-- Private consumption uses the current `startsAt` and strict current `timeLabel` duration. Observed `0.5h`, `1h`, `1.5h`, and `2h` parse exactly. Missing/malformed/nonpositive/sub-minute or 24-hour-plus durations are rejected rather than defaulted. `recurrenceOccurrenceId`, then `groupClassId`, then booking ID provides stable identity after moves.
+- Private consumption uses the current `startsAt` and strict current `timeLabel` duration. Live values are 12-hour clock ranges such as `6:30 PM - 7 PM`, `4 PM - 5 PM`, `7 PM - 8:30 PM`, and `10 AM - 12 PM`; their exact elapsed minutes parse to 0.5, 1, 1.5, and 2 hours. Missing/malformed/zero-length or overnight-like ranges are rejected rather than defaulted. `recurrenceOccurrenceId`, then `groupClassId`, then booking ID provides stable identity after moves.
 - Only `coach_confirmed` is eligible. `cancelled`, `club_confirmed`, `requested`, and `change_requested` are ineligible. Resolution is classification-only and never debits.
 
 `public.resolve_class_package_consumption(jsonb)` is the authoritative pure `IMMUTABLE` server resolver. It has a fixed restricted search path and service-role-only EXECUTE. `resolveClassPackageConsumption` in `lib/classPackages.ts` is a pure mirror for direct tests; persisted behavior must follow SQL.
@@ -25,7 +25,7 @@ Append-only history, account/category isolation, stale-write checks, idempotent 
 - Exact production Tian identity is `Coach Tian Ye`: 480 private rows, including 9 `coach_confirmed` and 12 unavailable rows in the supplied audit interpretation.
 - 159 rows have immutable `groupClassId`; 1,783 have `recurrenceOccurrenceId`.
 - `Group lesson` occurs on cheaper private rows and is not sufficient group evidence.
-- Production duration labels include `0.5h`, `1h`, `1.5h`, and `2h`.
+- Production duration labels are clock ranges (44 observed variants), including half-hour, one-hour, 1.5-hour, and two-hour spans.
 
 Real remaining ambiguity: current production lacks immutable coach IDs, so a future unrelated coach whose normalized full display name is exactly one reviewed Tian alias would be classified as Tian until immutable IDs are populated. The fallback intentionally does not use partial-name matching, and explicit immutable IDs take precedence as soon as present.
 
@@ -43,7 +43,7 @@ Hashes below are regenerated after final verification and before commit.
 
 <!-- HASH_MANIFEST_START -->
 - `components/ClassPackagesPanel.tsx` — `47ed2476f19f9b0ed5c9b231b962f0aa770a195f3f7370324d525796674de4b3`
-- `lib/classPackages.ts` — `dca5b65a6cc18692a1fde2ccf3d34a750767e48ea2a5510a4044cb7ed55b2be0`
+- `lib/classPackages.ts` — `09628647f6010ca972f3e04b10acb4a5f5fa0f348fdac02f19f830a4fdfc9a5c`
 - `lib/coachPolicy.ts` — `6dd17fcbb6df16cbed3973c4a66962a25c9dc0da026f6a8bdc7e33cd1d2fb174`
 - `lib/projectStore.ts` — `e56520431e24cd56cc156fdb8be67577a88ad12cc62c54bc7290d43eb54cdf71`
 - `lib/types.ts` — `ad6d1a43a20c084a9ef842f99e86cbe04dba55261aa3ec44d5fda832670c9177`
@@ -51,9 +51,9 @@ Hashes below are regenerated after final verification and before commit.
 - `sql/backups/20260913043700_manage_class_packages.private-backup.sql` — `bdca4b3aa41ef1947fea48b80111fdbcc7a1ca7301b972dfdd1135197854e037`
 - `sql/rollback/20260913043700_manage_class_packages.rollback.sql` — `07285fe267d881ac9afbb69c42e382e37c6c677816e4448c2defe9cba8f1d5bd`
 - `sql/verification/20260913043700_manage_class_packages.verify.sql` — `73254f9c268db501c4793120569f4f0db2b6aaa0f3c821e84d396b2b363c83a3`
-- `supabase/migrations/20260913043700_manage_class_packages.sql` — `00fb46df5509602a979e4d14e3b54d1109484d4be79f98bf16f3210c62062ad9`
-- terminal-rollback migration variant — `7e0a0d5e72a928cadfbd6524158ff586d104a477672e0999b3e0175316cc7b4a`
-- `tests/classPackages.spec.ts` — `4efd024b89227b583684355800e0a68b65c800500276625c6487f3e0286bacc4`
+- `supabase/migrations/20260913043700_manage_class_packages.sql` — `79377f0e05cf67210d4c43c917c1640a6fa370e5f63819189321ee7a74fe20ec`
+- terminal-rollback migration variant — `bfa9b74f5126f8b8478955d796d637864678c2bac0517d6dfbfbf569443f663c`
+- `tests/classPackages.spec.ts` — `3ff415528fbd3fd4615b39212869bf58bda56747d8f42d577658a18f6f56037b`
 
 The review document itself is excluded from its embedded manifest to avoid a recursive self-hash.
 <!-- HASH_MANIFEST_END -->

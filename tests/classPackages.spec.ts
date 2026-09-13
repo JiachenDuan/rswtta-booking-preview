@@ -39,7 +39,7 @@ const event = (partial: Partial<PackageLedgerEvent> & Pick<PackageLedgerEvent, "
 });
 const booking = (partial: Partial<Booking> = {}): Partial<Booking> => ({
   id: "booking-1", recurrenceOccurrenceId: "occ-stable", studentAccountId: "account-1", assignedCoach: "Coach Jorden",
-  program: "Private lesson", timeLabel: "1h", startsAt: "2026-09-20T16:00:00-07:00", status: "coach_confirmed", ...partial
+  program: "Private lesson", timeLabel: "4 PM - 5 PM", startsAt: "2026-09-20T16:00:00-07:00", status: "coach_confirmed", ...partial
 });
 
 test("defines canonical categories, explicit unit basis, and bilingual labels", () => {
@@ -96,13 +96,13 @@ test("explicit immutable non-Tian coach ID wins over a Tian-like display name", 
 
 test("other private coaches resolve to national coach with exact duration", () => {
   for (const coach of ["Coach Jorden", "National A", "National B"]) {
-    expect(resolveClassPackageConsumption(booking({ assignedCoach: coach, timeLabel: "1h" }))).toMatchObject({ category: "national_coach_private", unitBasis: "hours", consumptionAmount: 1, amountBaseUnits: 60 });
-    expect(resolveClassPackageConsumption(booking({ assignedCoach: coach, timeLabel: "1.5h" }))).toMatchObject({ consumptionAmount: 1.5, amountBaseUnits: 90 });
+    expect(resolveClassPackageConsumption(booking({ assignedCoach: coach, timeLabel: "4 PM - 5 PM" }))).toMatchObject({ category: "national_coach_private", unitBasis: "hours", consumptionAmount: 1, amountBaseUnits: 60 });
+    expect(resolveClassPackageConsumption(booking({ assignedCoach: coach, timeLabel: "6:30 PM - 8 PM" }))).toMatchObject({ consumptionAmount: 1.5, amountBaseUnits: 90 });
   }
 });
 
 test("group classification precedes coach and always consumes exactly one credit", () => {
-  for (const value of [booking({ groupClassId: "group-1", assignedCoachId: "coach_tian_ye", timeLabel: "2h" }), booking({ program: "Group class", timeLabel: "0.5h" }), booking({ program: "Group enrollment", timeLabel: "garbage" })]) {
+  for (const value of [booking({ groupClassId: "group-1", assignedCoachId: "coach_tian_ye", timeLabel: "10 AM - 12 PM" }), booking({ program: "Group class", timeLabel: "6:30 PM - 7 PM" }), booking({ program: "Group enrollment", timeLabel: "garbage" })]) {
     expect(resolveClassPackageConsumption(value)).toMatchObject({ category: "group_class", unitBasis: "class_credit", consumptionAmount: 1, amountBaseUnits: 1 });
   }
 });
@@ -114,13 +114,13 @@ test("ambiguous Group lesson is private unless immutable groupClassId exists", (
 
 test("private resolver rejects missing coach, duration, startsAt, nonpositive, sub-minute, and overnight-like durations", () => {
   expect(resolveClassPackageConsumption(booking({ assignedCoach: "", requestedCoach: "" })).reason).toBe("missing_coach");
-  for (const timeLabel of ["", "90 minutes", "0h", "0.001h", "24h", "1h - 2h"]) expect(resolveClassPackageConsumption(booking({ timeLabel })).reason).toBe("invalid_duration");
+  for (const timeLabel of ["", "90 minutes", "1h", "4 PM - 4 PM", "11 PM - 1 AM", "13 PM - 2 PM", "4:60 PM - 5 PM"]) expect(resolveClassPackageConsumption(booking({ timeLabel })).reason).toBe("invalid_duration");
   expect(resolveClassPackageConsumption(booking({ startsAt: "" })).reason).toBe("missing_starts_at");
   expect(resolveClassPackageConsumption(booking({ startsAt: "not-a-date" })).reason).toBe("missing_starts_at");
 });
 
 test("moved booking uses current duration while stable occurrence ID prevents identity drift", () => {
-  const moved = resolveClassPackageConsumption(booking({ recurrenceOccurrenceId: "original-occurrence", recurrenceOriginalStartsAt: "2026-09-01T16:00:00Z", startsAt: "2026-09-22T19:00:00Z", timeLabel: "1.5h" }));
+  const moved = resolveClassPackageConsumption(booking({ recurrenceOccurrenceId: "original-occurrence", recurrenceOriginalStartsAt: "2026-09-01T16:00:00Z", startsAt: "2026-09-22T19:00:00Z", timeLabel: "7 PM - 8:30 PM" }));
   expect(moved).toMatchObject({ stableOccurrenceId: "original-occurrence", consumptionAmount: 1.5, amountBaseUnits: 90 });
 });
 
@@ -130,6 +130,8 @@ test("only coach-confirmed completed booking is eligible and resolver never debi
   const resolverBody = migration.slice(migration.indexOf("create or replace function public.resolve_class_package_consumption"), migration.indexOf("comment on function public.resolve_class_package_consumption"));
   expect(resolverBody).not.toMatch(/insert|update|delete|class_package_events/i);
   expect(store).not.toContain('rpc("resolve_class_package_consumption"');
+  expect(`${app}\n${store}`).not.toMatch(/(?:package|classPackage).*(?:usage|debit)|(?:usage|debit).*(?:package|classPackage)/i);
+  expect(migration).not.toMatch(/create\s+trigger[\s\S]{0,300}(?:project_rows|bookings)/i);
 });
 
 test("migration retains production guards and old zero-ledger stop", () => {
@@ -150,6 +152,7 @@ test("schema stores and enforces canonical category plus unit basis", () => {
 test("authoritative SQL resolver is immutable, group-first, alias-reviewed, ACL-restricted, and non-debiting", () => {
   expect(migration).toContain("resolve_class_package_consumption(p_booking jsonb)");
   expect(migration).toContain("language plpgsql immutable");
+  expect(migration).toContain("regexp_match(v_label");
   expect(migration).toContain("'coachtianye','tianye','coachtian','headcoachtian'");
   expect(migration.indexOf("if v_group_id is not null")).toBeLessThan(migration.indexOf("if v_coach_id is not null"));
   expect(migration).toContain("revoke all on function public.resolve_class_package_consumption(jsonb) from public, anon, authenticated");

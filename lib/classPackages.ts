@@ -146,11 +146,17 @@ function explicitCoachId(booking: Partial<Booking>) {
 }
 
 function durationHours(timeLabel: unknown) {
-  const match = String(timeLabel ?? "").match(/^\s*(\d+(?:\.\d+)?)\s*h(?:ours?)?\s*$/i);
+  const match = String(timeLabel ?? "").match(/^\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*-\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*$/i);
   if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = hours * 60;
-  return hours > 0 && hours < 24 && Number.isInteger(minutes) ? hours : null;
+  const startHour = Number(match[1]);
+  const startMinute = Number(match[2] ?? 0);
+  const endHour = Number(match[4]);
+  const endMinute = Number(match[5] ?? 0);
+  if (startHour < 1 || startHour > 12 || endHour < 1 || endHour > 12 || startMinute > 59 || endMinute > 59) return null;
+  const clockMinutes = (hour: number, minute: number, meridiem: string) =>
+    (hour % 12) * 60 + minute + (meridiem.toLowerCase() === "pm" ? 12 * 60 : 0);
+  const durationMinutes = clockMinutes(endHour, endMinute, match[6]) - clockMinutes(startHour, startMinute, match[3]);
+  return durationMinutes > 0 ? durationMinutes / 60 : null;
 }
 
 /**
