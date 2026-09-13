@@ -15,8 +15,9 @@ declare
   c_club_principals constant bigint := 1;
   v_parent bigint; v_club bigint;
 begin
-  if to_regprocedure('public.parent_cancel_future_bookings(text,text,uuid,uuid,text,timestamptz,text,timestamptz,integer)') is null
-    or to_regprocedure('public.parent_login(text,text,text)') is null then raise exception 'Opaque Parent stage is absent'; end if;
+  if to_regprocedure('public.parent_cancel_booking_occurrences(text,text,uuid,text,uuid,timestamptz,text,timestamptz,integer)') is null
+    or to_regprocedure('public.parent_session_login(text,text,text)') is null
+    or to_regprocedure('public.parent_session_refresh(text,text,text)') is null then raise exception 'Opaque Parent stage is absent'; end if;
   select count(*) filter(where actor_kind='parent'),count(*) filter(where actor_kind='club') into v_parent,v_club from rswtta_private.auth_principals;
   if v_parent<>c_parent_principals or v_club<>c_club_principals or v_club<>1 then raise exception 'Principal baseline mismatch'; end if;
   if exists(select 1 from rswtta_private.auth_principals p left join rswtta_private.credentials c on c.principal_id=p.id where c.principal_id is null) then raise exception 'Principal without credential'; end if;
@@ -44,7 +45,7 @@ begin
     insert into rswtta_private.login_attempts values(v_alias,v_client,clock_timestamp(),false); return jsonb_build_object('ok',false,'error','Invalid login');
   end if;
   insert into rswtta_private.login_attempts values(v_alias,v_client,clock_timestamp(),true);
-  return rswtta_private.issue_session(v_principal)||jsonb_build_object('ok',true);
+  return rswtta_private.issue_session(v_principal,v_client)||jsonb_build_object('ok',true);
 exception when others then if sqlerrm='Invalid login' then raise exception 'Invalid login'; end if; raise; end $$;
 
 create function public.club_refresh_session(p_refresh_token text,p_client_key text)
@@ -55,9 +56,10 @@ begin
   select s.* into strict v_old from rswtta_private.sessions s
     where s.refresh_token_hash=rswtta_private.token_hash(p_refresh_token) for update;
   select actor_kind into strict v_kind from rswtta_private.auth_principals where id=v_old.principal_id;
-  if v_kind<>'club' or v_old.revoked_at is not null or v_old.refresh_expires_at<=clock_timestamp() then raise exception 'Invalid session'; end if;
+  if v_kind<>'club' or v_old.revoked_at is not null or v_old.refresh_expires_at<=clock_timestamp()
+    or v_old.client_digest<>rswtta_private.token_hash(p_client_key) then raise exception 'Invalid session'; end if;
   update rswtta_private.sessions set revoked_at=clock_timestamp() where id=v_old.id;
-  return rswtta_private.issue_session(v_old.principal_id,v_old.id);
+  return rswtta_private.issue_session(v_old.principal_id,v_old.client_digest,v_old.id);
 exception when no_data_found then raise exception 'Invalid session'; end $$;
 
 create function public.club_logout(p_session_token text)
@@ -111,6 +113,29 @@ begin
   if v_deleted is null then raise exception 'Row changed or is unavailable'; end if; return v_deleted;
 exception when no_data_found then raise exception 'Invalid session or table'; end $$;
 
+-- Credential removal is activation-only so shadow staging cannot break the legacy client.
+create function rswtta_private.reject_public_credentials()
+returns trigger language plpgsql set search_path=pg_catalog as $$
+begin
+  if new.values ?| array['passwordHash','passwordSalt','confirmationCode','sessionToken','refreshToken'] then
+    raise exception 'Credential/session material is private';
+  end if;
+  return new;
+end $$;
+create trigger reject_public_parent_credentials before insert or update of values on public.project_rows
+for each row execute function rswtta_private.reject_public_credentials();
+
+do $remove_public_parent_credentials$
+declare v_accounts uuid;
+begin
+  select t.id into strict v_accounts from public.project_tables t join public.projects p on p.id=t.project_id
+    where p.slug='rswtta-booking' and t.slug='parent_accounts';
+  update public.project_rows set values=values-'passwordHash'-'passwordSalt'-'confirmationCode' where project_table_id=v_accounts;
+  if exists(select 1 from public.project_rows where project_table_id=v_accounts and values ?| array['passwordHash','passwordSalt','confirmationCode']) then
+    raise exception 'Public credential removal failed';
+  end if;
+end $remove_public_parent_credentials$;
+
 -- Remove prototype browser table authority and permissive policies.
 revoke all on table public.projects,public.project_members,public.project_tables,public.project_columns,public.project_rows from anon,authenticated;
 drop policy if exists "prototype public read projects" on public.projects;
@@ -144,7 +169,9 @@ begin
   end loop;
 end $revoke$;
 
--- Minimum browser surface. Remove PostgreSQL's default PUBLIC EXECUTE first.
+-- Minimum browser surface. Revoke every inherited/direct browser function path,
+-- then grant only the reviewed opaque Parent and Club contracts below.
+revoke execute on all functions in schema public from public,anon,authenticated;
 revoke all on function public.club_login(text,text,text) from public;
 revoke all on function public.club_refresh_session(text,text) from public;
 revoke all on function public.club_logout(text) from public;
@@ -152,19 +179,17 @@ revoke all on function public.club_list_rows(text,text) from public;
 revoke all on function public.club_insert_row(text,text,uuid,jsonb) from public;
 revoke all on function public.club_update_row(text,text,uuid,timestamptz,jsonb) from public;
 revoke all on function public.club_delete_row(text,text,uuid,timestamptz) from public;
-grant execute on function public.parent_login(text,text,text) to anon,authenticated;
-grant execute on function public.parent_refresh_session(text,text) to anon,authenticated;
-grant execute on function public.parent_logout(text) to anon,authenticated;
+grant execute on function public.parent_session_login(text,text,text) to anon,authenticated;
+grant execute on function public.parent_session_refresh(text,text,text) to anon,authenticated;
+grant execute on function public.parent_session_logout(text) to anon,authenticated;
 grant execute on function public.parent_issue_operation_nonce(text,text) to anon,authenticated;
-grant execute on function public.parent_get_account(text) to anon,authenticated;
-grant execute on function public.parent_list_bookings(text) to anon,authenticated;
-grant execute on function public.parent_list_bills(text) to anon,authenticated;
-grant execute on function public.parent_update_account_v2(text,text,jsonb) to anon,authenticated;
-grant execute on function public.parent_change_password(text,text,text,text) to anon,authenticated;
-grant execute on function public.parent_begin_password_reset(text) to anon,authenticated;
-grant execute on function public.parent_complete_password_reset(text,text) to anon,authenticated;
-grant execute on function public.parent_cancel_future_bookings(text,text,uuid,uuid,text,timestamptz,text,timestamptz,integer) to anon,authenticated;
-grant execute on function public.parent_request_booking_v2(text,text,uuid,jsonb) to anon,authenticated;
+grant execute on function public.parent_update_profile(text,jsonb) to anon,authenticated;
+grant execute on function public.parent_complete_profile(text,jsonb) to anon,authenticated;
+grant execute on function public.parent_request_password_reset(text) to anon,authenticated;
+grant execute on function public.parent_request_booking(text,uuid,jsonb) to anon,authenticated;
+grant execute on function public.parent_request_group_class(text,uuid,uuid) to anon,authenticated;
+grant execute on function public.parent_complete_booking(text,uuid,timestamptz,uuid) to anon,authenticated;
+grant execute on function public.parent_cancel_booking_occurrences(text,text,uuid,text,uuid,timestamptz,text,timestamptz,integer) to anon,authenticated;
 grant execute on function public.club_login(text,text,text) to anon,authenticated;
 grant execute on function public.club_refresh_session(text,text) to anon,authenticated;
 grant execute on function public.club_logout(text) to anon,authenticated;

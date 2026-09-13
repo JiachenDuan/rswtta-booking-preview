@@ -41,7 +41,7 @@ import { parentCancellationActivityMessage } from "@/lib/activityLog";
 import { groupOccurrenceScheduleWouldChange, groupOccurrenceTargetStartsAt, isFutureActiveGroupBlock, searchGroupEnrollmentAccounts, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { isPersistedParentCancellationCandidate, parentCancellationTargets, type ParentCancellationScope } from "@/lib/parentCancellation";
-import { cancelParentRecurring, completeParentBooking, completeParentProfile, loginParentSession, logoutParentSession, parentSessionStorageKey, refreshParentSession, requestParentBooking, requestParentGroupClass, requestParentPasswordReset, updateParentProfile, type ParentDashboard } from "@/lib/parentClient";
+import { cancelParentRecurring, clearStoredParentSession, completeParentBooking, completeParentProfile, loginParentSession, logoutParentSession, readParentSession, refreshParentSession, requestParentBooking, requestParentGroupClass, requestParentPasswordReset, updateParentProfile, type ParentDashboard, type ParentSession } from "@/lib/parentClient";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
@@ -718,7 +718,8 @@ export function ClubApp() {
     setSelectedDurationMinutes(60);
   }
 
-  function applyParentDashboard(dashboard: ParentDashboard) {
+  function applyParentDashboard(dashboard: ParentDashboard | ParentSession) {
+    if ("sessionToken" in dashboard) parentSessionToken.current = dashboard.sessionToken;
     const account = dashboard.account;
     setParentSession(account);
     setParentBookings(dashboard.bookings.filter((booking) => !booking.id.startsWith("virtual-")));
@@ -737,7 +738,7 @@ export function ClubApp() {
 
   function clearParentSession() {
     parentSessionToken.current = "";
-    window.sessionStorage.removeItem(parentSessionStorageKey);
+    clearStoredParentSession();
     setParentSession(null);
     setParentBookings([]);
     setBookings([]);
@@ -752,7 +753,6 @@ export function ClubApp() {
     try {
       const session = await loginParentSession(identifier, password);
       parentSessionToken.current = session.sessionToken;
-      window.sessionStorage.setItem(parentSessionStorageKey, session.sessionToken);
       applyParentDashboard(session);
     } catch {
       throw new Error(copy(language, "Unable to sign in. Check your username and password.", "无法登录。请检查用户名和密码。"));
@@ -936,7 +936,8 @@ export function ClubApp() {
     setSaving(true);
     setNotice(copy(language, "Cancelling class...", "正在取消课程..."));
     try {
-      const result = await cancelParentRecurring(parentSessionToken.current, booking, scope, idempotencyKey);
+      const expectedEligibleCount = parentCancellationTargets(parentBookings, booking, scope, currentTime.getTime()).length;
+      const result = await cancelParentRecurring(parentSessionToken.current, booking, scope, idempotencyKey, expectedEligibleCount);
       applyParentDashboard(result);
       setNotice(copy(language, `Cancelled ${result.cancelledCount} class${result.cancelledCount === 1 ? "" : "es"}.`, `已取消 ${result.cancelledCount} 节课。`));
       return true;
@@ -1341,12 +1342,12 @@ export function ClubApp() {
   }
 
   useEffect(() => {
-    const storedToken = window.sessionStorage.getItem(parentSessionStorageKey) ?? "";
+    const storedSession = readParentSession();
     const storedClub = window.localStorage.getItem(clubSessionKey) === "true";
-    if (storedToken) {
-      parentSessionToken.current = storedToken;
+    if (storedSession) {
+      parentSessionToken.current = storedSession.sessionToken;
       setMode("parent");
-      refreshParentSession(storedToken).then(applyParentDashboard).catch(clearParentSession);
+      refreshParentSession(storedSession.sessionToken).then(applyParentDashboard).catch(clearParentSession);
     } else if (storedClub) {
       setClubAuthenticated(true);
       setMode("club");
@@ -1664,9 +1665,9 @@ function UnifiedAuth({
     setBusy(true);
     try {
       await onRequestPasswordReset(identifier);
-      setNotice(copy(language, "If this username is registered, reset instructions were sent.", "如果此用户名已注册，重置说明已发送。"));
+      setNotice(copy(language, "Online reset delivery is not available yet. Please contact the club assistant.", "暂不支持在线发送重置说明。请联系俱乐部助理。"));
     } catch {
-      setNotice(copy(language, "If this username is registered, reset instructions were sent.", "如果此用户名已注册，重置说明已发送。"));
+      setNotice(copy(language, "Online reset delivery is not available yet. Please contact the club assistant.", "暂不支持在线发送重置说明。请联系俱乐部助理。"));
     } finally {
       setBusy(false);
     }

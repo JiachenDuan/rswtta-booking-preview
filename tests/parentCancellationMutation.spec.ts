@@ -61,8 +61,12 @@ test("one atomic Parent RPC carries token, idempotency, version, scope, and immu
   expect(clientSource).toContain("p_idempotency_key: idempotencyKey");
   expect(clientSource).toContain("p_expected_selected_version: booking.updatedAt");
   expect(clientSource).toContain("p_expected_original_starts_at: booking.recurrenceOriginalStartsAt ?? booking.startsAt");
+  expect(clientSource).toContain("p_expected_eligible_count: expectedEligibleCount");
+  expect(clientSource).toContain("p_expected_series_id: booking.seriesId ?? null");
+  expect(clientSource).toContain('p_operation: "cancel_booking_occurrences"');
   expect(clientSource).not.toContain("p_student_account_id");
-  expect(parentHandler).toContain("cancelParentRecurring(parentSessionToken.current, booking, scope, idempotencyKey)");
+  expect(parentHandler).toContain("parentCancellationTargets(parentBookings, booking, scope, currentTime.getTime()).length");
+  expect(parentHandler).toContain("cancelParentRecurring(parentSessionToken.current, booking, scope, idempotencyKey, expectedEligibleCount)");
   expect(parentHandler).not.toContain("createBooking(");
 });
 
