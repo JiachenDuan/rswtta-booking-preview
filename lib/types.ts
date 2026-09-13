@@ -10,6 +10,10 @@ export type Booking = {
   recurrenceOriginalStartsAt?: string;
   /** Permanent identity shared by a group block and all of its enrollments. */
   groupClassId?: string;
+  /** Future immutable coach identities; snapshots currently have none. */
+  coachId?: string;
+  assignedCoachId?: string;
+  requestedCoachId?: string;
   studentName: string;
   familyName: string;
   studentEmail: string;
@@ -62,16 +66,18 @@ export type ParentAccount = {
   createdAt: string;
 };
 
-export type PackageCategory = "coach_director" | "national_coach" | "group_class";
+export type PackageCategory = "coach_director_private" | "national_coach_private" | "group_class";
+export type PackageUnitBasis = "hours" | "class_credit";
 
 export type PackageBalance = {
   packageId: string | null;
   studentAccountId: string;
   category: PackageCategory;
-  openingMinutes: number;
-  adjustmentMinutes: number;
-  usageMinutes: number;
-  remainingMinutes: number;
+  unitBasis: PackageUnitBasis;
+  openingAmountBaseUnits: number;
+  adjustmentAmountBaseUnits: number;
+  usageAmountBaseUnits: number;
+  remainingAmountBaseUnits: number;
   version: number;
   lastEventAt: string | null;
 };
@@ -81,10 +87,11 @@ export type PackageLedgerEvent = {
   packageId: string;
   studentAccountId: string;
   category: PackageCategory;
+  unitBasis: PackageUnitBasis;
   eventType: "opening_set" | "adjustment" | "usage";
-  amountMinutes: number;
-  oldOpeningMinutes: number | null;
-  newOpeningMinutes: number | null;
+  amountBaseUnits: number;
+  oldOpeningAmountBaseUnits: number | null;
+  newOpeningAmountBaseUnits: number | null;
   version: number;
   note: string;
   reference: string;
@@ -97,10 +104,11 @@ export type SetPackageOpeningResult = {
   packageId: string;
   studentAccountId: string;
   category: PackageCategory;
-  oldOpeningMinutes: number;
-  newOpeningMinutes: number;
-  oldRemainingMinutes: number;
-  newRemainingMinutes: number;
+  unitBasis: PackageUnitBasis;
+  oldOpeningAmountBaseUnits: number;
+  newOpeningAmountBaseUnits: number;
+  oldRemainingAmountBaseUnits: number;
+  newRemainingAmountBaseUnits: number;
   oldVersion: number;
   newVersion: number;
   createdAt: string;

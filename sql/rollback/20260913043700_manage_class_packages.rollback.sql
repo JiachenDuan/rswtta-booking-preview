@@ -14,7 +14,8 @@ begin
 end;
 $$;
 
-drop function if exists public.set_class_package_opening(uuid, text, integer, integer, bigint, text, text, uuid);
+drop function if exists public.set_class_package_opening(uuid, text, text, integer, integer, bigint, text, text, uuid);
+drop function if exists public.resolve_class_package_consumption(jsonb);
 drop function if exists public.list_class_package_history(uuid, text);
 drop function if exists public.list_class_package_balances_v2();
 drop table if exists public.class_package_events;

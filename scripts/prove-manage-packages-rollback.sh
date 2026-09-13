@@ -30,7 +30,8 @@ select count(*) from (
   union all select to_regclass('public.class_package_events')::text
   union all select to_regprocedure('public.list_class_package_balances_v2()')::text
   union all select to_regprocedure('public.list_class_package_history(uuid,text)')::text
-  union all select to_regprocedure('public.set_class_package_opening(uuid,text,integer,integer,bigint,text,text,uuid)')::text
+  union all select to_regprocedure('public.set_class_package_opening(uuid,text,text,integer,integer,bigint,text,text,uuid)')::text
+  union all select to_regprocedure('public.resolve_class_package_consumption(jsonb)')::text
 ) objects where object_name is not null;")
 [ "$remaining" = "0" ] || { echo "Rollback proof failed: $remaining v2 objects remain" >&2; exit 1; }
 echo "rollback_proof=passed (all v2 objects absent)"

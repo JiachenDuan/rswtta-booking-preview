@@ -43,6 +43,12 @@ insert into private_migration_backups.club_package_manifest_20260913_0437(key, v
   ('legacy_ledger_count', '0'),
   ('category_key_count', '0'),
   ('category_event_count', '0'),
+  ('resolver_target', 'resolve_class_package_consumption(jsonb) immutable classify-only'),
+  ('canonical_categories', 'coach_director_private,national_coach_private,group_class'),
+  ('canonical_unit_basis', 'hours,hours,class_credit'),
+  ('coach_field_audit', 'no coachId/assignedCoachId/requestedCoachId/coachRole in 1978 bookings'),
+  ('group_identity_audit', '159 groupClassId; Group class/Group enrollment explicit; Group lesson ambiguous'),
+  ('recurrence_identity_audit', '1783 recurrenceOccurrenceId'),
   ('audit_timestamp', '2026-09-12T21:36:00-07:00');
 
 alter table private_migration_backups.club_package_accounts_20260913_0437 enable row level security;

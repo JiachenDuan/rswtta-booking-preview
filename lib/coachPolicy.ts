@@ -3,15 +3,15 @@ export const TIAN_YE_BOOKING_MESSAGE_EN = "Coach Tian Ye’s classes cannot be b
 export const TIAN_YE_BOOKING_MESSAGE_ZH = "Tian Ye 教练的课程无法通过本应用直接预约。请发送邮件至 info@rswtta.com，或联系 Tian Ye 教练或俱乐部助理。";
 
 function normalizedCoachName(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 export function canonicalCoachId(value: string) {
   const coach = normalizedCoachName(value);
-  if (["coach tian ye", "tian ye", "coach tian", "head coach tian"].includes(coach)) return TIAN_YE_COACH_ID;
-  if (["coach jorden", "jorden", "coach wang", "wang"].includes(coach)) return "coach_jorden";
-  if (["national a", "debolina"].includes(coach)) return "coach_debolina";
-  if (["national b", "diren"].includes(coach)) return "coach_diren";
+  if (["coachtianye", "tianye", "coachtian", "headcoachtian"].includes(coach)) return TIAN_YE_COACH_ID;
+  if (["coachjorden", "jorden", "coachwang", "wang"].includes(coach)) return "coach_jorden";
+  if (["nationala", "debolina"].includes(coach)) return "coach_debolina";
+  if (["nationalb", "diren"].includes(coach)) return "coach_diren";
   return `coach:${coach}`;
 }
 

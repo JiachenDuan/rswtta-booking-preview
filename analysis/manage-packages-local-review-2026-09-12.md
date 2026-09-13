@@ -1,61 +1,70 @@
-# Club Manage Packages — local implementation review
+# Club Manage Packages — canonical semantics revision
 
-Prepared 2026-09-12 from a clean isolated branch whose base was freshly fetched `origin/main` at `b178a86ca265f77d01ccfd18761e4afe6256ce10`. The separate Parent-auth branch was not merged, modified, deployed, or pushed.
+Prepared 2026-09-12 on the isolated `openclaw/club-manage-packages` branch, building on `ae03a6fd906c69a8b5ab9cd2a5ca53ee9cc7ef53`. Parent App/Parent-auth was not changed. Nothing was deployed, pushed, or written to production.
 
-## Scope and semantics
+## Canonical contract
 
-- Exact categories only: `coach_director`, `national_coach`, and `group_class`, with the selected English/Chinese labels.
-- One immutable key per project + permanent student account ID + category.
-- Append-only events: opening changes store old → new; adjustments are signed; explicit usage is negative. Remaining is opening + adjustments − explicit usage.
-- Opening accepts 0–500 hours in 0.5-hour increments. Zero is valid.
-- No booking is inspected to infer package category or usage. Existing legacy package rows must be exactly zero; otherwise migration stops rather than reclassifying anything.
-- The old undifferentiated add RPC is disabled for browser roles, but its empty ledger and functions remain intact for audit and rollback.
-- Browser roles receive only the category list/history/opening RPCs. Key/event tables use RLS with no browser policies or direct grants. The service role retains direct select/insert; immutable triggers reject update/delete.
-- The accepted legacy Club-session risk remains explicit: browser writes record `legacy_club_session_unverified`. No verified actor is fabricated.
+- `coach_director_private` / `hours`: private lessons assigned to canonical Tian Ye/Tianye. Prefer immutable `assignedCoachId`, `coachId`, then `requestedCoachId`; the reviewed fallback accepts only `Coach Tian Ye`, `Tian Ye`, `Tianye`, `Coach Tian`, and `Head Coach Tian` after punctuation/whitespace normalization. An explicit non-Tian ID overrides a Tian-like display name.
+- `national_coach_private` / `hours`: every other private coach. Production names observed: Coach Jorden, National A, and National B.
+- `group_class` / `class_credit`: any group class consumes exactly one integer credit, regardless of coach or duration. Group classification runs first. Immutable `groupClassId` wins; exact known programs `Group class` and `Group enrollment` are accepted. Ambiguous legacy `Group lesson` remains private unless `groupClassId` exists.
+- Private consumption uses the current `startsAt` and strict current `timeLabel` duration. Observed `0.5h`, `1h`, `1.5h`, and `2h` parse exactly. Missing/malformed/nonpositive/sub-minute or 24-hour-plus durations are rejected rather than defaulted. `recurrenceOccurrenceId`, then `groupClassId`, then booking ID provides stable identity after moves.
+- Only `coach_confirmed` is eligible. `cancelled`, `club_confirmed`, `requested`, and `change_requested` are ineligible. Resolution is classification-only and never debits.
 
-## Production baseline frozen in artifacts
+`public.resolve_class_package_consumption(jsonb)` is the authoritative pure `IMMUTABLE` server resolver. It has a fixed restricted search path and service-role-only EXECUTE. `resolveClassPackageConsumption` in `lib/classPackages.ts` is a pure mirror for direct tests; persisted behavior must follow SQL.
 
-- Project `ab9d8da3-762f-466c-b7ce-fa05088f03cd`
-- Account table `8236c8f8-0fab-400c-bedc-143fd5930707`
-- 65 accounts; client-page MD5 `889ef52e232d48fec0a2da04bf33992a`
-- Duplicate Ella IDs `3a6d38c0-a343-42fe-b373-e1649928041d` and `b8433b38-75f0-4e37-8792-3b952d26c74d`
-- 1,978 bookings; 500/500/500/478 page MD5s `cb9afd75e44d3e82472df227e20906b4`, `39d959e808832d51416426eb12e4a92f`, `0b91e1fc9c8c0eaf07843eaf688af463`, `b7481b76c02d0031443cf41335b17e5b`
-- 0 bills
-- 65 activity rows; page MD5 `c4e86cb519690b3fc148265ac0d80a73`
-- 0 legacy package-ledger rows and 65 zero balances
+## Ledger and UI
 
-The SQL guards IDs, counts, duplicate identity, deployed legacy signatures, and the zero legacy ledger. The external page hashes are retained byte-for-byte in migration comments and the private backup manifest because they were calculated from the audited client-page representation, not a newly invented SQL serialization.
+Keys and events store both canonical `category` and `unit_basis`, with a composite foreign key enforcing the pair. All event quantities are explicit integer `amount_base_units`: minutes for `hours`, credits for `class_credit`. Private openings accept nonnegative 0.5-hour increments; group openings accept nonnegative integer credits. Bilingual Club UI labels hours and class credits independently.
 
-## Artifacts and hashes
+Append-only history, account/category isolation, stale-write checks, idempotent replay validation, and immutable triggers remain. No usage writer or automatic decrement is introduced. The old undifferentiated ledger must still contain exactly zero rows or migration stops rather than reclassifying history.
 
-- Private backup: `sql/backups/20260913043700_manage_class_packages.private-backup.sql`
-- Migration: `supabase/migrations/20260913043700_manage_class_packages.sql`
-- Emergency rollback: `sql/rollback/20260913043700_manage_class_packages.rollback.sql`
-- Disposable rollback proof runner: `scripts/prove-manage-packages-rollback.sh`
-- Read-only postverification: `sql/verification/20260913043700_manage_class_packages.verify.sql`
+## Read-only production audit interpretation
 
-Reviewed SHA-256 values:
+- 1,978 bookings; all have `startsAt`.
+- No `coachId`, `assignedCoachId`, `requestedCoachId`, or `coachRole` field appears in the audited rows, so current classification necessarily uses the narrow alias fallback.
+- Exact production Tian identity is `Coach Tian Ye`: 480 private rows, including 9 `coach_confirmed` and 12 unavailable rows in the supplied audit interpretation.
+- 159 rows have immutable `groupClassId`; 1,783 have `recurrenceOccurrenceId`.
+- `Group lesson` occurs on cheaper private rows and is not sufficient group evidence.
+- Production duration labels include `0.5h`, `1h`, `1.5h`, and `2h`.
 
-- Private backup: `b80763065bf8e2fc0cd52e09d8b63965a8db501d45fd4a5d576a9c21e1e6d0d7`
-- Migration: `a4f1c8da1024e5ca0287522b7064741051dcbc2061c3144ae050549102d53e00`
-- Rollback-only migration variant (only terminal `commit;` → `rollback;`): `8d58f8277c3c9e48efea3a316096eeb185aa34e2cca46ac576c5e5e36678b6bf`
-- Emergency rollback: `cb4b34edf4a4ee6b63e2274906eac3d5a785a71aa6174986065b8b8a173951a6`
-- Read-only postverification: `9b3bd51639996b211684ac51bfd9c1ef87467a5668888119e2fd124a9f0b5274`
-- Disposable proof runner: `4562de89f056ab2209678c77a797e2f74d715e7fcb978349a1d1b0fbfc226fa5`
+Real remaining ambiguity: current production lacks immutable coach IDs, so a future unrelated coach whose normalized full display name is exactly one reviewed Tian alias would be classified as Tian until immutable IDs are populated. The fallback intentionally does not use partial-name matching, and explicit immutable IDs take precedence as soon as present.
 
-## Approval-gated production sequence
+## Frozen guards
 
-Nothing below has been executed.
+- Project `ab9d8da3-762f-466c-b7ce-fa05088f03cd`; account table `8236c8f8-0fab-400c-bedc-143fd5930707`
+- 65 accounts; duplicate Ella IDs `3a6d38c0-a343-42fe-b373-e1649928041d`, `b8433b38-75f0-4e37-8792-3b952d26c74d`
+- Account MD5 `889ef52e232d48fec0a2da04bf33992a`
+- Booking page MD5s `cb9afd75e44d3e82472df227e20906b4`, `39d959e808832d51416426eb12e4a92f`, `0b91e1fc9c8c0eaf07843eaf688af463`, `b7481b76c02d0031443cf41335b17e5b`
+- 0 bills; 65 activity rows, MD5 `c4e86cb519690b3fc148265ac0d80a73`; 0 legacy ledger rows
 
-1. **Fresh read-only freeze:** fetch `origin` again; prove the reviewed base is still an ancestor; rerun fully paginated production reads and require every ID/count/page hash and zero-ledger guard above to match.
-2. **Approve backup only:** separately approve execution of the exact committed private-backup SQL. Load it into the authenticated SQL editor, read it back, and match its local SHA-256 before Run. Verify 65 copied account rows, source/backup digest equality, zero copied ledger rows, two catalog rows, RLS enabled, and no `anon`/`authenticated` schema usage.
-3. **Approve rollback-only proof:** separately approve executing the exact migration with only its single terminal `commit;` changed to `rollback;`. Verify the derived text/hash before Run. Then run read-only catalog checks proving both v2 tables, all three v2 RPCs, and the v2 immutable trigger function remain absent; rerun the complete baseline.
-4. **Approve migration:** separately approve the byte-identical committed migration. Verify the SQL editor content SHA-256 equals the reported migration hash. Run once; do not retry after a timeout or unknown outcome until read-only reconciliation proves pre-state or complete post-state.
-5. **Postverify before any client deployment:** execute the read-only verification SQL. Require 195 account/category balance rows, all zero before any approved opening edit; zero legacy rows; postgres-owned fixed-search-path SECURITY DEFINER RPCs; RLS on/no browser policies; no browser table privileges; old add/list execute revoked; new narrow execute grants only as reviewed.
-6. **Disposable acceptance only:** in an approved disposable database/account, test all categories, duplicate names/IDs, same-account category isolation, opening up/down with usage, zero/invalid values, stale version, concurrent duplicate submit, replay mismatch, and direct-table denial. Do not mutate a real student.
-7. **Approve compatible client push/deploy:** only after the database is verified, fetch origin again, rerun focused/full tests, strict TypeScript, build, diff and secret scans, then separately approve pushing the exact reviewed commit and deploying it. Parent-auth remains a separate effort and must not be combined.
-8. **Read-only UI verification:** verify Club exact-account/category selection, bilingual desktop/mobile layout, metrics/history, and invalid-submit behavior. Verify Parent has no Manage Packages surface and activity/export/billing behavior is unchanged. Recheck all database counts and hashes after the client settles.
+## Artifacts and reviewed SHA-256 manifest
 
-## Local limitations
+Hashes below are regenerated after final verification and before commit.
 
-No `psql`, Supabase CLI, Docker runtime, or configured disposable database was available in this worktree, so no SQL was executed. SQL received static transaction/dollar-quote checks; the guarded rollback runner is ready for an approved disposable environment. No production write, migration, deployment, or push occurred.
+<!-- HASH_MANIFEST_START -->
+- `components/ClassPackagesPanel.tsx` — `47ed2476f19f9b0ed5c9b231b962f0aa770a195f3f7370324d525796674de4b3`
+- `lib/classPackages.ts` — `dca5b65a6cc18692a1fde2ccf3d34a750767e48ea2a5510a4044cb7ed55b2be0`
+- `lib/coachPolicy.ts` — `6dd17fcbb6df16cbed3973c4a66962a25c9dc0da026f6a8bdc7e33cd1d2fb174`
+- `lib/projectStore.ts` — `e56520431e24cd56cc156fdb8be67577a88ad12cc62c54bc7290d43eb54cdf71`
+- `lib/types.ts` — `ad6d1a43a20c084a9ef842f99e86cbe04dba55261aa3ec44d5fda832670c9177`
+- `scripts/prove-manage-packages-rollback.sh` — `c37c3b82712ca49900e4cc1de301ebf24db8c9b8d733a07994fce7b256b1a8e9`
+- `sql/backups/20260913043700_manage_class_packages.private-backup.sql` — `bdca4b3aa41ef1947fea48b80111fdbcc7a1ca7301b972dfdd1135197854e037`
+- `sql/rollback/20260913043700_manage_class_packages.rollback.sql` — `07285fe267d881ac9afbb69c42e382e37c6c677816e4448c2defe9cba8f1d5bd`
+- `sql/verification/20260913043700_manage_class_packages.verify.sql` — `73254f9c268db501c4793120569f4f0db2b6aaa0f3c821e84d396b2b363c83a3`
+- `supabase/migrations/20260913043700_manage_class_packages.sql` — `00fb46df5509602a979e4d14e3b54d1109484d4be79f98bf16f3210c62062ad9`
+- terminal-rollback migration variant — `7e0a0d5e72a928cadfbd6524158ff586d104a477672e0999b3e0175316cc7b4a`
+- `tests/classPackages.spec.ts` — `4efd024b89227b583684355800e0a68b65c800500276625c6487f3e0286bacc4`
+
+The review document itself is excluded from its embedded manifest to avoid a recursive self-hash.
+<!-- HASH_MANIFEST_END -->
+
+## Guarded future rollout (not executed)
+
+1. Repeat the fully paginated read-only production audit and require every frozen ID/count/hash and the zero-ledger guard to match.
+2. Separately approve and run the exact private backup; verify counts, digest, catalog, RLS, and inaccessible backup schema.
+3. In an approved disposable database, run the exact migration with only terminal `commit;` changed to `rollback;`, then prove all v2 objects including the resolver are absent.
+4. Separately approve the byte-identical migration. Reconcile unknown outcomes read-only before any retry.
+5. Run the read-only postverification: 195 zero account/category balances, 65 rows per enforced category/unit pair, resolver samples, ownership/search path/volatility/ACL, RLS, and table privileges.
+6. Only after database verification, separately approve a compatible client push/deploy. Verify Club bilingual desktop/mobile behavior and confirm Parent remains unchanged.
+
+No `psql`, Supabase CLI, Docker runtime, or approved disposable database was available locally, so SQL was not executed. Static SQL checks and the disposable rollback proof script cover structure; a real PostgreSQL execution remains a rollout gate.

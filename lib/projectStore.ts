@@ -4,7 +4,7 @@ import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
 import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
-import { openingHoursToMinutes } from "@/lib/classPackages";
+import { openingAmountToBaseUnits, PACKAGE_UNIT_BASIS } from "@/lib/classPackages";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, PackageBalance, PackageCategory, PackageLedgerEvent, ParentAccount, SetPackageOpeningResult } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
@@ -352,6 +352,9 @@ function bookingFromRow(row: ProjectRow<Booking>): Booking {
     recurrenceOccurrenceId: String(row.values.recurrenceOccurrenceId ?? "") || undefined,
     recurrenceOriginalStartsAt: String(row.values.recurrenceOriginalStartsAt ?? "") || undefined,
     groupClassId: String(row.values.groupClassId ?? "") || undefined,
+    coachId: String(row.values.coachId ?? "") || undefined,
+    assignedCoachId: String(row.values.assignedCoachId ?? "") || undefined,
+    requestedCoachId: String(row.values.requestedCoachId ?? "") || undefined,
     studentName: String(row.values.studentName ?? "Student"),
     familyName: String(row.values.familyName ?? row.values.studentName ?? "Student"),
     studentEmail: String(row.values.studentEmail ?? ""),
@@ -1412,20 +1415,22 @@ export async function listPackageBalances(): Promise<PackageBalance[]> {
     package_id: string | null;
     student_account_id: string;
     category: PackageCategory;
-    opening_minutes: number | string;
-    adjustment_minutes: number | string;
-    usage_minutes: number | string;
-    remaining_minutes: number | string;
+    unit_basis: PackageBalance["unitBasis"];
+    opening_amount_base_units: number | string;
+    adjustment_amount_base_units: number | string;
+    usage_amount_base_units: number | string;
+    remaining_amount_base_units: number | string;
     version: number | string;
     last_event_at: string | null;
   }>).map((row) => ({
     packageId: row.package_id,
     studentAccountId: row.student_account_id,
     category: row.category,
-    openingMinutes: Number(row.opening_minutes),
-    adjustmentMinutes: Number(row.adjustment_minutes),
-    usageMinutes: Number(row.usage_minutes),
-    remainingMinutes: Number(row.remaining_minutes),
+    unitBasis: row.unit_basis,
+    openingAmountBaseUnits: Number(row.opening_amount_base_units),
+    adjustmentAmountBaseUnits: Number(row.adjustment_amount_base_units),
+    usageAmountBaseUnits: Number(row.usage_amount_base_units),
+    remainingAmountBaseUnits: Number(row.remaining_amount_base_units),
     version: Number(row.version),
     lastEventAt: row.last_event_at
   }));
@@ -1442,10 +1447,11 @@ export async function listPackageHistory(studentAccountId: string, category: Pac
     package_id: string;
     student_account_id: string;
     category: PackageCategory;
+    unit_basis: PackageLedgerEvent["unitBasis"];
     event_type: PackageLedgerEvent["eventType"];
-    amount_minutes: number | string;
-    old_opening_minutes: number | string | null;
-    new_opening_minutes: number | string | null;
+    amount_base_units: number | string;
+    old_opening_amount_base_units: number | string | null;
+    new_opening_amount_base_units: number | string | null;
     version: number | string;
     note: string;
     reference: string;
@@ -1456,10 +1462,11 @@ export async function listPackageHistory(studentAccountId: string, category: Pac
     packageId: row.package_id,
     studentAccountId: row.student_account_id,
     category: row.category,
+    unitBasis: row.unit_basis,
     eventType: row.event_type,
-    amountMinutes: Number(row.amount_minutes),
-    oldOpeningMinutes: row.old_opening_minutes === null ? null : Number(row.old_opening_minutes),
-    newOpeningMinutes: row.new_opening_minutes === null ? null : Number(row.new_opening_minutes),
+    amountBaseUnits: Number(row.amount_base_units),
+    oldOpeningAmountBaseUnits: row.old_opening_amount_base_units === null ? null : Number(row.old_opening_amount_base_units),
+    newOpeningAmountBaseUnits: row.new_opening_amount_base_units === null ? null : Number(row.new_opening_amount_base_units),
     version: Number(row.version),
     note: row.note,
     reference: row.reference,
@@ -1471,19 +1478,21 @@ export async function listPackageHistory(studentAccountId: string, category: Pac
 export async function setPackageOpening(input: {
   studentAccountId: string;
   category: PackageCategory;
-  openingHours: number;
-  expectedOpeningMinutes: number;
+  openingAmount: number;
+  expectedOpeningAmountBaseUnits: number;
   expectedVersion: number;
   note?: string;
   reference?: string;
   idempotencyKey: string;
 }): Promise<SetPackageOpeningResult> {
-  const openingMinutes = openingHoursToMinutes(input.openingHours);
+  const unitBasis = PACKAGE_UNIT_BASIS[input.category];
+  const openingAmountBaseUnits = openingAmountToBaseUnits(input.category, input.openingAmount);
   const response = await supabase.rpc("set_class_package_opening", {
     p_student_account_id: input.studentAccountId,
     p_category: input.category,
-    p_new_opening_minutes: openingMinutes,
-    p_expected_opening_minutes: input.expectedOpeningMinutes,
+    p_unit_basis: unitBasis,
+    p_new_opening_amount_base_units: openingAmountBaseUnits,
+    p_expected_opening_amount_base_units: input.expectedOpeningAmountBaseUnits,
     p_expected_version: input.expectedVersion,
     p_note: input.note?.trim() ?? "",
     p_reference: input.reference?.trim() ?? "",
@@ -1495,10 +1504,11 @@ export async function setPackageOpening(input: {
     package_id: string;
     student_account_id: string;
     category: PackageCategory;
-    old_opening_minutes: number | string;
-    new_opening_minutes: number | string;
-    old_remaining_minutes: number | string;
-    new_remaining_minutes: number | string;
+    unit_basis: SetPackageOpeningResult["unitBasis"];
+    old_opening_amount_base_units: number | string;
+    new_opening_amount_base_units: number | string;
+    old_remaining_amount_base_units: number | string;
+    new_remaining_amount_base_units: number | string;
     old_version: number | string;
     new_version: number | string;
     created_at: string;
@@ -1510,10 +1520,11 @@ export async function setPackageOpening(input: {
     packageId: row.package_id,
     studentAccountId: row.student_account_id,
     category: row.category,
-    oldOpeningMinutes: Number(row.old_opening_minutes),
-    newOpeningMinutes: Number(row.new_opening_minutes),
-    oldRemainingMinutes: Number(row.old_remaining_minutes),
-    newRemainingMinutes: Number(row.new_remaining_minutes),
+    unitBasis: row.unit_basis,
+    oldOpeningAmountBaseUnits: Number(row.old_opening_amount_base_units),
+    newOpeningAmountBaseUnits: Number(row.new_opening_amount_base_units),
+    oldRemainingAmountBaseUnits: Number(row.old_remaining_amount_base_units),
+    newRemainingAmountBaseUnits: Number(row.new_remaining_amount_base_units),
     oldVersion: Number(row.old_version),
     newVersion: Number(row.new_version),
     createdAt: row.created_at,
