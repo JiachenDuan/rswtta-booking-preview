@@ -25,6 +25,7 @@ import {
   authoritativeCurrentTime,
   cancelBookingAsClub,
   cancelBookingAsParent,
+  cancelRecurringBookingsAtomically,
   completeParentProfileSetup,
   createActivityLog,
   createBillNotification,
@@ -53,6 +54,7 @@ import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
+import { selectRecurringCancellationTargets } from "@/lib/recurringCancellation";
 import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
@@ -989,6 +991,47 @@ export function ClubApp() {
     }
   }
 
+  async function cancelParentRecurringClasses(booking: Booking) {
+    const cutoff = new Date(currentTime.getTime() + 12 * 60 * 60 * 1000);
+    let targets: Booking[];
+    try {
+      targets = selectRecurringCancellationTargets(bookings, booking, "future", cutoff, "parent");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not select recurring classes.", "无法选择重复课程。"));
+      return false;
+    }
+    if (targets.length === 0) {
+      setNotice(copy(language, "No cancellable future classes remain in this series.", "本系列没有可取消的未来课程。"));
+      return false;
+    }
+
+    setSaving(true);
+    setNotice(copy(language, `Cancelling ${targets.length} future classes...`, `正在取消 ${targets.length} 节未来课程...`));
+    try {
+      await cancelRecurringBookingsAtomically({
+        bookings,
+        selected: booking,
+        actor: "parent",
+        studentAccountId: parentSession?.id ?? "",
+        scope: "future",
+        now: currentTime,
+        activityMessage: copy(
+          language,
+          `Parent/student cancelled ${targets.length} future classes for ${booking.studentName}, beginning after ${booking.dateLabel} ${booking.timeLabel}.`,
+          `家长/学生已取消 ${booking.studentName} 从 ${booking.dateLabel} ${booking.timeLabel} 起的 ${targets.length} 节未来课程。`
+        )
+      });
+      await loadAll();
+      setNotice(copy(language, `Cancelled ${targets.length} future classes.`, `已取消 ${targets.length} 节未来课程。`));
+      return true;
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : copy(language, "Could not cancel recurring classes.", "无法取消重复课程。"));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function completeParentClass(booking: Booking) {
     setNotice(copy(language, "Marking class complete...", "正在标记课程完成..."));
     try {
@@ -1259,42 +1302,34 @@ export function ClubApp() {
   }
 
   async function cancelClubClass(booking: Booking, recurring: boolean) {
-    const selectedIsFutureActiveClass =
-      !isBlockedTime(booking) && booking.status !== "cancelled" && booking.status !== "coach_confirmed" && new Date(booking.startsAt).getTime() > Date.now();
-    const targets = recurring && selectedIsFutureActiveClass ? futureSameClassBookings(bookings, booking) : [booking];
+    let targets = [booking];
+    if (recurring) {
+      try {
+        targets = selectRecurringCancellationTargets(bookings, booking, "future", currentTime, "club");
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : copy(language, "Could not select recurring classes.", "无法选择重复课程。"));
+        return;
+      }
+      if (targets.length === 0) {
+        setNotice(copy(language, "No active future classes remain in this series.", "本系列没有仍有效的未来课程。"));
+        return;
+      }
+    }
     setSaving(true);
     setNotice(copy(language, recurring ? `Cancelling ${targets.length} future classes...` : "Cancelling class...", recurring ? `正在取消 ${targets.length} 节未来课程...` : "正在取消课程..."));
     try {
-      const cancelled = await Promise.all(
-        targets.map(async (item) => {
-          const assignedCoach = item.assignedCoach || item.requestedCoach;
-          if (item.id.startsWith("virtual-")) {
-            if (!item.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
-            const created = await createBooking({
-              studentAccountId: item.studentAccountId,
-              seriesId: item.seriesId,
-              recurrenceOccurrenceId: item.recurrenceOccurrenceId,
-              recurrenceOriginalStartsAt: item.recurrenceOriginalStartsAt,
-              groupClassId: item.groupClassId,
-              studentName: item.studentName,
-              familyName: item.familyName || item.studentName,
-              studentEmail: item.studentEmail,
-              phone: item.phone,
-              requestedCoach: item.requestedCoach || assignedCoach,
-              assignedCoach,
-              program: item.program,
-              dateLabel: item.dateLabel,
-              timeLabel: item.timeLabel,
-              startsAt: item.startsAt,
-              priceCents: item.priceCents,
-              parentNote: `${item.parentNote} Cancelled by club.`
-            });
-            return cancelBookingAsClub(created.id);
-          }
-          return cancelBookingAsClub(item.id);
-        })
-      );
-      await recordClassActivity("cancelled", cancelled, cancelled[0] ?? booking);
+      const cancelled = recurring
+        ? await cancelRecurringBookingsAtomically({
+            bookings,
+            selected: booking,
+            actor: "club",
+            studentAccountId: booking.studentAccountId ?? "",
+            scope: "future",
+            now: currentTime,
+            activityMessage: classActivityMessage("cancelled", targets, booking, language)
+          })
+        : [await cancelBookingAsClub(booking.id)];
+      if (!recurring) await recordClassActivity("cancelled", cancelled, booking);
       await loadAll();
       setNotice(copy(language, recurring ? `Cancelled ${targets.length} future classes.` : "Class cancelled.", recurring ? `已取消 ${targets.length} 节未来课程。` : "课程已取消。"));
     } catch (error) {
@@ -1584,6 +1619,7 @@ export function ClubApp() {
               replaceSelectedSlot(initialCalendarSlot);
             }}
             onCancel={cancelParentClass}
+            onCancelRecurring={cancelParentRecurringClasses}
             onComplete={completeParentClass}
             onRestrictedCoachSelect={() => {
               setShowRequestConfirm(false);
@@ -2098,6 +2134,7 @@ function ParentApp({
   onNextWeek,
   onToday,
   onCancel,
+  onCancelRecurring,
   onComplete,
   onRestrictedCoachSelect,
   onGroupClassRequest
@@ -2139,6 +2176,7 @@ function ParentApp({
   onNextWeek: () => void;
   onToday: () => void;
   onCancel: (booking: Booking) => Promise<boolean>;
+  onCancelRecurring: (booking: Booking) => Promise<boolean>;
   onComplete: (booking: Booking) => void;
   onRestrictedCoachSelect: () => void;
   onGroupClassRequest: (booking: Booking) => Promise<boolean>;
@@ -2343,8 +2381,10 @@ function ParentApp({
           {selectedParentBooking ? (
             <ParentClassActionModal
               booking={selectedParentBooking}
+              bookings={bookings}
               language={language}
               now={currentTime.getTime()}
+              saving={saving}
               onClose={() => setSelectedParentBooking(null)}
               onComplete={() => {
                 onComplete(selectedParentBooking);
@@ -2352,6 +2392,10 @@ function ParentApp({
               }}
               onCancel={async () => {
                 const cancelled = await onCancel(selectedParentBooking);
+                if (cancelled) setSelectedParentBooking(null);
+              }}
+              onCancelRecurring={async () => {
+                const cancelled = await onCancelRecurring(selectedParentBooking);
                 if (cancelled) setSelectedParentBooking(null);
               }}
             />
@@ -3149,6 +3193,7 @@ function ClubAppView({
           bookings={bookings}
           students={studentDirectory}
           language={language}
+          now={currentTime.getTime()}
           onClose={() => setSelectedClubBooking(null)}
           onCancel={(recurring) => {
             onCancelClass(selectedClubBooking, recurring);
@@ -3462,6 +3507,7 @@ function ClubBookingActionModal({
   bookings,
   students,
   language,
+  now,
   onClose,
   onCancel,
   onComplete,
@@ -3478,6 +3524,7 @@ function ClubBookingActionModal({
   bookings: Booking[];
   students: ParentAccount[];
   language: Language;
+  now: number;
   onClose: () => void;
   onCancel: (recurring: boolean) => void;
   onComplete?: () => void;
@@ -3505,7 +3552,14 @@ function ClubBookingActionModal({
   const editSlot = typedEditSlot ?? makeSlotFromInput(dateValue, initialStartTime || timeLabel(bookingStart));
   const durationMinutes = typedDurationMinutes ?? initialDurationMinutes;
   const timeInputValid = Boolean(typedEditSlot && typedDurationMinutes);
-  const isFutureClass = !isBlockedTime(booking) && booking.status !== "cancelled" && booking.status !== "coach_confirmed" && bookingStart.getTime() > Date.now();
+  const isFutureClass = !isBlockedTime(booking) && booking.status !== "cancelled" && booking.status !== "coach_confirmed" && bookingStart.getTime() > now;
+  let recurringCancellationTargets: Booking[] = [];
+  try {
+    recurringCancellationTargets = selectRecurringCancellationTargets(bookings, booking, "future", new Date(now), "club");
+  } catch {
+    // Ordinary one-offs and group blocks keep their existing scoped workflows.
+  }
+  const canCancelRecurring = recurringCancellationTargets.length > 0;
   const unavailable = timeInputValid && isRangeUnavailableExceptBooking(bookings, booking.assignedCoach, editSlot, durationMinutes, booking.id);
   const updateChanged =
     timeInputValid &&
@@ -3935,10 +3989,14 @@ function ClubBookingActionModal({
             {copy(language, "Complete", "完成")}
           </button>
         ) : null}
-        {isFutureClass ? (
+        {canCancelRecurring ? (
           <label className="checkbox-line modal-checkbox">
             <input type="checkbox" checked={cancelRecurring} onChange={(event) => setCancelRecurring(event.target.checked)} />
-            <span>{copy(language, "Cancel future same classes too", "同时取消未来相同课程")}</span>
+            <span>{copy(
+              language,
+              `Cancel ${recurringCancellationTargets.length} active future classes in this series`,
+              `取消本系列中 ${recurringCancellationTargets.length} 节仍有效的未来课程`
+            )}</span>
           </label>
         ) : null}
         <div className="modal-actions class-secondary-actions">
@@ -3965,8 +4023,8 @@ function ClubBookingActionModal({
                 ? `${copy(language, "New time", "新时间")}: ${editSlot.dateLabel} ${rangeLabel(editSlot, durationMinutes)}${updateRecurring ? ` (${copy(language, "future same classes too", "也更新未来相同课程")})` : ""}`
                 : copy(
                     language,
-                    isBlockedTime(booking) ? "Remove this blocked time." : cancelRecurring && isFutureClass ? "Cancel this class and future same classes." : "Cancel this class.",
-                    isBlockedTime(booking) ? "移除这个不可用时间。" : cancelRecurring && isFutureClass ? "取消这节课和未来相同课程。" : "取消这节课。"
+                    isBlockedTime(booking) ? "Remove this blocked time." : cancelRecurring && canCancelRecurring ? `Soft-cancel ${recurringCancellationTargets.length} active future classes. Past, completed, and already cancelled classes stay unchanged.` : "Cancel this class.",
+                    isBlockedTime(booking) ? "移除这个不可用时间。" : cancelRecurring && canCancelRecurring ? `软取消 ${recurringCancellationTargets.length} 节仍有效的未来课程。过去、已完成和已取消的课程保持不变。` : "取消这节课。"
                   )}
             </p>
             <div className="modal-actions">
@@ -3981,7 +4039,7 @@ function ClubBookingActionModal({
                     onUpdateTime(editSlot, durationMinutes, updateRecurring);
                     return;
                   }
-                  onCancel(cancelRecurring && isFutureClass);
+                  onCancel(cancelRecurring && canCancelRecurring);
                 }}
               >
                 {copy(language, "Confirm", "确认")}
@@ -4195,22 +4253,42 @@ function GroupClassRequestModal({
 
 function ParentClassActionModal({
   booking,
+  bookings,
   language,
   now,
+  saving,
   onClose,
   onComplete,
-  onCancel
+  onCancel,
+  onCancelRecurring
 }: {
   booking: Booking;
+  bookings: Booking[];
   language: Language;
   now: number;
+  saving: boolean;
   onClose: () => void;
   onComplete: () => void;
   onCancel: () => void;
+  onCancelRecurring: () => void;
 }) {
+  const [confirmCancellation, setConfirmCancellation] = useState<"single" | "recurring" | null>(null);
   const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking);
   const cancellationBlockReason = parentCancellationBlockReason(booking, now);
   const canCancel = canParentRequestChange(booking) && !cancellationBlockReason;
+  let recurringCancellationTargets: Booking[] = [];
+  try {
+    recurringCancellationTargets = selectRecurringCancellationTargets(
+      bookings,
+      booking,
+      "future",
+      new Date(now + 12 * 60 * 60 * 1000),
+      "parent"
+    );
+  } catch {
+    // Ordinary one-offs and incomplete legacy rows keep the single-class workflow.
+  }
+  const canCancelRecurring = recurringCancellationTargets.length > 0;
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
@@ -4231,11 +4309,21 @@ function ParentClassActionModal({
           <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
         </dl>
         {cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
-        <div className={`modal-actions ${!canCancel ? "single-action" : ""}`}>
+        <div className={`modal-actions ${!canCancel && !canCancelRecurring ? "single-action" : ""}`}>
           {canCancel ? (
-            <button className="decline" onClick={onCancel}>
+            <button className="decline" onClick={() => setConfirmCancellation("single")} disabled={saving}>
               <X size={18} />
               {copy(language, "Cancel class", "取消课程")}
+            </button>
+          ) : null}
+          {canCancelRecurring ? (
+            <button className="decline" onClick={() => setConfirmCancellation("recurring")} disabled={saving}>
+              <X size={18} />
+              {copy(
+                language,
+                `Cancel ${recurringCancellationTargets.length} future classes`,
+                `取消 ${recurringCancellationTargets.length} 节未来课程`
+              )}
             </button>
           ) : null}
           <button className="primary-button" disabled={!canComplete} onClick={onComplete}>
@@ -4243,6 +4331,30 @@ function ParentClassActionModal({
             {copy(language, "Mark complete", "标记完成")}
           </button>
         </div>
+        {confirmCancellation ? (
+          <div className="action-confirm-panel recurring-cancellation-confirm">
+            <strong>{copy(
+              language,
+              confirmCancellation === "recurring" ? "Final recurring cancellation confirmation" : "Final cancellation confirmation",
+              confirmCancellation === "recurring" ? "最终确认取消重复课程" : "最终确认取消课程"
+            )}</strong>
+            <p>{copy(
+              language,
+              confirmCancellation === "recurring"
+                ? `Beginning with ${booking.dateLabel} ${booking.timeLabel}, this will soft-cancel exactly ${recurringCancellationTargets.length} active classes at or after this occurrence. Earlier, past, completed, already cancelled, and 12-hour cutoff-protected classes stay unchanged.`
+                : "This will soft-cancel this class and preserve its history.",
+              confirmCancellation === "recurring"
+                ? `从 ${booking.dateLabel} ${booking.timeLabel} 开始，这将准确软取消本次及之后 ${recurringCancellationTargets.length} 节仍有效的课程。更早、过去、已完成、已取消和受 12 小时截止规则保护的课程保持不变。`
+                : "这将软取消本节课程并保留其历史。"
+            )}</p>
+            <div className="modal-actions">
+              <button className="filter-button" type="button" onClick={() => setConfirmCancellation(null)} disabled={saving}>{copy(language, "Back", "返回")}</button>
+              <button className="decline" type="button" onClick={confirmCancellation === "recurring" ? onCancelRecurring : onCancel} disabled={saving}>
+                {copy(language, confirmCancellation === "recurring" ? "Yes, cancel future series" : "Yes, cancel class", confirmCancellation === "recurring" ? "确认取消未来系列" : "确认取消课程")}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );

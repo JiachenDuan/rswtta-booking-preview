@@ -3,6 +3,7 @@ import { canonicalizeStudentReference, prepareStudentReferenceForCreation } from
 import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
 import { expectedGroupOccurrenceRows, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
+import { expectedRecurringCancellationRows, selectRecurringCancellationTargets, type RecurringCancellationActor, type RecurringCancellationScope } from "@/lib/recurringCancellation";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
 import { hoursToMinutes } from "@/lib/classPackages";
 import type { ActivityLog, AddPackageHoursResult, BillNotification, Booking, BookingStatus, PackageHoursBalance, ParentAccount } from "@/lib/types";
@@ -1361,6 +1362,37 @@ export async function cancelBookingAsClub(id: string) {
   const response = await supabase.rpc("cancel_booking_as_club", { p_booking_id: id });
   if (response.error) throw setupError(response.error.message);
   return bookingFromRow(response.data as ProjectRow<Booking>);
+}
+
+export async function cancelRecurringBookingsAtomically(input: {
+  bookings: Booking[];
+  selected: Booking;
+  actor: RecurringCancellationActor;
+  studentAccountId: string;
+  scope: RecurringCancellationScope;
+  now: Date;
+  activityMessage: string;
+}) {
+  const cutoff = new Date(input.now.getTime() + (input.actor === "parent" ? 12 * 60 * 60 * 1000 : 0));
+  const targets = selectRecurringCancellationTargets(input.bookings, input.selected, input.scope, cutoff, input.actor);
+  if (targets.length === 0) throw new Error("No future active classes were selected for cancellation");
+
+  const response = await supabase.rpc("cancel_recurring_booking_occurrences", {
+    p_selected_booking_id: input.selected.id.startsWith("virtual-") ? null : input.selected.id,
+    p_selected_values: input.selected.id.startsWith("virtual-") ? virtualCancellationValues(input.selected) : null,
+    p_actor: input.actor,
+    p_student_account_id: input.studentAccountId,
+    p_scope: input.scope,
+    p_expected_series_id: input.selected.seriesId,
+    p_expected_occurrence_id: input.selected.recurrenceOccurrenceId,
+    p_expected_original_starts_at: input.selected.recurrenceOriginalStartsAt,
+    p_expected_occurrence_count: targets.length,
+    p_expected_row_count: targets.length,
+    p_expected_rows: expectedRecurringCancellationRows(targets),
+    p_activity_message: input.activityMessage
+  });
+  if (response.error) throw setupError(response.error.message);
+  return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);
 }
 
 export async function listBillNotifications() {
