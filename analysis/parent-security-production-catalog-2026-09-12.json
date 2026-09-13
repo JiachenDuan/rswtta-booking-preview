@@ -1,0 +1,482 @@
+{
+  "auth": {
+    "auth_user_count": 2,
+    "candidate_binding_tables": [
+      "auth.sessions",
+      "auth.webauthn_credentials",
+      "private_migration_backups.class_package_parent_accounts_20260912_0518"
+    ],
+    "account_rows_matching_auth_email": 2,
+    "auth_users_matching_account_email": 2,
+    "shared_email_accounts_matching_one_auth_user": 0
+  },
+  "accounts": {
+    "confirmed": 65,
+    "row_count": 65,
+    "unconfirmed": 0,
+    "missing_email": 38,
+    "missing_phone": 39,
+    "unique_id_count": 65,
+    "missing_username": 0,
+    "credential_families": [
+      {
+        "count": 65,
+        "hash_length": 44,
+        "salt_length": 24
+      }
+    ],
+    "shared_email_groups": 0,
+    "shared_phone_groups": 2,
+    "max_shared_email_size": 1,
+    "missing_password_hash": 0,
+    "missing_password_salt": 0,
+    "ordered_identity_hash": "b9afa3221a6642c979e81f379fd64a0d",
+    "shared_email_accounts": 0,
+    "shared_phone_accounts": 4,
+    "profile_setup_required": 38,
+    "missing_both_credentials": 0,
+    "confirmation_code_present": 0,
+    "max_username_collision_size": 2,
+    "duplicate_password_hash_groups": 1,
+    "username_exact_duplicate_groups": 2,
+    "duplicate_password_hash_accounts": 31,
+    "username_normalized_collision_groups": 2,
+    "username_normalized_collision_accounts": 4
+  },
+  "bookings": {
+    "row_count": 1978,
+    "status_counts": {
+      "cancelled": 211,
+      "club_confirmed": 1737,
+      "coach_confirmed": 30
+    },
+    "recurring_rows": 1783,
+    "unique_id_count": 1978,
+    "missing_starts_at": 0,
+    "eddie_account_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "eddie_booking_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "missing_account_id": 262,
+    "ordered_identity_hash": "afb33cf39feb8723785dee69e925b7f1",
+    "recurring_missing_series_id": 0,
+    "recurring_missing_occurrence_id": 0,
+    "account_ids_not_bound_to_account": 0,
+    "recurring_missing_original_start": 0
+  },
+  "policies": [
+    {
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "project_columns",
+      "using": null,
+      "policy": "prototype public insert project_columns",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "project_columns",
+      "using": "true",
+      "policy": "prototype public read project_columns",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "project_rows",
+      "using": null,
+      "policy": "prototype public insert project_rows",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "project_rows",
+      "using": "true",
+      "policy": "prototype public read project_rows",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "project_rows",
+      "using": "true",
+      "policy": "prototype public update project_rows",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "project_tables",
+      "using": null,
+      "policy": "prototype public insert project_tables",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "project_tables",
+      "using": "true",
+      "policy": "prototype public read project_tables",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "projects",
+      "using": null,
+      "policy": "prototype public insert projects",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "projects",
+      "using": "true",
+      "policy": "prototype public read projects",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    }
+  ],
+  "triggers": [
+    {
+      "table": "project_rows",
+      "enabled": "O",
+      "trigger": "enforce_recurring_occurrence_identity",
+      "function": "enforce_recurring_occurrence_identity()",
+      "definition_hash": "74f9bd2c94a345fa1d3566381ac0fe29"
+    },
+    {
+      "table": "project_rows",
+      "enabled": "O",
+      "trigger": "enforce_student_reference_identity",
+      "function": "enforce_student_reference_identity()",
+      "definition_hash": "cd77fd3157aaae5cda8c7fb2efdadf89"
+    },
+    {
+      "table": "project_rows",
+      "enabled": "O",
+      "trigger": "guard_booking_cancellation_transition",
+      "function": "guard_booking_cancellation_transition()",
+      "definition_hash": "d40ccde0b48d5820981c33933112d243"
+    },
+    {
+      "table": "project_rows",
+      "enabled": "O",
+      "trigger": "prevent_duplicate_student_account_seed",
+      "function": "prevent_duplicate_student_account_seed()",
+      "definition_hash": "5b66efe088537a4b77905d93f121418c"
+    },
+    {
+      "table": "project_rows",
+      "enabled": "O",
+      "trigger": "touch_project_row_updated_at",
+      "function": "touch_project_row_updated_at()",
+      "definition_hash": "fcca1c9d74d70bb9bb94e0a3dc037d43"
+    }
+  ],
+  "functions": [
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "add_class_package_hours(uuid,integer,text,text,uuid)",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "c6c58fb69512e93ab2e74e296a726f35",
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "add_student_to_group_occurrences(uuid,text,uuid,text,text,text,integer,jsonb,uuid)",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "b28acdc236e69be7122547beaf5af2a7",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "authoritative_current_time()",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "99a5040b16693b1564eb6a6095de54de",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "cancel_booking_as_club(uuid)",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "fc995a10ac3e4cd4f93c7a924cca570b",
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "cancel_booking_as_parent(uuid,text,jsonb)",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "07712919a63aae2d978f20c1ddb9d499",
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "enforce_recurring_occurrence_identity()",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "6965e9cb21d841dbb5ed4023172782ec",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "enforce_student_reference_identity()",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "5f6e0dafca6e21d5754d10d6274017cb",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "guard_booking_cancellation_transition()",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "d43ded961075f9a95f35f76306120f31",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "list_class_package_balances()",
+      "volatility": "s",
+      "anon_execute": true,
+      "definition_hash": "d3fe5c5fd0002a512bc0c5bb94fb9abd",
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "manage_group_occurrences(uuid,text,text,text,text,text,text,integer,integer,jsonb,text,text,text)",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "7aa3b58c9289546c7dbf1917505924a7",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "prevent_duplicate_student_account_seed()",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "0d9078a42f7f6037c13c3b78f7f3573b",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "reject_class_package_ledger_mutation()",
+      "volatility": "v",
+      "anon_execute": false,
+      "definition_hash": "290dbbb075b72bbf91cc854e088b9489",
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "rename_student_account(uuid,jsonb)",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "d9bba051813a46be00096d7cc4003d42",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "request_booking_as_parent(uuid,text,jsonb)",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "29b526b062979d1420f1987c383dce17",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "reschedule_booking_occurrences(jsonb,text,text,text)",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "dcab8e09a6365eb1e08aa4479b21a125",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "rls_auto_enable()",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "6998ea6b4c2480f5d2e34b5dcf3f8d36",
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "rswtta_booking_ends_at(jsonb)",
+      "volatility": "i",
+      "anon_execute": true,
+      "definition_hash": "0aa87bbedb6911e57d6623de55484a2c",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "rswtta_canonical_coach_id(text)",
+      "volatility": "i",
+      "anon_execute": true,
+      "definition_hash": "1c2e1e2035dbb4a960c09f71e8418756",
+      "security_definer": false,
+      "authenticated_execute": true
+    },
+    {
+      "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "owner": "postgres",
+      "signature": "touch_project_row_updated_at()",
+      "volatility": "v",
+      "anon_execute": true,
+      "definition_hash": "6c0bbf0cc91702b3348c6002ea9298c3",
+      "security_definer": false,
+      "authenticated_execute": true
+    }
+  ],
+  "relations": [
+    {
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "owner": "postgres",
+      "relation": "public.project_columns",
+      "rls_forced": false,
+      "rls_enabled": true,
+      "anon_privileges": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      },
+      "authenticated_privileges": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      }
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "owner": "postgres",
+      "relation": "public.project_rows",
+      "rls_forced": false,
+      "rls_enabled": true,
+      "anon_privileges": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      },
+      "authenticated_privileges": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      }
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "owner": "postgres",
+      "relation": "public.project_tables",
+      "rls_forced": false,
+      "rls_enabled": true,
+      "anon_privileges": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      },
+      "authenticated_privileges": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      }
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "owner": "postgres",
+      "relation": "public.projects",
+      "rls_forced": false,
+      "rls_enabled": true,
+      "anon_privileges": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      },
+      "authenticated_privileges": {
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      }
+    }
+  ],
+  "audited_at": "2026-09-13T04:15:18.512481+00:00",
+  "project_ids": {
+    "project_id": "ab9d8da3-762f-466c-b7ce-fa05088f03cd",
+    "bills_table_id": "47f053f4-af24-4e6c-a3ea-984f6bd36943",
+    "parent_table_id": "8236c8f8-0fab-400c-bedc-143fd5930707",
+    "activity_table_id": "133ad2fa-44b2-4aab-ab5d-b79c563ab908",
+    "bookings_table_id": "a7a8a308-2305-4ab6-ad20-5ce174558035"
+  },
+  "transaction_read_only": "on"
+}

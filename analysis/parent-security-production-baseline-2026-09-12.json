@@ -1,0 +1,94 @@
+{
+  "capturedAt": "2026-09-13T04:20:02.333Z",
+  "source": "anonymous publishable-key read-only pagination",
+  "pageSize": 100,
+  "pages": {
+    "project_rows": 22,
+    "accounts": 1,
+    "bookings": 20
+  },
+  "project": {
+    "count": 1,
+    "idHash": "cf5f0a41e9bb8311a58a27521ce977d70ef7df6a0ed8014a76dc927ef1af9097",
+    "tableCount": 5,
+    "tableIdentityHash": "f649075c49e43880d653a81e821d5e7da982ccb075bc9c6eef8eafbb0b531131"
+  },
+  "accounts": {
+    "count": 65,
+    "idHash": "5ac42d21ab1b8fe42f774340f321027b7c7640433134e6e41feec216b13ec36b",
+    "orderedRowHash": "d8ab24b0b9ca618cc34bc16f97d612540ca4cb888a29626645b56977b5845f13",
+    "confirmed": {
+      "true": 65
+    },
+    "profileSetupRequired": {
+      "false": 27,
+      "true": 38
+    },
+    "missing": {
+      "studentName": 0,
+      "email": 38,
+      "passwordHash": 0,
+      "passwordSalt": 0
+    },
+    "usernames": {
+      "duplicateExactGroups": 1,
+      "duplicateExactRows": 2,
+      "normalizedCollisionGroups": 1,
+      "preregisteredCollisionGroups": 0
+    },
+    "households": {
+      "sharedEmailGroups": 0,
+      "accountsInSharedEmailGroups": 0,
+      "maxAccountsPerEmail": 1
+    },
+    "credentials": {
+      "hashPresent": 65,
+      "saltPresent": 65,
+      "hashLengthPartitions": {
+        "44": 65
+      },
+      "saltLengthPartitions": {
+        "24": 65
+      },
+      "duplicateHashGroups": 1,
+      "accountsInDuplicateHashGroups": 31,
+      "duplicateSaltGroups": 1
+    }
+  },
+  "bookings": {
+    "count": 1978,
+    "idHash": "165c6a83bcd7ecfda9046ecb39c84eeea8bf62108529ef8894f7e142ff3fa679",
+    "orderedRowHash": "5ff0defbec0a2363dd37347887814f7416bc3156877f5ec8d9feb1093c939c99",
+    "status": {
+      "cancelled": 211,
+      "club_confirmed": 1737,
+      "coach_confirmed": 30
+    },
+    "program": {
+      "Group class": 141,
+      "Group enrollment": 18,
+      "Group lesson": 736,
+      "Private lesson": 963,
+      "Unavailable": 120
+    },
+    "missingStudentAccountId": 262,
+    "seriesRows": 1783,
+    "occurrenceRows": 1783,
+    "eddieCount": 53,
+    "eddieOrderedHash": "8d8d0c9a60b4896b139a25cfacbf3f410c0a9b5ebfb1e2adc536a6020e9de772"
+  },
+  "bills": {
+    "count": 0,
+    "idHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "orderedRowHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "activity": {
+    "count": 65,
+    "idHash": "933f4d27265b6a293c36bc81fd7629dbdb384134db6c67628cbb9d8989967877",
+    "orderedRowHash": "06b921b3c773bdc903dcee26ae30aa1ab90a975a7e77b9d841234941c692675b"
+  },
+  "exposure": {
+    "anonymousCouldReadAllCoreRows": true,
+    "anonymousReadableCredentialRows": 65
+  }
+}
