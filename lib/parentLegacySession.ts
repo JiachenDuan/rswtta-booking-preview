@@ -1,3 +1,10 @@
+import {
+  parentLegacySessionVersion,
+  parseParentLegacyStoredSession,
+  safeStorageRead,
+  safeStorageRemove,
+  safeStorageWrite
+} from "@/lib/parentSessionStorage";
 import { supabase } from "@/lib/supabase";
 import type { Booking, ParentAccount } from "@/lib/types";
 
@@ -16,19 +23,30 @@ export type ParentLegacySession = ParentLegacyDashboard & {
   expiresAt: string;
 };
 
-type StoredSession = Pick<ParentLegacySession, "sessionToken" | "expiresAt">;
+type StoredSession = Pick<ParentLegacySession, "sessionToken" | "expiresAt"> & { version?: number };
 type RpcResponse<T> = { data: T | null; error: { message: string } | null };
 
+let memoryClientKey = "";
+
 function storage() {
-  return typeof window === "undefined" ? null : window.sessionStorage;
+  if (typeof window === "undefined") return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
 }
 
 export function parentLegacyClientKey() {
-  const current = storage()?.getItem(parentLegacyClientKeyStorageKey);
-  if (current) return current;
-  const created = crypto.randomUUID();
-  storage()?.setItem(parentLegacyClientKeyStorageKey, created);
-  return created;
+  if (memoryClientKey) return memoryClientKey;
+  const current = safeStorageRead(storage(), parentLegacyClientKeyStorageKey).value;
+  if (current) {
+    memoryClientKey = current;
+    return current;
+  }
+  memoryClientKey = crypto.randomUUID();
+  safeStorageWrite(storage(), parentLegacyClientKeyStorageKey, memoryClientKey);
+  return memoryClientKey;
 }
 
 function requireData<T>(response: RpcResponse<T>, fallback: string): T {
@@ -37,14 +55,17 @@ function requireData<T>(response: RpcResponse<T>, fallback: string): T {
 }
 
 function storeSession(session: StoredSession) {
-  storage()?.setItem(parentLegacySessionStorageKey, JSON.stringify(session));
+  safeStorageWrite(storage(), parentLegacySessionStorageKey, JSON.stringify({ ...session, version: parentLegacySessionVersion }));
 }
 
 function isStoredSession(value: unknown): value is StoredSession {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<StoredSession>;
   const expiresAt = typeof candidate.expiresAt === "string" ? Date.parse(candidate.expiresAt) : Number.NaN;
-  return typeof candidate.sessionToken === "string" && candidate.sessionToken.length > 0 && Number.isFinite(expiresAt);
+  return typeof candidate.sessionToken === "string"
+    && candidate.sessionToken.length > 0
+    && Number.isFinite(expiresAt)
+    && expiresAt > Date.now();
 }
 
 function isDashboard(value: unknown): value is ParentLegacyDashboard {
@@ -71,21 +92,22 @@ function requireDashboard(response: RpcResponse<ParentLegacyDashboard>, fallback
   return dashboard;
 }
 
-export function readParentLegacySession(): StoredSession | null {
-  const raw = storage()?.getItem(parentLegacySessionStorageKey);
-  if (!raw) return null;
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (isStoredSession(value)) return value;
-  } catch {
-    // Invalid app session state is removed below; the client key is preserved.
-  }
+export function readParentLegacySessionState(): { session: StoredSession | null; hadStored: boolean; storageFailed: boolean } {
+  const result = safeStorageRead(storage(), parentLegacySessionStorageKey);
+  if (result.failed) return { session: null, hadStored: false, storageFailed: true };
+  if (!result.value) return { session: null, hadStored: false, storageFailed: false };
+  const session = parseParentLegacyStoredSession(result.value);
+  if (session) return { session, hadStored: true, storageFailed: false };
   clearParentLegacySession();
-  return null;
+  return { session: null, hadStored: true, storageFailed: false };
+}
+
+export function readParentLegacySession(): StoredSession | null {
+  return readParentLegacySessionState().session;
 }
 
 export function clearParentLegacySession() {
-  storage()?.removeItem(parentLegacySessionStorageKey);
+  safeStorageRemove(storage(), parentLegacySessionStorageKey);
 }
 
 export async function loginParentLegacySession(identifier: string, password: string): Promise<ParentLegacySession> {

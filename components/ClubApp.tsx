@@ -55,8 +55,7 @@ import {
   clearParentLegacySession,
   loginParentLegacySession,
   logoutParentLegacySession,
-  parentLegacySessionStorageKey,
-  readParentLegacySession,
+  readParentLegacySessionState,
   resumeParentLegacySession,
   type ParentLegacyDashboard
 } from "@/lib/parentLegacySession";
@@ -70,6 +69,13 @@ import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
 import { completeLegacySetup, loginLegacySetupAccount, normalizeLoginAlias } from "@/lib/clubPreregistration";
 import { maskedPreregisteredContact, normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
+import {
+  parseParentSetupAccount,
+  safeStorageRead,
+  safeStorageRemove,
+  safeStorageWrite,
+  serializeParentSetupAccount
+} from "@/lib/parentSessionStorage";
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
@@ -130,27 +136,25 @@ function copy(language: Language, english: string, chinese: string) {
   return language === "zh" ? chinese : english;
 }
 
-function readStoredParentSetupAccount(): ParentAccount | null {
-  const raw = window.localStorage.getItem(parentSessionKey);
-  if (!raw) return null;
+function browserStorage(kind: "localStorage" | "sessionStorage"): Storage | null {
   try {
-    const value = JSON.parse(raw) as Partial<ParentAccount>;
-    if (
-      value &&
-      typeof value.id === "string" &&
-      typeof value.studentName === "string" &&
-      typeof value.parentName === "string" &&
-      typeof value.email === "string" &&
-      typeof value.phone === "string" &&
-      value.profileSetupRequired === true
-    ) {
-      return value as ParentAccount;
-    }
+    return window[kind];
   } catch {
-    // Invalid app session state is removed below.
+    return null;
   }
-  window.localStorage.removeItem(parentSessionKey);
-  return null;
+}
+
+function readStoredParentSetupState(): { account: ParentAccount | null; hadStored: boolean; storageFailed: boolean } {
+  const result = safeStorageRead(browserStorage("localStorage"), parentSessionKey);
+  if (result.failed) return { account: null, hadStored: false, storageFailed: true };
+  if (!result.value) return { account: null, hadStored: false, storageFailed: false };
+  const account = parseParentSetupAccount(result.value);
+  if (!account) safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
+  return { account, hadStored: true, storageFailed: false };
+}
+
+function readStoredParentSetupAccount(): ParentAccount | null {
+  return readStoredParentSetupState().account;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -780,9 +784,9 @@ export function ClubApp() {
     setParentName(account.parentName);
     setPhone(account.phone);
     if (persistSetupOnly && account.profileSetupRequired) {
-      window.localStorage.setItem(parentSessionKey, JSON.stringify(account));
+      safeStorageWrite(browserStorage("localStorage"), parentSessionKey, serializeParentSetupAccount(account));
     } else {
-      window.localStorage.removeItem(parentSessionKey);
+      safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
     }
   }
 
@@ -881,7 +885,7 @@ export function ClubApp() {
     }
     setClubAuthenticated(true);
     setLegacyClubProof(password);
-    window.localStorage.setItem(clubSessionKey, "true");
+    safeStorageWrite(browserStorage("localStorage"), clubSessionKey, "true");
     setMode("club");
   }
 
@@ -1503,8 +1507,9 @@ export function ClubApp() {
 
   useEffect(() => {
     let cancelled = false;
-    const hadVerifiedSession = window.sessionStorage.getItem(parentLegacySessionStorageKey) !== null;
-    const storedVerifiedSession = readParentLegacySession();
+    const verifiedState = readParentLegacySessionState();
+    const hadVerifiedSession = verifiedState.hadStored;
+    const storedVerifiedSession = verifiedState.session;
     if (storedVerifiedSession) {
       setParentSessionRecovery("restoring");
       withTimeout(resumeParentLegacySession(storedVerifiedSession.sessionToken), parentSessionRestoreTimeoutMs)
@@ -1521,19 +1526,21 @@ export function ClubApp() {
           setParentSession(null);
           setParentSessionRecovery("recovered");
         });
-    } else if (hadVerifiedSession) {
+    } else if (hadVerifiedSession || verifiedState.storageFailed) {
       setParentSessionRecovery("recovered");
     }
-    const hadStoredParent = window.localStorage.getItem(parentSessionKey) !== null;
-    const storedParent = readStoredParentSetupAccount();
-    const storedClub = window.localStorage.getItem(clubSessionKey) === "true";
-    if (hadStoredParent) {
+    const setupState = readStoredParentSetupState();
+    const storedParent = setupState.account;
+    const storedClub = safeStorageRead(browserStorage("localStorage"), clubSessionKey);
+    if (setupState.hadStored) {
       // A setup-only snapshot has no resumable proof after a reload. Remove only
       // that stale app state and require a fresh setup login.
-      if (storedParent) window.localStorage.removeItem(parentSessionKey);
+      if (storedParent) safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
       if (!storedVerifiedSession) setParentSessionRecovery("recovered");
+    } else if (setupState.storageFailed || storedClub.failed) {
+      setParentSessionRecovery("recovered");
     }
-    if (storedClub) {
+    if (storedClub.value === "true") {
       setClubAuthenticated(true);
       setMode("club");
     }
@@ -1613,7 +1620,7 @@ export function ClubApp() {
                   clearParentLegacySession();
                   setVerifiedParentSessionToken("");
                   setParentSession(null);
-                  window.localStorage.removeItem(parentSessionKey);
+                  safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
                   setMode("parent");
                 }}
               >
@@ -1627,7 +1634,7 @@ export function ClubApp() {
                 onClick={() => {
                   setClubAuthenticated(false);
                   setLegacyClubProof("");
-                  window.localStorage.removeItem(clubSessionKey);
+                  safeStorageRemove(browserStorage("localStorage"), clubSessionKey);
                   setMode("parent");
                 }}
               >
@@ -1664,7 +1671,7 @@ export function ClubApp() {
               clearParentLegacySession();
               setVerifiedParentSessionToken("");
               setParentSession(null);
-              window.localStorage.removeItem(parentSessionKey);
+              safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
               setMode("parent");
             }}
           />

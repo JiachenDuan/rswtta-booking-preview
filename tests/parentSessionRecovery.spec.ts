@@ -1,16 +1,78 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import {
+  parentLegacySessionVersion,
+  parentSetupSessionVersion,
+  parseParentLegacyStoredSession,
+  parseParentSetupAccount,
+  safeStorageRead,
+  safeStorageRemove,
+  safeStorageWrite,
+  serializeParentSetupAccount
+} from "../lib/parentSessionStorage";
+import type { ParentAccount } from "../lib/types";
 
 const app = readFileSync("components/ClubApp.tsx", "utf8");
 const sessionClient = readFileSync("lib/parentLegacySession.ts", "utf8");
 
-test("malformed and expired verified sessions clear only the app session token", () => {
-  expect(sessionClient).toContain("const value: unknown = JSON.parse(raw)");
-  expect(sessionClient).toContain("Number.isFinite(expiresAt)");
-  expect(sessionClient).not.toContain("expiresAt > Date.now()");
-  expect(sessionClient).toContain("clearParentLegacySession();\n  return null;");
+const account: ParentAccount = {
+  id: "account-1",
+  studentName: "Test Student",
+  parentName: "Test Parent",
+  email: "test@example.invalid",
+  phone: "0000000000",
+  confirmed: true,
+  profileSetupRequired: true,
+  createdAt: "2026-09-14T00:00:00.000Z"
+};
+
+test("malformed JSON and valid JSON with the wrong shape are rejected", () => {
+  expect(parseParentLegacyStoredSession("{", 1)).toBeNull();
+  expect(parseParentLegacyStoredSession(JSON.stringify({ sessionToken: 7, expiresAt: [] }), 1)).toBeNull();
+  expect(parseParentSetupAccount("{")).toBeNull();
+  expect(parseParentSetupAccount(JSON.stringify({ id: "partial" }))).toBeNull();
+});
+
+test("expired tokens and unknown versions are rejected", () => {
+  expect(parseParentLegacyStoredSession(JSON.stringify({ sessionToken: "opaque", expiresAt: "2026-09-14T00:00:00.000Z" }), Date.parse("2026-09-14T00:00:00.001Z"))).toBeNull();
+  expect(parseParentLegacyStoredSession(JSON.stringify({ version: 99, sessionToken: "opaque", expiresAt: "2099-01-01T00:00:00.000Z" }), 1)).toBeNull();
+});
+
+test("valid legacy and versioned opaque sessions remain compatible", () => {
+  const legacy = JSON.stringify({ sessionToken: "legacy-opaque", expiresAt: "2099-01-01T00:00:00.000Z" });
+  const versioned = JSON.stringify({ version: parentLegacySessionVersion, sessionToken: "versioned-opaque", expiresAt: "2099-01-01T00:00:00.000Z" });
+  expect(parseParentLegacyStoredSession(legacy, 1)?.sessionToken).toBe("legacy-opaque");
+  expect(parseParentLegacyStoredSession(versioned, 1)?.sessionToken).toBe("versioned-opaque");
+});
+
+test("setup snapshots require the full account schema and current version", () => {
+  expect(JSON.parse(serializeParentSetupAccount(account)).version).toBe(parentSetupSessionVersion);
+  expect(parseParentSetupAccount(serializeParentSetupAccount(account))).toEqual(account);
+  expect(parseParentSetupAccount(JSON.stringify({ ...account, confirmed: undefined }))).toBeNull();
+  expect(parseParentSetupAccount(JSON.stringify({ version: 99, account }))).toBeNull();
+});
+
+test("storage read, write, and remove exceptions never escape", () => {
+  const throwing = {
+    getItem() { throw new Error("denied"); },
+    setItem() { throw new Error("denied"); },
+    removeItem() { throw new Error("denied"); },
+    clear() {},
+    key() { return null; },
+    length: 0
+  } satisfies Storage;
+  expect(safeStorageRead(null, "key")).toEqual({ value: null, failed: true });
+  expect(safeStorageRead(throwing, "key")).toEqual({ value: null, failed: true });
+  expect(safeStorageWrite(throwing, "key", "value")).toBe(false);
+  expect(safeStorageRemove(throwing, "key")).toBe(false);
+});
+
+test("invalid and expired verified sessions clear only the app token", () => {
+  expect(sessionClient).toContain("parseParentLegacyStoredSession(result.value)");
+  expect(sessionClient).toContain("expiresAt > Date.now()");
+  expect(sessionClient).toContain("clearParentLegacySession();");
   const clearBody = sessionClient.slice(sessionClient.indexOf("export function clearParentLegacySession"), sessionClient.indexOf("export async function loginParentLegacySession"));
-  expect(clearBody).toContain("removeItem(parentLegacySessionStorageKey)");
+  expect(clearBody).toContain("safeStorageRemove(storage(), parentLegacySessionStorageKey)");
   expect(clearBody).not.toContain("parentLegacyClientKeyStorageKey");
   expect(clearBody).not.toContain("localStorage");
 });
@@ -23,19 +85,16 @@ test("login and resume reject incomplete dashboard responses before rendering", 
   expect(sessionClient).toContain("if (!isStoredSession(session))");
 });
 
-test("legacy setup snapshots are parsed safely and never resumed without proof", () => {
-  const reader = app.slice(app.indexOf("function readStoredParentSetupAccount"), app.indexOf("async function withTimeout"));
-  expect(reader).toContain("try {");
-  expect(reader).toContain("JSON.parse(raw)");
-  expect(reader).toContain("catch {");
-  expect(reader).toContain("removeItem(parentSessionKey)");
-  const restore = app.slice(app.indexOf("const hadVerifiedSession"), app.indexOf("loadAll();", app.indexOf("const hadVerifiedSession")));
-  expect(restore).toContain("const hadStoredParent");
+test("setup snapshots are safely parsed and never resumed without proof on reload or Back", () => {
+  expect(app).toContain("readStoredParentSetupState()");
+  expect(app).toContain("parseParentSetupAccount(result.value)");
+  expect(app).toContain("safeStorageRemove(browserStorage(\"localStorage\"), parentSessionKey)");
+  const restore = app.slice(app.indexOf("const verifiedState"), app.indexOf("loadAll();", app.indexOf("const verifiedState")));
   expect(restore).toContain("require a fresh setup login");
   expect(restore).not.toContain("applyParentSession(storedParent");
 });
 
-test("session restore is bounded and returns to bilingual login recovery", () => {
+test("session restore is bounded and returns desktop/mobile reloads to bilingual login recovery", () => {
   expect(app).toContain("const parentSessionRestoreTimeoutMs = 8000");
   expect(app).toContain("withTimeout(resumeParentLegacySession");
   expect(app).toContain('setParentSessionRecovery("restoring")');
@@ -43,6 +102,7 @@ test("session restore is bounded and returns to bilingual login recovery", () =>
   expect(app).toContain("Your saved Parent session was invalid or expired. Please sign in again.");
   expect(app).toContain("您保存的家长登录已失效或过期。请重新登录。");
   expect(app).toContain('disabled={parentSessionRecovery === "restoring"}');
+  expect(app).toContain("setupState.storageFailed || storedClub.failed");
 });
 
 test("recovery does not weaken login or clear valid sessions", () => {
