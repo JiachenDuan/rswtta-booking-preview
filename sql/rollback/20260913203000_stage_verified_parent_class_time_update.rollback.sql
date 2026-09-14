@@ -1,0 +1,30 @@
+-- Structural rollback only. No real booking/account/package/billing row is restored
+-- because the feature migration does not mutate those rows at deployment time.
+begin;
+revoke all on function public.parent_update_booking_time(text,text,text,uuid,uuid,timestamptz,text,timestamptz,text,text,timestamptz,timestamptz,text,text) from public,anon,authenticated;
+revoke all on function public.parent_issue_class_time_update_nonce(text,text) from public,anon,authenticated;
+revoke all on function public.parent_legacy_session_logout(text,text) from public,anon,authenticated;
+revoke all on function public.parent_legacy_session_resume(text,text) from public,anon,authenticated;
+revoke all on function public.parent_legacy_session_login(text,text,text) from public,anon,authenticated;
+drop function if exists public.parent_update_booking_time(text,text,text,uuid,uuid,timestamptz,text,timestamptz,text,text,timestamptz,timestamptz,text,text);
+drop function if exists public.parent_issue_class_time_update_nonce(text,text);
+drop function if exists public.parent_legacy_session_logout(text,text);
+drop function if exists public.parent_legacy_session_resume(text,text);
+drop function if exists public.parent_legacy_session_login(text,text,text);
+drop function if exists rswtta_private.parent_legacy_dashboard(uuid);
+drop function if exists rswtta_private.parent_legacy_row_json(public.project_rows);
+drop function if exists rswtta_private.valid_parent_legacy_session(text,text);
+drop function if exists rswtta_private.parent_legacy_credential_fingerprint(jsonb);
+drop table if exists rswtta_private.parent_class_time_idempotency;
+drop table if exists rswtta_private.parent_class_time_nonces;
+drop table if exists rswtta_private.parent_legacy_sessions;
+drop table if exists rswtta_private.backup_parent_time_package_events_20260913203000;
+drop table if exists rswtta_private.backup_parent_time_package_keys_20260913203000;
+drop table if exists rswtta_private.backup_parent_time_package_ledger_20260913203000;
+drop table if exists rswtta_private.backup_parent_time_setup_aliases_20260913203000;
+drop table if exists rswtta_private.backup_parent_time_setup_sessions_20260913203000;
+drop table if exists rswtta_private.backup_parent_time_bills_20260913203000;
+drop table if exists rswtta_private.backup_parent_time_activity_20260913203000;
+drop table if exists rswtta_private.backup_parent_time_accounts_20260913203000;
+drop table if exists rswtta_private.backup_parent_time_bookings_20260913203000;
+commit;

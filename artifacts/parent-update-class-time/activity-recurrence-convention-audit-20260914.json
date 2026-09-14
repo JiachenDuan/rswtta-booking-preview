@@ -1,0 +1,20 @@
+{
+  "auditKind": "production-read-only-activity-recurrence-convention",
+  "serverNow": "2026-09-14T06:32:26.493144+00:00",
+  "triggerDefinitionSha256": "31a14c653973003be1a7f29b0dd7950d7c395cf5a431e08b8ea63c82df40e113",
+  "activityRows": 81,
+  "completeRecurrenceIdentity": 0,
+  "incompleteRecurrenceIdentity": 0,
+  "noRecurrenceIdentity": 81,
+  "actionPartitions": {
+    "cancelled": 43,
+    "created": 30,
+    "group_occurrence_updated": 2,
+    "group_student_added": 2,
+    "student_preregistered": 1,
+    "updated": 3
+  },
+  "decision": "Follow the established activity convention: activity rows carry none of seriesId, recurrenceOccurrenceId, or recurrenceOriginalStartsAt. The selected booking retains its complete immutable recurrence tuple.",
+  "sourceComparison": "The live function body matched supabase/migrations/20260910200000_recurring_occurrence_identity.sql: it rejects seriesId without occurrence/original, rejects occurrence without seriesId, and makes series/occurrence/original/group identities immutable on update.",
+  "safety": "Read-only SQL transaction; no production mutation. No row values or personal data retained."
+}

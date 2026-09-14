@@ -1,0 +1,2 @@
+select jsonb_build_object('worker','b','replayed',(r->>'replayed')::boolean,'booking_id',r->'updatedBooking'->>'id') as concurrency_result
+from (select public.parent_update_booking_time('concurrency-session-b','fixture-concurrency-client-0001','concurrency-nonce-b','f2000000-0000-4000-8000-000000000021','f4000000-0000-4000-8000-000000000021','2026-09-14T07:00:00Z','requested','2026-09-28T16:00:00Z','','',null,'2026-09-29T16:00:00Z','Tue, Sep 29, 2026','9 AM - 10 AM') r) q;

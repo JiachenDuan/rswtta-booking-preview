@@ -1,0 +1,11 @@
+{
+  "sqlPath": "artifacts/parent-update-class-time/candidate-runtime-preflight-and-acceptance-20260914.sql",
+  "sqlBytes": 52626,
+  "sha256": "03d8f02b57c793b16235cc82e3a62e6259d8b784032027e86723e0c630bd91cb",
+  "submittedQuerySha256": "03d8f02b57c793b16235cc82e3a62e6259d8b784032027e86723e0c630bd91cb",
+  "exactSubmitted": true,
+  "responseStatus": 201,
+  "responseBodySha256": "ff8a1e9545e6ce73375f1bdbf38844a7a055f953ce0762486a0e59f5b3c36413",
+  "responseBody": "[{\"preflight_result\":\"PASS: candidate DDL, catalog resolution, PREPARE/EXPLAIN, and exact rollback-only acceptance\"}]",
+  "capturedAt": "2026-09-14T06:53:45.698Z"
+}

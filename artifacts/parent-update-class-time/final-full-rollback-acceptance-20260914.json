@@ -1,0 +1,11 @@
+{
+  "sqlPath": "sql/verification/20260913203000_stage_verified_parent_class_time_update.acceptance.sql",
+  "sqlBytes": 19516,
+  "sha256": "eeb68c84fc181a729be81104babd1b4da7c49a020200baa791fa04ba9c7c8a86",
+  "submittedQuerySha256": "eeb68c84fc181a729be81104babd1b4da7c49a020200baa791fa04ba9c7c8a86",
+  "exactSubmitted": true,
+  "responseStatus": 201,
+  "responseBodySha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "responseBody": "[]",
+  "capturedAt": "2026-09-14T06:54:41.769Z"
+}

@@ -1,0 +1,11 @@
+{
+  "sqlPath": "artifacts/parent-update-class-time/concurrency-fixture-setup-20260914.sql",
+  "sqlBytes": 2980,
+  "sha256": "11fab790c416b6248721f3ef7a04fc88683e36aa12ae9055d22e212bad793877",
+  "submittedQuerySha256": "11fab790c416b6248721f3ef7a04fc88683e36aa12ae9055d22e212bad793877",
+  "exactSubmitted": true,
+  "responseStatus": 201,
+  "responseBodySha256": "d6a4bbbfe153b4a930715e8bc5d2100c216dac358f7e43c142d41d53a2ddb799",
+  "responseBody": "[{\"pg_advisory_xact_lock\":\"\"}]",
+  "capturedAt": "2026-09-14T06:56:20.050Z"
+}

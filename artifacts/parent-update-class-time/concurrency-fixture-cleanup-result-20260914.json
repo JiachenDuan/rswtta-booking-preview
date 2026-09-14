@@ -1,0 +1,11 @@
+{
+  "sqlPath": "artifacts/parent-update-class-time/concurrency-fixture-cleanup-20260914.sql",
+  "sqlBytes": 1733,
+  "sha256": "2da2ed572477ca89c4134757c5226608f36a8bc211f825af08fc0400df12dc03",
+  "submittedQuerySha256": "2da2ed572477ca89c4134757c5226608f36a8bc211f825af08fc0400df12dc03",
+  "exactSubmitted": true,
+  "responseStatus": 201,
+  "responseBodySha256": "550cb20c54593ac5fcd29f80d18ffc4ad85c3c8b6884628c6a773c3c7a1cae9c",
+  "responseBody": "[{\"cleanup_result\":\"PASS: exact fixture removed after one-create/one-replay concurrency outcome\"}]",
+  "capturedAt": "2026-09-14T06:56:48.110Z"
+}

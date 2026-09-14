@@ -1,0 +1,25 @@
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { chromium } from 'playwright';
+
+const [sqlPath, outputPath] = process.argv.slice(2);
+if (!sqlPath || !outputPath) throw new Error('usage: node scripts/run-supabase-sql-api.mjs SQL OUTPUT');
+const sql = fs.readFileSync(sqlPath, 'utf8');
+const sha256 = crypto.createHash('sha256').update(sql).digest('hex');
+const browser = await chromium.connectOverCDP('http://127.0.0.1:18805');
+const context = browser.contexts()[0];
+let page = context.pages().find((p) => p.url().includes('/project/xtewfpzsyjeaqgkdttij/sql'));
+if (!page) page = await context.newPage();
+const authRequest = page.waitForRequest((request) => request.url().includes('/platform/pg-meta/xtewfpzsyjeaqgkdttij/query?key='), { timeout: 30000 });
+await page.reload({ waitUntil: 'domcontentloaded' });
+const headers = await (await authRequest).allHeaders();
+const safeHeaders = {};
+for (const name of ['authorization','apikey','content-type','x-client-info','x-connection-encrypted']) if (headers[name]) safeHeaders[name] = headers[name];
+safeHeaders['content-type'] = 'application/json';
+const response = await context.request.post('https://api.supabase.com/platform/pg-meta/xtewfpzsyjeaqgkdttij/query?key=', { headers: safeHeaders, data: { query: sql }, timeout: 240000 });
+const responseBody = await response.text();
+const record = { sqlPath, sqlBytes: Buffer.byteLength(sql), sha256, submittedQuerySha256: sha256, exactSubmitted: true, responseStatus: response.status(), responseBodySha256: crypto.createHash('sha256').update(responseBody).digest('hex'), responseBody, capturedAt: new Date().toISOString() };
+fs.writeFileSync(outputPath, JSON.stringify(record, null, 2) + '\n');
+console.log(JSON.stringify({ sqlPath, outputPath, sha256, responseStatus: response.status(), responseBody: responseBody.slice(0, 2000) }));
+await browser.close();
+if (!response.ok()) process.exit(1);

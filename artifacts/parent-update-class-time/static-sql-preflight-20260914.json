@@ -1,0 +1,255 @@
+{
+  "generatedAt": "2026-09-14T06:48:15.646Z",
+  "files": {
+    "supabase/migrations/20260913203000_stage_verified_parent_class_time_update.sql": {
+      "sha256": "69f039264e97b1de441a10ac5a5ceeef7b3e0029d9f50a70a9b543c620ebd8d1",
+      "bytes": 27462,
+      "statementCount": 42,
+      "statementHashes": [
+        "53d1650f1184475166c44303f0ba488b6bdb75da8e0e2f0da3561aad0b94d4b0",
+        "bbcf963df75354a525640d476f1a17a1d658b8a614fe498843a495b71eeae82b",
+        "155aadda8d4ca644a82c4e316676bc9d35dc95a6aee5145064f5b0861090c0f3",
+        "7dc53e7dd959a62e4d61fd5d2f7d697a56782208156f4c44950aaead1d235ec8",
+        "8afae950337149dfd2087105c3066b235ff93b469bf2127646eb7ef227fc7101",
+        "edd836348cc6c5581a22430c0ab9dca69870870e4ff0875ba417614046cc7030",
+        "863e6390f410640811b51f6d3de126d3a996d6961751240738290c01ccebf128",
+        "8c37807288d1166456f8653b05a6fd0fc453cf61108db35b946fae520047db50",
+        "de97cb687507e9806a5d5ab2754535c3f95a008dc0b5894690be28d75cdc3340",
+        "522d89271b5afe0d6c2b84341643fc2155f79bbca0245d565281e8e6dd796e99",
+        "65474c8f799c23207dc6a4f78987d33fde07631ccb7efa57fe7af17248e2af34",
+        "37ee556efdf4d22af0442ccbcc0b2911330ba5f300fd30cbd7db5ff8b2ec9d9d",
+        "6c5b9f12f2463c18819fe27cbf73fd97cdc438e1bc8bb3e6c34d6c3ba26506e6",
+        "bb57d29c4d5acf1bae543411bb3bb7a2fc90caea520a5adfde1987c97ea970b2",
+        "c8fa1e70188757af9040da78ac8baa16702500542f9ad5e5db61c8221bb7996c",
+        "9b97bec1b562d2e83adfda776b636e1cff9aaab2fd4e747426302252f514b977",
+        "73e4128ff0797ad9f2f51f42cfaebce5845ca3a0de2ca0910432922a2db0f6e8",
+        "89c577c71a37bf5beb45240847b6e914a01c061d537dd33ed144ce88feb80470",
+        "689507003d2caf764d426bb9cb771342705e87ec09849cbcc216ca6e47641099",
+        "e6bea97c6b4a99eaaaae0799ac9dd4b61b3795022725c6ba0f1cc13bfa8e57a4",
+        "773cab754c1ba4a94c5c5701f7441c9e015522a45f9095319092c6a70c527d36",
+        "fa08fda6b2b8008aa8ffc4b6eda2bc0f1a8b5e2af6d35bd81aa7312ed3962451",
+        "094689210e791ce764b1456eb8e918d01cb883cc8dae94c487f9a17ecdc780c2",
+        "538a0ba010f67af2b7f309740fdce3cad80a663a69e0556633ef6aa0f9463aad",
+        "740e556ce6ff63e8ffd5ac74f4cf7b96a43d3f9913478a2b9ea645389f420d96",
+        "7eee1891722c71363b1c14111fabc956abc178447693b0e3710d5a5376439e62",
+        "d2f4649f25336e32f62dc8c3a4caad41c5d8173281bc0b8aff3d6c49b6ab87a9",
+        "b6688e7f6224abe986b800fff47a926866f2ec7c716f66c69073890b8b06fb8e",
+        "546e5a471994bbce444060cd3b60549d34bcf751be94477d792829290dca9dac",
+        "c2961fff93d2412ed5b9b73343ab66de49fbd9b210a576c81f5815acddedcd94",
+        "e1e8ac94573f128ab6d9465cf1ce96464a1a1f57e7e5a63b86ac20c7ca32e2e6",
+        "8eb91ff6900a2e105dfc15f796d42ecce25561c65f5468097bcf37f54cfa7d16",
+        "3770e3bb7fabe7583933c936bfc259cdf46eeaa3636a3418ee3fa0a6f5cd40a0",
+        "df481309558b0037e95c94c3f0c9848f440165a65ab7c71e47bc90941bac4b67",
+        "c5a2098410bb372f858bb84311b9112ed2cec87921309761533f2c0990c0d86b",
+        "1bb93734368cf5444e1460186eb56b274a94be53576ed079db200fbd90c85ff0",
+        "69f56138deaabcd2abae75e82953d579a63dd9a8f28037fa205ca84274565e15",
+        "5390a00a267155f32f23150fb826f4d46b57ae902a9545305bc42ee8ee43e7ef",
+        "43911162adf56c66ff23f840ba49e82e40763bb137b6bb3a683bd71fd6220018",
+        "b8838d892dc4df8b88458695392f279e2cd6e77d7b7f5e374263b00379969c1e",
+        "8c35f99e1cea72f036ba692fc8a75cb6c51c99262e24b0c0677f4328fc601af5",
+        "364647c86405c505850634a548a540e7738f7690d7e5f7d744edf0ba1dbbc575"
+      ]
+    },
+    "sql/verification/20260913203000_stage_verified_parent_class_time_update.acceptance.sql": {
+      "sha256": "eeb68c84fc181a729be81104babd1b4da7c49a020200baa791fa04ba9c7c8a86",
+      "bytes": 19516,
+      "statementCount": 3,
+      "statementHashes": [
+        "5c19e0a3e3da63d50e7671580f660114feb55ae5ddaa76a82cbc259db8b4266d",
+        "3df650402daa7f555200c54ed20a65f5c348eea5c7ad64724e8cba616dd257a4",
+        "1a2a6843809b2d5f416e827d4bc648bbbbe7a9c6c92594700751c675fc6f9420"
+      ]
+    },
+    "sql/verification/20260913203000_stage_verified_parent_class_time_update.fixture-admissibility.sql": {
+      "sha256": "6369c8f3eb409b9a46340182162789c20cd020fe5a5bc8e0556aa64cd4517922",
+      "bytes": 5143,
+      "statementCount": 4,
+      "statementHashes": [
+        "f7d17079b33dc8cb9a1be1f0a789c0a23f92779306b4c4d5b597ed49699869e0",
+        "2d3927f9ec5257fc3f32b7cefd6e8fde000c699007837387257551b57c380223",
+        "cbade2a8ce1047c531140d43008252543321fa889a8119323132199064f4bbb9",
+        "1a2a6843809b2d5f416e827d4bc648bbbbe7a9c6c92594700751c675fc6f9420"
+      ]
+    },
+    "sql/verification/20260913203000_stage_verified_parent_class_time_update.verify.sql": {
+      "sha256": "0e10749c814bad92998efdd39628871fd4a1bed9f5d8e49cddb5c49d3e0295f8",
+      "bytes": 3579,
+      "statementCount": 3,
+      "statementHashes": [
+        "b9afa7a1af923f924923c04870bc3d04bb85c469159a81739b2dc71566e51c3e",
+        "c8ca58750a4f2e055887f7333f3487108b677b216ef78024f847c93c0dc60cef",
+        "1a2a6843809b2d5f416e827d4bc648bbbbe7a9c6c92594700751c675fc6f9420"
+      ]
+    },
+    "sql/rollback/20260913203000_stage_verified_parent_class_time_update.rollback.sql": {
+      "sha256": "5d68a2b7eed486c24fd8894ab66491bc5da15b1427c0034661ce132622f9f7c5",
+      "bytes": 2496,
+      "statementCount": 28,
+      "statementHashes": [
+        "7b003e0cda9328d936b44a1baf62f4224ad24b26a5305c35e72f86821378c1d9",
+        "1bb93734368cf5444e1460186eb56b274a94be53576ed079db200fbd90c85ff0",
+        "c5a2098410bb372f858bb84311b9112ed2cec87921309761533f2c0990c0d86b",
+        "df481309558b0037e95c94c3f0c9848f440165a65ab7c71e47bc90941bac4b67",
+        "3770e3bb7fabe7583933c936bfc259cdf46eeaa3636a3418ee3fa0a6f5cd40a0",
+        "8eb91ff6900a2e105dfc15f796d42ecce25561c65f5468097bcf37f54cfa7d16",
+        "d21a17a765054a1afefd6e65acd98b48ef293b1e06779ef2e0278132b0b17bac",
+        "970a79eb8549cad11f418f466ce2b24175dcd7a7d33f58ac4e96cc4ccd6629b7",
+        "cec88c1b8fdb395f076903e8f14d118c9ec14f52a740b7e4cea388b7a51ce820",
+        "9f745e87f3a429c4e1ee605ef0c7473ff81b67f9ea614df8787deb6c212f2cd6",
+        "08417d5e755d2131d0afc7b0726bb04c2b3ebe7b06f49a183974b5d9ca431207",
+        "37f6ab6f1d5bee6cd3d21ccacefcf2c6c81443fafb84815e16b44807eb01d1fc",
+        "659d48648bb036b3ee95cc54b784ac799d6e965f25959a0d23b20d50da5e3348",
+        "1ba3881aa5d1584a65f13c53ae470d461a871ee9ecfa3ac6d655473a43851705",
+        "49b4f50844975d673daf92d0057239dfb3f15b273cc4518a2be0ba44b955ea2f",
+        "deacdcaa8cc2a7278c07c0362c4a1689cee04e75ec2d44a7851a954b0a6a3cfe",
+        "effa15f814da453fca6b74444df224f091df4596510eaa5e0329f88318085a60",
+        "ccd24f68b89c6d24697cb9be4dcc642091e0efcdd9a674607517f2a4f6d5c3cf",
+        "18dc2ddf176bfe15a0401c0ea9e711e30c4385684a515afbd89da90e19b920d2",
+        "c58c2a039d6913f4e5205408750bd59cd16ab28aeee651c592912d9dba9d7a52",
+        "27f98ce8a40f30ebb275a3db3a93d177a1bdd33111cfc6c16672b354b8bfddbc",
+        "310aab9a081d0aed31f302dd2266fc164f2f4cbcbfb7bf46094a1e0214d410f5",
+        "e5a0622943b06a53a3150b358d34af2f731a143ee9f5c77dd9e7cb54d989ada0",
+        "5c76492ba7f9e1e131dd38ef99e3f05a27eba72b386f5221cc48a34ef7618390",
+        "e020390b401d891bdcd5744e3154c71cf062b05985643a33f5d94085f67d01ac",
+        "42c6bf5f6dcbf5e57a66a32e574c84805efb65928999df35ebb1f8497cc34b26",
+        "057f544ac0b04947d452b3ab60a2f83f64a67085b71a6c518f1adedd989e6e48",
+        "364647c86405c505850634a548a540e7738f7690d7e5f7d744edf0ba1dbbc575"
+      ]
+    }
+  },
+  "schemaMatrix": {
+    "public.project_rows": [
+      "id",
+      "project_table_id",
+      "values",
+      "created_at",
+      "updated_at"
+    ],
+    "public.projects": [
+      "id",
+      "slug",
+      "created_at"
+    ],
+    "public.project_tables": [
+      "id",
+      "project_id",
+      "slug",
+      "created_at"
+    ],
+    "public.class_package_events": [
+      "id",
+      "package_id",
+      "project_id",
+      "category",
+      "unit_basis",
+      "event_type",
+      "amount_base_units",
+      "old_opening_amount_base_units",
+      "new_opening_amount_base_units",
+      "version",
+      "expected_version",
+      "note",
+      "reference",
+      "actor_kind",
+      "idempotency_key",
+      "created_at"
+    ],
+    "rswtta_private.parent_legacy_sessions": [
+      "id",
+      "token_hash",
+      "account_id",
+      "client_digest",
+      "credential_fingerprint",
+      "expires_at",
+      "revoked_at",
+      "created_at",
+      "last_seen_at"
+    ],
+    "rswtta_private.parent_class_time_nonces": [
+      "nonce_hash",
+      "session_id",
+      "operation",
+      "expires_at",
+      "consumed_at",
+      "created_at"
+    ],
+    "rswtta_private.parent_class_time_idempotency": [
+      "account_id",
+      "operation",
+      "idempotency_key",
+      "request_hash",
+      "result",
+      "created_at"
+    ]
+  },
+  "checks": [
+    {
+      "check": "schema matrix public.project_rows",
+      "pass": true
+    },
+    {
+      "check": "schema matrix public.projects",
+      "pass": true
+    },
+    {
+      "check": "schema matrix public.project_tables",
+      "pass": true
+    },
+    {
+      "check": "schema matrix public.class_package_events",
+      "pass": true
+    },
+    {
+      "check": "schema matrix rswtta_private.parent_legacy_sessions",
+      "pass": true
+    },
+    {
+      "check": "schema matrix rswtta_private.parent_class_time_nonces",
+      "pass": true
+    },
+    {
+      "check": "schema matrix rswtta_private.parent_class_time_idempotency",
+      "pass": true
+    },
+    {
+      "check": "sessions atomic order",
+      "pass": true,
+      "needle": "order by s.id"
+    },
+    {
+      "check": "nonces atomic order",
+      "pass": true,
+      "needle": "order by encode(n.nonce_hash,'hex')"
+    },
+    {
+      "check": "idempotency atomic order",
+      "pass": true,
+      "needle": "order by i.account_id,i.idempotency_key"
+    },
+    {
+      "check": "package atomic order",
+      "pass": true,
+      "needle": "order by x.id"
+    },
+    {
+      "check": "RPC return session_id",
+      "pass": true,
+      "needle": "select session_id,account_id"
+    },
+    {
+      "check": "project_rows order key",
+      "pass": true,
+      "needle": "order by r.id"
+    },
+    {
+      "check": "no nonexistent parent_legacy_sessions session_id alias reference",
+      "pass": true
+    },
+    {
+      "check": "atomic-state relations have explicit validated order keys",
+      "pass": true
+    }
+  ],
+  "pass": true,
+  "failed": []
+}

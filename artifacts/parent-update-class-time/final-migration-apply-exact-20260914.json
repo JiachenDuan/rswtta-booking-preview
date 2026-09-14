@@ -1,0 +1,11 @@
+{
+  "sqlPath": "supabase/migrations/20260913203000_stage_verified_parent_class_time_update.sql",
+  "sqlBytes": 27462,
+  "sha256": "69f039264e97b1de441a10ac5a5ceeef7b3e0029d9f50a70a9b543c620ebd8d1",
+  "submittedQuerySha256": "69f039264e97b1de441a10ac5a5ceeef7b3e0029d9f50a70a9b543c620ebd8d1",
+  "exactSubmitted": true,
+  "responseStatus": 201,
+  "responseBodySha256": "d6a4bbbfe153b4a930715e8bc5d2100c216dac358f7e43c142d41d53a2ddb799",
+  "responseBody": "[{\"pg_advisory_xact_lock\":\"\"}]",
+  "capturedAt": "2026-09-14T06:54:07.053Z"
+}

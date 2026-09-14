@@ -1,0 +1,11 @@
+{
+  "sqlPath": "artifacts/parent-update-class-time/concurrency-call-b-20260914.sql",
+  "sqlBytes": 478,
+  "sha256": "1a4ad41a1d312b34cc5be7d62184b2a7ac9edeacd24898de7d64e3d72745d30a",
+  "submittedQuerySha256": "1a4ad41a1d312b34cc5be7d62184b2a7ac9edeacd24898de7d64e3d72745d30a",
+  "exactSubmitted": true,
+  "responseStatus": 201,
+  "responseBodySha256": "fcc5d18d5522c7bee48cdf764faffe9840bf69bd89e4042e7603d864fe6d2979",
+  "responseBody": "[{\"concurrency_result\":{\"worker\":\"b\",\"replayed\":true,\"booking_id\":\"f2000000-0000-4000-8000-000000000021\"}}]",
+  "capturedAt": "2026-09-14T06:56:32.737Z"
+}
