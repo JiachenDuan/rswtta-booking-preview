@@ -810,11 +810,11 @@ export function ClubApp() {
         students.filter((student) => student.profileSetupRequired),
         normalizedIdentifier
       );
-      if (setupResolution.status === "ambiguous") {
-        throw new Error(copy(language, "More than one student matches this username. Ask Club staff for a unique login alias.", "多个学生匹配此用户名。请联系俱乐部工作人员分配唯一登录别名。"));
+      if (setupResolution.status !== "unique_exact") {
+        throw new Error(copy(language, "No unique account matches this username. Use the exact full username or login alias.", "没有唯一账号匹配此用户名。请使用准确的完整用户名或登录别名。"));
       }
-      // A no-match may still be a private staff-assigned alias. The setup RPC is the
-      // authority and accepts only an exact private alias bound to one setup account.
+      // Client matching only enables submission. The setup RPC remains authoritative
+      // for exact private alias binding, password verification, setup status, and rate limits.
       const result = await loginLegacySetupAccount(identifier, password);
       legacySetupSessionToken.current = result.sessionToken;
       applyParentSession(result.account, true);
@@ -1824,9 +1824,11 @@ function UnifiedAuth({
     students.filter((student) => student.profileSetupRequired),
     identifier
   );
+  const preregisteredLoginMode = intent === "parent" && preregisteredLogin;
   const exactPreregisteredLogin = preregisteredResolution.status === "unique_exact";
-  const preregisteredLoginBlocked = intent === "parent" && preregisteredLogin && Boolean(identifier.trim()) &&
-    preregisteredResolution.status === "ambiguous";
+  const preregisteredLoginUnmatched = preregisteredLoginMode && Boolean(identifier.trim()) && !exactPreregisteredLogin;
+  const preregisteredLoginReady = preregisteredLoginMode && exactPreregisteredLogin && password.length > 0;
+  const preregisteredLoginBlocked = preregisteredLoginMode && !preregisteredLoginReady;
   const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;
 
   useEffect(() => {
@@ -1866,7 +1868,9 @@ function UnifiedAuth({
 
   async function handleLogin() {
     if (preregisteredLoginBlocked) {
-      setNotice(copy(language, "No unique account matches this username. Use the exact full username or email.", "没有唯一账号匹配此用户名。请使用准确的完整用户名或邮箱。"));
+      if (identifier.trim() && !exactPreregisteredLogin) {
+        setNotice(copy(language, "No unique account matches this username. Use the exact full username or login alias.", "没有唯一账号匹配此用户名。请使用准确的完整用户名或登录别名。"));
+      }
       return;
     }
     setBusy(true);
@@ -1994,10 +1998,10 @@ function UnifiedAuth({
               <div className="action-confirm-panel duplicate-student-panel" role="status">
                 <strong>{copy(language, "Username recognized. Enter your password to continue.", "已识别用户名。请输入密码以继续。")}</strong>
               </div>
-            ) : preregisteredLoginBlocked ? (
+            ) : preregisteredLoginUnmatched ? (
               <div className="action-confirm-panel duplicate-student-panel" role="alert">
                 <strong>{copy(language, "No unique account matches", "没有唯一匹配的账号")}</strong>
-                <p>{copy(language, "Enter the complete full name or complete login alias, or use email.", "请输入完整姓名或完整登录别名，或使用邮箱。")}</p>
+                <p>{copy(language, "Enter the complete full name or complete login alias.", "请输入完整姓名或完整登录别名。")}</p>
               </div>
             ) : null}
             <button type="submit" className="primary-button auth-submit" disabled={busy || disabled || preregisteredLoginBlocked}>

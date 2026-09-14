@@ -11,6 +11,7 @@ const store = readFileSync("lib/projectStore.ts", "utf8");
 const originalSetupMigration = readFileSync("supabase/migrations/20260913210000_club_unverified_legacy_preregistration.sql", "utf8");
 const setupMigration = readFileSync("supabase/migrations/20260914112000_general_legacy_parent_setup_login.sql", "utf8");
 const completedMigration = readFileSync("supabase/migrations/20260913203000_stage_verified_parent_class_time_update.sql", "utf8");
+const browserVerification = readFileSync("scripts/verify-parent-login-matching.mjs", "utf8");
 
 function authPanelSource() {
   return app.slice(app.indexOf("function UnifiedAuth"), app.indexOf("function FirstLoginSetup"));
@@ -68,11 +69,30 @@ test("button and Enter share form submit semantics and bilingual non-disclosing 
   for (const text of [
     "No unique account matches",
     "没有唯一匹配的账号",
-    "Enter the complete full name or complete login alias, or use email.",
-    "请输入完整姓名或完整登录别名，或使用邮箱。",
+    "Enter the complete full name or complete login alias.",
+    "请输入完整姓名或完整登录别名。",
     "Username recognized. Enter your password to continue.",
     "已识别用户名。请输入密码以继续。"
   ]) expect(authPanel).toContain(text);
+});
+
+test("DOM verification covers disabled-to-enabled gating and guarded Enter submission", () => {
+  for (const contract of [
+    "emptyDisabled",
+    "emptyIdentifierDisabled",
+    "firstOnlyDisabled",
+    "ambiguousDisabled",
+    "exactEmptyPasswordDisabled",
+    "exactPasswordEnabled",
+    "callsBeforeValidSubmit",
+    'submit === "enter"',
+    'clubPreregistered: false',
+    'browserName === "webkit"'
+  ]) expect(browserVerification).toContain(contract);
+  const authPanel = authPanelSource();
+  expect(authPanel).toContain('const preregisteredLoginReady = preregisteredLoginMode && exactPreregisteredLogin && password.length > 0');
+  expect(authPanel).toContain('const preregisteredLoginBlocked = preregisteredLoginMode && !preregisteredLoginReady');
+  expect(authPanel).toContain('disabled={busy || disabled || preregisteredLoginBlocked}');
 });
 
 test("exact email login remains unchanged for completed accounts", () => {
@@ -98,8 +118,9 @@ test("setup and completed-account gates remain separate and exact", () => {
   expect(setupLogin).not.toMatch(/split_part|first.?name|like\s|ilike/i);
   expect(setupLogin).not.toContain("clubPreregistered')::boolean,false) or not coalesce((v_row.values->>'profileSetupRequired");
   expect(app).toContain("students.filter((student) => student.profileSetupRequired)");
-  expect(app).toContain('setupResolution.status === "ambiguous"');
-  expect(app).toContain("A no-match may still be a private staff-assigned alias");
+  expect(app).toContain('setupResolution.status !== "unique_exact"');
+  expect(app).toContain("Client matching only enables submission");
+  expect(app).toContain("password verification, setup status, and rate limits");
   expect(app).toContain("legacySetupSessionToken.current = result.sessionToken");
   expect(app).toContain("loginParentLegacySession(identifier, password)");
   expect(app).not.toContain("loginParentAccount(identifier, password, { allowPreregisteredName })");

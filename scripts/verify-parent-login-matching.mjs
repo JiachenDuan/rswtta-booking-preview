@@ -19,7 +19,7 @@ const accounts = [
     loginAlias: "alex-ma-1001",
     confirmed: false,
     profileSetupRequired: true,
-    clubPreregistered: true,
+    clubPreregistered: false,
     createdAt: now
   },
   {
@@ -29,6 +29,30 @@ const accounts = [
     email: "alex.li@example.test",
     phone: "",
     loginAlias: "alex-li-1002",
+    confirmed: false,
+    profileSetupRequired: true,
+    clubPreregistered: true,
+    createdAt: now
+  },
+  {
+    id: "a1000000-0000-4000-8000-000000000004",
+    studentName: "Casey Lee",
+    parentName: "",
+    email: "casey.one@example.test",
+    phone: "",
+    loginAlias: "casey-one-1004",
+    confirmed: false,
+    profileSetupRequired: true,
+    clubPreregistered: false,
+    createdAt: now
+  },
+  {
+    id: "a1000000-0000-4000-8000-000000000005",
+    studentName: "Ｃａｓｅｙ  Lee",
+    parentName: "",
+    email: "casey.two@example.test",
+    phone: "",
+    loginAlias: "casey-two-1005",
     confirmed: false,
     profileSetupRequired: true,
     clubPreregistered: true,
@@ -51,6 +75,9 @@ const accounts = [
   }
 ];
 
+const completedAccount = accounts.find(({ id }) => id === completedAccountId);
+if (!completedAccount) throw new Error("completed synthetic account missing");
+
 const redactedCalendarBooking = {
   id: "b1000000-0000-4000-8000-000000000002",
   studentName: "",
@@ -69,7 +96,7 @@ const redactedCalendarBooking = {
   updatedAt: now
 };
 const completedDashboard = {
-  account: accounts[2],
+  account: completedAccount,
   bookings: [],
   calendarBookings: [redactedCalendarBooking],
   serverNow: now
@@ -147,7 +174,7 @@ async function mockIsolatedBackend(page, calls) {
     if (url.includes("/rpc/parent_legacy_session_login")) {
       const body = route.request().postDataJSON();
       calls.push({ rpc: "session-login", identifier: body.p_identifier });
-      if (String(body.p_identifier).trim().toLowerCase() !== accounts[2].email || body.p_password !== completedPassword) {
+      if (String(body.p_identifier).trim().toLowerCase() !== completedAccount.email || body.p_password !== completedPassword) {
         return route.fulfill({ status: 400, contentType: "application/json", headers: corsHeaders, body: JSON.stringify({ message: "Invalid login" }) });
       }
       return route.fulfill({ status: 200, contentType: "application/json", headers: corsHeaders, body: JSON.stringify({ ...completedDashboard, sessionToken: "c".repeat(64), expiresAt: "2026-09-15T05:00:00.000Z" }) });
@@ -193,18 +220,37 @@ async function runSetupScenario(browser, { mobile, submit }) {
   await page.getByRole("checkbox", { name: "Pre-registered student" }).check();
   const username = page.getByRole("textbox", { name: "Username" });
   const password = page.getByRole("textbox", { name: /Password/ });
+  const login = page.getByRole("button", { name: "Login", exact: true }).last();
+
+  const emptyDisabled = await login.isDisabled();
+  await password.fill("synthetic-only");
+  const emptyIdentifierDisabled = await login.isDisabled();
+  await password.press("Enter");
+  const callsAfterEmptyEnter = calls.length;
 
   await username.fill("Alex");
   await page.getByText("No unique account matches", { exact: true }).waitFor();
-  const blocked = await page.getByRole("button", { name: "Login", exact: true }).last().isDisabled();
+  const firstOnlyDisabled = await login.isDisabled();
+  await password.press("Enter");
+  const callsAfterFirstOnlyEnter = calls.length;
   const firstOnlyBody = await page.locator("body").innerText();
 
+  await username.fill("Casey Lee");
+  const ambiguousDisabled = await login.isDisabled();
+  await password.press("Enter");
+  const callsAfterAmbiguousEnter = calls.length;
+
   await username.fill(" ＡＬＥＸ\u3000  ma ");
-  await page.getByText("Exact username found", { exact: true }).waitFor();
-  const exactBody = await page.locator("body").innerText();
+  await page.getByText("Username recognized. Enter your password to continue.", { exact: true }).waitFor();
+  await password.fill("");
+  const exactEmptyPasswordDisabled = await login.isDisabled();
+  await password.press("Enter");
+  const callsAfterEmptyPasswordEnter = calls.length;
   await password.fill("synthetic-only");
+  const exactPasswordEnabled = await login.isEnabled();
+  const exactBody = await page.locator("body").innerText();
   if (submit === "enter") await password.press("Enter");
-  else await page.getByRole("button", { name: "Login", exact: true }).last().click();
+  else await login.click();
   try {
     await page.getByRole("heading", { name: "Complete your student account" }).waitFor({ timeout: 15000 });
   } catch (error) {
@@ -219,7 +265,19 @@ async function runSetupScenario(browser, { mobile, submit }) {
     kind: "setup",
     viewport: mobile ? "mobile-safari-shaped" : "desktop",
     submit,
-    blocked,
+    legacyClubPreregistered: accounts[0].clubPreregistered,
+    emptyDisabled,
+    emptyIdentifierDisabled,
+    firstOnlyDisabled,
+    ambiguousDisabled,
+    exactEmptyPasswordDisabled,
+    exactPasswordEnabled,
+    callsBeforeValidSubmit: {
+      empty: callsAfterEmptyEnter,
+      firstOnly: callsAfterFirstOnlyEnter,
+      ambiguous: callsAfterAmbiguousEnter,
+      emptyPassword: callsAfterEmptyPasswordEnter
+    },
     firstOnlyDisclosedAlexMa: firstOnlyBody.includes("Alex Ma"),
     firstOnlyDisclosedAlexLi: firstOnlyBody.includes("Alex Li"),
     exactDisclosedAlexLi: exactBody.includes("Alex Li"),
@@ -278,7 +336,14 @@ const passed = results.every((result) =>
   result.pageErrors.length === 0
   && result.consoleErrors.length === 0
   && (result.kind === "setup"
-    ? result.blocked
+    ? result.legacyClubPreregistered === false
+      && result.emptyDisabled
+      && result.emptyIdentifierDisabled
+      && result.firstOnlyDisabled
+      && result.ambiguousDisabled
+      && result.exactEmptyPasswordDisabled
+      && result.exactPasswordEnabled
+      && Object.values(result.callsBeforeValidSubmit).every((count) => count === 0)
       && !result.firstOnlyDisclosedAlexMa
       && !result.firstOnlyDisclosedAlexLi
       && !result.exactDisclosedAlexLi
