@@ -8,7 +8,8 @@ const accounts = [
 ];
 const app = readFileSync("components/ClubApp.tsx", "utf8");
 const store = readFileSync("lib/projectStore.ts", "utf8");
-const setupMigration = readFileSync("supabase/migrations/20260913210000_club_unverified_legacy_preregistration.sql", "utf8");
+const originalSetupMigration = readFileSync("supabase/migrations/20260913210000_club_unverified_legacy_preregistration.sql", "utf8");
+const setupMigration = readFileSync("supabase/migrations/20260914112000_general_legacy_parent_setup_login.sql", "utf8");
 const completedMigration = readFileSync("supabase/migrations/20260913203000_stage_verified_parent_class_time_update.sql", "utf8");
 
 function authPanelSource() {
@@ -69,8 +70,8 @@ test("button and Enter share form submit semantics and bilingual non-disclosing 
     "没有唯一匹配的账号",
     "Enter the complete full name or complete login alias, or use email.",
     "请输入完整姓名或完整登录别名，或使用邮箱。",
-    "Exact username found",
-    "已找到准确用户名"
+    "Username recognized. Enter your password to continue.",
+    "已识别用户名。请输入密码以继续。"
   ]) expect(authPanel).toContain(text);
 });
 
@@ -84,8 +85,8 @@ test("exact email login remains unchanged for completed accounts", () => {
 
 test("setup and completed-account gates remain separate and exact", () => {
   const setupLogin = setupMigration.slice(
-    setupMigration.indexOf("create function public.parent_legacy_setup_login"),
-    setupMigration.indexOf("create function public.parent_legacy_complete_setup")
+    setupMigration.indexOf("create or replace function public.parent_legacy_setup_login"),
+    setupMigration.indexOf("create or replace function public.parent_legacy_complete_setup")
   );
   for (const text of [
     "a.normalized_alias=v_alias",
@@ -95,10 +96,32 @@ test("setup and completed-account gates remain separate and exact", () => {
     "club_preregistration_pbkdf2"
   ]) expect(setupLogin).toContain(text);
   expect(setupLogin).not.toMatch(/split_part|first.?name|like\s|ilike/i);
-  expect(app).toContain('protectedResolution.status === "unique_exact"');
+  expect(setupLogin).not.toContain("clubPreregistered')::boolean,false) or not coalesce((v_row.values->>'profileSetupRequired");
+  expect(app).toContain("students.filter((student) => student.profileSetupRequired)");
+  expect(app).toContain('setupResolution.status === "ambiguous"');
+  expect(app).toContain("A no-match may still be a private staff-assigned alias");
   expect(app).toContain("legacySetupSessionToken.current = result.sessionToken");
   expect(app).toContain("loginParentLegacySession(identifier, password)");
   expect(app).not.toContain("loginParentAccount(identifier, password, { allowPreregisteredName })");
+});
+
+test("legacy setup completion always requires the opaque setup token", () => {
+  expect(app).toContain("if (!legacySetupSessionToken.current) throw new Error");
+  expect(app).toContain("completeLegacySetup(legacySetupSessionToken.current, input)");
+  expect(app).not.toContain("if (parentSession.clubPreregistered)");
+  expect(app).not.toContain("completeParentProfileSetup({");
+  expect(setupMigration).toContain("not coalesce((v_row.values->>'profileSetupRequired')::boolean,false)");
+  expect(setupMigration).toContain("Student name, email, phone, and a different password are required");
+  expect(setupMigration).toContain("v_old_candidate=v_old_hash");
+  expect(setupMigration).toContain("'credentialVersion',v_session.credential_version+1");
+  expect(setupMigration).toContain("set revoked_at=clock_timestamp()");
+});
+
+test("forward migration leaves original deployed migration unchanged", () => {
+  expect(originalSetupMigration).toContain("clubPreregistered')::boolean,false");
+  expect(setupMigration).toContain("legacy_parent_setup_alias_backup_20260914112000");
+  expect(setupMigration).toContain("on conflict do nothing");
+  expect(setupMigration).toContain("array['3a6d38c0','b8433b38']::text[]");
 });
 
 test("password verification and immutable-ID selection precede writes", () => {

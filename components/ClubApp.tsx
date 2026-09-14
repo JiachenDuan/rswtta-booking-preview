@@ -25,7 +25,6 @@ import {
   authoritativeCurrentTime,
   cancelBookingAsClub,
   cancelBookingAsParent,
-  completeParentProfileSetup,
   createActivityLog,
   createBillNotification,
   createBooking,
@@ -806,12 +805,16 @@ export function ClubApp() {
 
   async function loginParent(identifier: string, password: string, allowPreregisteredName = false) {
     const normalizedIdentifier = normalizeLoginAlias(identifier);
-    const protectedResolution = resolvePreregisteredLogin(
-      students.filter((student) => student.clubPreregistered && student.profileSetupRequired),
-      normalizedIdentifier
-    );
-    const protectedAccount = protectedResolution.status === "unique_exact" ? protectedResolution.selected : undefined;
-    if (protectedAccount && allowPreregisteredName) {
+    if (allowPreregisteredName && !normalizedIdentifier.includes("@")) {
+      const setupResolution = resolvePreregisteredLogin(
+        students.filter((student) => student.profileSetupRequired),
+        normalizedIdentifier
+      );
+      if (setupResolution.status === "ambiguous") {
+        throw new Error(copy(language, "More than one student matches this username. Ask Club staff for a unique login alias.", "多个学生匹配此用户名。请联系俱乐部工作人员分配唯一登录别名。"));
+      }
+      // A no-match may still be a private staff-assigned alias. The setup RPC is the
+      // authority and accepts only an exact private alias bound to one setup account.
       const result = await loginLegacySetupAccount(identifier, password);
       legacySetupSessionToken.current = result.sessionToken;
       applyParentSession(result.account, true);
@@ -855,26 +858,12 @@ export function ClubApp() {
 
   async function completeFirstLoginSetup(input: { studentName: string; parentName: string; email: string; phone: string; password: string }) {
     if (!parentSession) return;
-    if (parentSession.clubPreregistered) {
-      if (!legacySetupSessionToken.current) throw new Error(copy(language, "Log out and sign in again to complete setup.", "请退出并重新登录以完成设置。"));
-      const result = await completeLegacySetup(legacySetupSessionToken.current, input);
-      legacySetupSessionToken.current = "";
-      applyParentSession(result.account);
-      await loadAll();
-      setNotice(copy(language, "Profile setup complete. The temporary credential is invalid.", "资料设置完成。临时凭据已失效。"));
-      return;
-    }
-    const account = await completeParentProfileSetup({
-      accountId: parentSession.id,
-      studentName: input.studentName,
-      parentName: input.parentName,
-      email: input.email,
-      phone: input.phone,
-      password: input.password
-    });
-    applyParentSession(account);
+    if (!legacySetupSessionToken.current) throw new Error(copy(language, "Log out and sign in again to complete setup.", "请退出并重新登录以完成设置。"));
+    const result = await completeLegacySetup(legacySetupSessionToken.current, input);
+    legacySetupSessionToken.current = "";
+    applyParentSession(result.account);
     await loadAll();
-    setNotice(copy(language, "Profile setup complete. You can now use the dashboard.", "资料设置完成。现在可以使用主页。"));
+    setNotice(copy(language, "Profile setup complete. The previous password is invalid.", "资料设置完成。之前的密码已失效。"));
   }
 
   async function loginClub(identifier: string, password: string) {
@@ -1825,10 +1814,13 @@ function UnifiedAuth({
       : copy(language, "Login with username and password.", "请用用户名和密码登录。")
   );
   const [busy, setBusy] = useState(false);
-  const preregisteredResolution = resolvePreregisteredLogin(students, identifier);
+  const preregisteredResolution = resolvePreregisteredLogin(
+    students.filter((student) => student.profileSetupRequired),
+    identifier
+  );
   const exactPreregisteredLogin = preregisteredResolution.status === "unique_exact";
   const preregisteredLoginBlocked = intent === "parent" && preregisteredLogin && Boolean(identifier.trim()) &&
-    (preregisteredResolution.status === "ambiguous" || preregisteredResolution.status === "no_match");
+    preregisteredResolution.status === "ambiguous";
   const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;
 
   useEffect(() => {
@@ -1994,8 +1986,7 @@ function UnifiedAuth({
             ) : null}
             {exactPreregisteredLogin && preregisteredLogin ? (
               <div className="action-confirm-panel duplicate-student-panel" role="status">
-                <strong>{copy(language, "Exact username found", "已找到准确用户名")}</strong>
-                <p>{copy(language, "This complete username identifies one account.", "此完整用户名只对应一个账号。")}</p>
+                <strong>{copy(language, "Username recognized. Enter your password to continue.", "已识别用户名。请输入密码以继续。")}</strong>
               </div>
             ) : preregisteredLoginBlocked ? (
               <div className="action-confirm-panel duplicate-student-panel" role="alert">
