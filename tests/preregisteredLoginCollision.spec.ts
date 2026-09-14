@@ -8,7 +8,7 @@ const accounts = [
 ];
 const app = readFileSync("components/ClubApp.tsx", "utf8");
 const store = readFileSync("lib/projectStore.ts", "utf8");
-const migration = readFileSync("supabase/migrations/20260913210000_club_unverified_legacy_preregistration.sql", "utf8");
+const migration = readFileSync("supabase/migrations/20260914160000_secure_setup_login_routing.sql", "utf8");
 
 test("case-insensitive normalized exact Alex Ma selects only its stable account despite Alex Li", () => {
   expect(normalizePreregisteredLogin(" ＡＬＥＸ   ma ")).toBe("alex ma");
@@ -23,7 +23,7 @@ test("a first-name collision warns and blocks only when no unique exact username
   expect(resolvePreregisteredLogin(accounts, "Alex").status).toBe("ambiguous");
   expect(resolvePreregisteredLogin(accounts, "alex ma").status).toBe("unique_exact");
   expect(app).toContain("Other students share this first name, but this exact full username identifies one account.");
-  expect(app).toContain('disabled={busy || preregisteredLoginBlocked}');
+  expect(app).toContain('disabled={busy || setupIdentifierPending || preregisteredLoginBlocked}');
 });
 
 test("duplicate exact names are ambiguous and resolution never first-matches", () => {
@@ -43,10 +43,11 @@ test("unique aliases and first-name matches bind one ID while no match is reject
   expect(resolvePreregisteredLogin(accounts, "Jordan Synthetic").status).toBe("no_match");
 });
 
-test("contact hints are masked", () => {
+test("contact helpers mask values but pre-auth UI does not render account/contact candidates", () => {
   expect(maskedPreregisteredContact(accounts[0])).toBe("a••••@example.test");
   expect(maskedPreregisteredContact({ phone: "+1 (650) 555-1002" })).toBe("•••-•••-1002");
-  expect(app).toContain('maskedPreregisteredContact(student) || copy(language, "Profile incomplete", "资料待完善")');
+  expect(app).not.toContain("maskedPreregisteredContact(student)");
+  expect(app).not.toContain("firstNameMatches.slice");
 });
 
 test("login form has submit semantics, Enter support, and bilingual ambiguity copy", () => {
@@ -73,9 +74,9 @@ test("password verification precedes account writes and wrong passwords do not a
 });
 
 test("incomplete protected preregistration remains setup-only with rate limits and post-change invalidation", () => {
-  for (const text of ["setupOnly',true", "interval '15 minutes'", ">=8", "club_preregistration_sessions s set revoked_at=clock_timestamp()", "profileSetupRequired',false"]) {
+  for (const text of ["'setupOnly',true", "interval '15 minutes'", ">=8", "club_preregistration_sessions s set revoked_at=clock_timestamp()", "'profileSetupRequired',false"]) {
     expect(migration).toContain(text);
   }
-  expect(app).toContain("protectedResolution.status === \"unique_exact\"");
+  expect(app).toContain("const fresh = await resolveLegacySetupIdentifier(identifier)");
   expect(app).toContain("legacySetupSessionToken.current = result.sessionToken");
 });

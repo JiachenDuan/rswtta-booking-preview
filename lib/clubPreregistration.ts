@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { hashPassword } from "@/lib/projectStore";
+import { parentLegacyClientKey, type ParentLegacySession } from "@/lib/parentLegacySession";
 import type { ParentAccount } from "@/lib/types";
 
 export type PreregistrationInput = { studentName: string; email: string; phone: string; loginAlias: string };
@@ -10,6 +11,10 @@ export type StudentSearchResponse = { normalizedQuery: string; snapshotHash: str
 export type PreregistrationPreview = { normalized: PreregistrationInput; proposedAccountId: string; snapshotHash: string; collisionVersion: { count: number; maxUpdatedAt: string; idHash: string }; collisions: PreregistrationCollision[]; requiresSameNameReview: boolean };
 export type PreregistrationResult = { accountId: string; activityId: string; loginAlias: string; replayed: boolean; profileSetupRequired: true; confirmed: false; authority: "club_unverified_legacy" };
 export type LegacySetupLogin = { account: ParentAccount; sessionToken: string; setupOnly: true };
+export type LegacySetupIdentifierStatus = {
+  status: "unique_exact" | "unique_first_name" | "ambiguous" | "no_match";
+  firstNameCollision: boolean;
+};
 
 const clientKeyStorage = "rswtta-preregister-client-key";
 export function preregistrationClientKey() {
@@ -106,14 +111,20 @@ export async function createClubPreregistration(input: PreregistrationInput, pre
 }
 
 export async function loginLegacySetupAccount(identifier: string, password: string): Promise<LegacySetupLogin> {
-  const { data, error } = await supabase.rpc("parent_legacy_setup_login", { p_identifier: identifier, p_password: password, p_client_key: preregistrationClientKey() });
+  const { data, error } = await supabase.rpc("parent_legacy_setup_login", { p_identifier: identifier, p_password: password, p_client_key: parentLegacyClientKey() });
   if (error) throw error;
   return data as LegacySetupLogin;
 }
 
+export async function resolveLegacySetupIdentifier(identifier: string): Promise<LegacySetupIdentifierStatus> {
+  const { data, error } = await supabase.rpc("parent_legacy_setup_identifier_status", { p_identifier: identifier });
+  if (error) throw error;
+  return data as LegacySetupIdentifierStatus;
+}
+
 export async function completeLegacySetup(sessionToken: string, profile: { studentName: string; parentName: string; email: string; phone: string; password: string }) {
   const password = await hashPassword(profile.password);
-  const { data, error } = await supabase.rpc("parent_legacy_complete_setup", { p_session_token: sessionToken, p_client_key: preregistrationClientKey(), p_profile: { ...profile, passwordHash: password.hash, passwordSalt: password.salt } });
+  const { data, error } = await supabase.rpc("parent_legacy_complete_setup", { p_session_token: sessionToken, p_client_key: parentLegacyClientKey(), p_profile: { ...profile, passwordHash: password.hash, passwordSalt: password.salt } });
   if (error) throw error;
-  return data as { account: ParentAccount; setupOnly: false; temporaryCredentialInvalidated: true };
+  return data as ParentLegacySession & { setupOnly: false; previousCredentialInvalidated: true };
 }

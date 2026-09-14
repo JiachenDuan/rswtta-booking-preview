@@ -710,6 +710,16 @@ export async function listParentAccounts() {
   return uniqueAccountRowsById(rows).map(accountFromRow).sort((left, right) => left.studentName.localeCompare(right.studentName));
 }
 
+export async function listParentAccountsForClub(clubIdentifier: string, legacyClubProof: string) {
+  const { data, error } = await supabase.rpc("club_legacy_list_parent_accounts", {
+    p_club_identifier: clubIdentifier,
+    p_club_proof: legacyClubProof,
+    p_client_key: crypto.randomUUID() + crypto.randomUUID()
+  });
+  if (error) throw setupError(error.message);
+  return (data as ParentAccount[]).sort((left, right) => left.studentName.localeCompare(right.studentName));
+}
+
 export async function createClubStudentAccount(input: { studentName: string; email?: string; phone?: string }) {
   const studentName = input.studentName.trim();
   const email = String(input.email ?? "").trim().toLowerCase();
@@ -767,17 +777,11 @@ export async function updateUserPassword(password: string) {
 
   try {
     const passwordParts = await hashPassword(password);
-    const rows = await listRows<AccountValues>("parent_accounts");
-    const row = rows.find((item) => String(item.values.email ?? "").toLowerCase() === email);
-    if (row) {
-      await updateRow("parent_accounts", row.id, {
-        ...row.values,
-        passwordHash: passwordParts.hash,
-        passwordSalt: passwordParts.salt,
-        confirmed: true,
-        profileSetupRequired: false
-      });
-    }
+    const response = await supabase.rpc("parent_sync_authenticated_password", {
+      p_password_hash: passwordParts.hash,
+      p_password_salt: passwordParts.salt
+    });
+    if (response.error) throw response.error;
   } catch {
     const rows = localRows<AccountValues>("parent_accounts");
     const row = rows.find((item) => String(item.values.email ?? "").toLowerCase() === email);

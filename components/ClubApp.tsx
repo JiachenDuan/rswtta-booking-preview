@@ -25,7 +25,6 @@ import {
   authoritativeCurrentTime,
   cancelBookingAsClub,
   cancelBookingAsParent,
-  completeParentProfileSetup,
   createActivityLog,
   createBillNotification,
   createBooking,
@@ -34,6 +33,7 @@ import {
   listBillNotifications,
   listBookings,
   listParentAccounts,
+  listParentAccountsForClub,
   registerParentAccount,
   resetPasswordForEmail,
   requestBookingAsParent,
@@ -57,6 +57,7 @@ import {
   logoutParentLegacySession,
   readParentLegacySession,
   resumeParentLegacySession,
+  storeParentLegacySession,
   type ParentLegacyDashboard
 } from "@/lib/parentLegacySession";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
@@ -67,8 +68,8 @@ import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
-import { completeLegacySetup, loginLegacySetupAccount, normalizeLoginAlias } from "@/lib/clubPreregistration";
-import { maskedPreregisteredContact, normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
+import { completeLegacySetup, loginLegacySetupAccount, resolveLegacySetupIdentifier } from "@/lib/clubPreregistration";
+import { normalizePreregisteredLogin } from "@/lib/preregisteredLogin";
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
@@ -119,6 +120,7 @@ type AuthMode = "login" | "register" | "forgot" | "updatePassword";
 type Language = "en" | "zh";
 
 const parentSessionKey = "rswtta-parent-session";
+const legacySetupTokenKey = "rswtta-parent-setup-session";
 const clubSessionKey = "rswtta-club-session";
 const clubEmail = "rswtta";
 const clubPassword = "rswttatian";
@@ -763,15 +765,10 @@ export function ClubApp() {
   }
 
   async function loginParent(identifier: string, password: string, allowPreregisteredName = false) {
-    const normalizedIdentifier = normalizeLoginAlias(identifier);
-    const protectedResolution = resolvePreregisteredLogin(
-      students.filter((student) => student.clubPreregistered && student.profileSetupRequired),
-      normalizedIdentifier
-    );
-    const protectedAccount = protectedResolution.status === "unique_exact" ? protectedResolution.selected : undefined;
-    if (protectedAccount && allowPreregisteredName) {
+    if (allowPreregisteredName) {
       const result = await loginLegacySetupAccount(identifier, password);
       legacySetupSessionToken.current = result.sessionToken;
+      window.sessionStorage.setItem(legacySetupTokenKey, result.sessionToken);
       applyParentSession(result.account, true);
       return;
     }
@@ -813,26 +810,18 @@ export function ClubApp() {
 
   async function completeFirstLoginSetup(input: { studentName: string; parentName: string; email: string; phone: string; password: string }) {
     if (!parentSession) return;
-    if (parentSession.clubPreregistered) {
+    if (legacySetupSessionToken.current) {
       if (!legacySetupSessionToken.current) throw new Error(copy(language, "Log out and sign in again to complete setup.", "请退出并重新登录以完成设置。"));
       const result = await completeLegacySetup(legacySetupSessionToken.current, input);
       legacySetupSessionToken.current = "";
-      applyParentSession(result.account);
-      await loadAll();
-      setNotice(copy(language, "Profile setup complete. The temporary credential is invalid.", "资料设置完成。临时凭据已失效。"));
+      window.sessionStorage.removeItem(legacySetupTokenKey);
+      storeParentLegacySession(result);
+      setVerifiedParentSessionToken(result.sessionToken);
+      applyParentLegacyDashboard(result);
+      setNotice(copy(language, "Profile setup complete. The previous credential is invalid.", "资料设置完成。原凭据已失效。"));
       return;
     }
-    const account = await completeParentProfileSetup({
-      accountId: parentSession.id,
-      studentName: input.studentName,
-      parentName: input.parentName,
-      email: input.email,
-      phone: input.phone,
-      password: input.password
-    });
-    applyParentSession(account);
-    await loadAll();
-    setNotice(copy(language, "Profile setup complete. You can now use the dashboard.", "资料设置完成。现在可以使用主页。"));
+    throw new Error(copy(language, "Log out and sign in again to complete setup securely.", "请退出并重新登录以安全完成设置。"));
   }
 
   async function loginClub(identifier: string, password: string) {
@@ -843,6 +832,7 @@ export function ClubApp() {
     setLegacyClubProof(password);
     window.localStorage.setItem(clubSessionKey, "true");
     setMode("club");
+    await loadAll(password);
   }
 
   async function loginUnified(identifier: string, password: string, allowPreregisteredName = false) {
@@ -854,12 +844,12 @@ export function ClubApp() {
     setMode("parent");
   }
 
-  async function loadAll() {
+  async function loadAll(clubProof = legacyClubProof) {
     try {
       const [nextBookings, nextBills, nextStudents, nextActivityLogs, databaseTime] = await Promise.all([
         listBookings(),
         listBillNotifications(),
-        listParentAccounts(),
+        clubAuthenticated || clubProof ? listParentAccountsForClub(clubEmail, clubProof) : listParentAccounts(),
         listActivityLogs(),
         // Keep the established local projectStore fallback usable for isolated review.
         authoritativeCurrentTime().catch(() => new Date())
@@ -1477,33 +1467,26 @@ export function ClubApp() {
         });
     }
     const storedParent = window.localStorage.getItem(parentSessionKey);
-    const storedClub = window.localStorage.getItem(clubSessionKey) === "true";
-    if (storedParent) {
+    const storedSetupToken = window.sessionStorage.getItem(legacySetupTokenKey);
+    if (storedParent && storedSetupToken) {
       const setupAccount = JSON.parse(storedParent) as ParentAccount;
-      if (setupAccount.profileSetupRequired) applyParentSession(setupAccount, true);
-      else window.localStorage.removeItem(parentSessionKey);
-      setMode("parent");
+      if (setupAccount.profileSetupRequired) {
+        legacySetupSessionToken.current = storedSetupToken;
+        applyParentSession(setupAccount, true);
+        setMode("parent");
+      } else {
+        window.localStorage.removeItem(parentSessionKey);
+        window.sessionStorage.removeItem(legacySetupTokenKey);
+      }
+    } else {
+      window.localStorage.removeItem(parentSessionKey);
+      window.sessionStorage.removeItem(legacySetupTokenKey);
     }
-    if (storedClub) {
-      setClubAuthenticated(true);
-      setMode("club");
-    }
-    loadAll();
-    const refreshFromPush = () => {
-      if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
-      realtimeRefreshTimer.current = window.setTimeout(() => {
-        realtimeRefreshTimer.current = null;
-        loadAll();
-      }, 250);
-    };
-    const realtimeChannel = supabase
-      .channel("rswtta-project-rows-push")
-      .on("postgres_changes", { event: "*", schema: "public", table: "project_rows" }, refreshFromPush)
-      .subscribe();
+    // Never trust the old localStorage-only Club marker or subscribe to project rows before authentication.
+    window.localStorage.removeItem(clubSessionKey);
     const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
     return () => {
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
-      supabase.removeChannel(realtimeChannel);
       window.clearInterval(clock);
     };
   }, []);
@@ -1593,7 +1576,6 @@ export function ClubApp() {
             initialAuthMode="login"
             intent="parent"
             language={language}
-            students={students}
             onRegister={registerParent}
             onLogin={loginUnified}
             onRequestPasswordReset={requestPasswordReset}
@@ -1762,7 +1744,6 @@ function UnifiedAuth({
   initialAuthMode,
   intent,
   language,
-  students = [],
   onRegister,
   onLogin,
   onRequestPasswordReset,
@@ -1771,7 +1752,6 @@ function UnifiedAuth({
   initialAuthMode: "login" | "register";
   intent: "parent" | "club";
   language: Language;
-  students?: ParentAccount[];
   onRegister: (input: { studentName: string; email: string; phone: string; password: string }) => Promise<void>;
   onLogin: (identifier: string, password: string, allowPreregisteredName?: boolean) => Promise<void>;
   onRequestPasswordReset: (email: string) => Promise<void>;
@@ -1791,12 +1771,12 @@ function UnifiedAuth({
       : copy(language, "Login with username and password.", "请用用户名和密码登录。")
   );
   const [busy, setBusy] = useState(false);
-  const preregisteredResolution = resolvePreregisteredLogin(students, identifier);
-  const firstNameMatches = intent === "parent" && preregisteredLogin ? preregisteredResolution.firstNameMatches : [];
-  const exactPreregisteredLogin = preregisteredResolution.status === "unique_exact";
-  const firstNameCollision = firstNameMatches.length > 1;
+  const [setupIdentifierStatus, setSetupIdentifierStatus] = useState<Awaited<ReturnType<typeof resolveLegacySetupIdentifier>> | null>(null);
+  const [setupIdentifierPending, setSetupIdentifierPending] = useState(false);
+  const exactPreregisteredLogin = setupIdentifierStatus?.status === "unique_exact";
+  const firstNameCollision = Boolean(setupIdentifierStatus?.firstNameCollision);
   const preregisteredLoginBlocked = intent === "parent" && preregisteredLogin && Boolean(identifier.trim()) &&
-    (preregisteredResolution.status === "ambiguous" || preregisteredResolution.status === "no_match");
+    (setupIdentifierStatus?.status === "ambiguous" || setupIdentifierStatus?.status === "no_match");
   const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;
 
   useEffect(() => {
@@ -1818,6 +1798,26 @@ function UnifiedAuth({
     return () => data.subscription.unsubscribe();
   }, [intent]);
 
+  useEffect(() => {
+    if (intent !== "parent" || !preregisteredLogin || !identifier.trim()) {
+      setSetupIdentifierStatus(null);
+      setSetupIdentifierPending(false);
+      return;
+    }
+    let cancelled = false;
+    setSetupIdentifierPending(true);
+    const timer = window.setTimeout(() => {
+      resolveLegacySetupIdentifier(identifier)
+        .then((result) => { if (!cancelled) setSetupIdentifierStatus(result); })
+        .catch(() => { if (!cancelled) setSetupIdentifierStatus(null); })
+        .finally(() => { if (!cancelled) setSetupIdentifierPending(false); });
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [identifier, intent, preregisteredLogin]);
+
   async function handleRegister() {
     setBusy(true);
     try {
@@ -1831,7 +1831,13 @@ function UnifiedAuth({
   }
 
   async function handleLogin() {
-    if (preregisteredLoginBlocked) {
+    let blocked = preregisteredLoginBlocked;
+    if (intent === "parent" && preregisteredLogin && identifier.trim()) {
+      const fresh = await resolveLegacySetupIdentifier(identifier);
+      setSetupIdentifierStatus(fresh);
+      blocked = fresh.status === "ambiguous" || fresh.status === "no_match";
+    }
+    if (blocked) {
       setNotice(copy(language, "No unique account matches this username. Use the exact full username or email.", "没有唯一账号匹配此用户名。请使用准确的完整用户名或邮箱。"));
       return;
     }
@@ -1962,16 +1968,6 @@ function UnifiedAuth({
                 <p>{exactPreregisteredLogin
                   ? copy(language, "Other students share this first name, but this exact full username identifies one account.", "其他学生使用相同名字，但此准确的完整用户名只对应一个账号。")
                   : copy(language, "More than one student has this first name. Enter the exact full username or use email.", "多个学生使用这个名字。请输入准确的完整用户名或使用邮箱。")}</p>
-                <div className="student-results modal-results">
-                  {firstNameMatches.slice(0, 5).map((student) => (
-                    <div className="student-result selected locked-selection" key={student.id}>
-                      <span>
-                        <strong>{student.studentName}</strong>
-                        <em>{maskedPreregisteredContact(student) || copy(language, "Profile incomplete", "资料待完善")}</em>
-                      </span>
-                    </div>
-                  ))}
-                </div>
               </div>
             ) : preregisteredLoginBlocked ? (
               <div className="action-confirm-panel duplicate-student-panel" role="alert">
@@ -1979,7 +1975,7 @@ function UnifiedAuth({
                 <p>{copy(language, "Enter the exact full username or use email.", "请输入准确的完整用户名或使用邮箱。")}</p>
               </div>
             ) : null}
-            <button type="submit" className="primary-button auth-submit" disabled={busy || preregisteredLoginBlocked}>
+            <button type="submit" className="primary-button auth-submit" disabled={busy || setupIdentifierPending || preregisteredLoginBlocked}>
               <LogIn size={18} />
               {copy(language, "Login", "登录")}
             </button>

@@ -36,7 +36,7 @@ function requireData<T>(response: RpcResponse<T>, fallback: string): T {
   return response.data;
 }
 
-function storeSession(session: StoredSession) {
+export function storeParentLegacySession(session: StoredSession) {
   storage()?.setItem(parentLegacySessionStorageKey, JSON.stringify(session));
 }
 
@@ -62,7 +62,7 @@ export async function loginParentLegacySession(identifier: string, password: str
     p_client_key: parentLegacyClientKey()
   });
   const session = requireData(response as RpcResponse<ParentLegacySession>, "Unable to sign in. Check your email and password.");
-  storeSession(session);
+  storeParentLegacySession(session);
   return session;
 }
 

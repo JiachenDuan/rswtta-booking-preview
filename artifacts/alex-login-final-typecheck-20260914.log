@@ -1,0 +1,2 @@
+npx tsc --noEmit --strict
+PASS (exit 0)

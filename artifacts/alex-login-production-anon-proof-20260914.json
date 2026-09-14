@@ -1,0 +1,10 @@
+{
+  "directAccountRows": 0,
+  "resolverKeys": [
+    "firstNameCollision",
+    "status"
+  ],
+  "resolverStatus": "unique_exact",
+  "firstNameCollision": true,
+  "writesAttempted": 0
+}

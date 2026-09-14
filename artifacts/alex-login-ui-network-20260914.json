@@ -1,0 +1,18 @@
+{
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/rest/v1/rpc/parent_legacy_setup_identifier_status"
+    },
+    {
+      "method": "POST",
+      "path": "/rest/v1/rpc/parent_legacy_setup_identifier_status"
+    },
+    {
+      "method": "POST",
+      "path": "/rest/v1/rpc/parent_legacy_setup_login"
+    }
+  ],
+  "broadProjectRows": 0,
+  "setupLoginCalls": 1
+}

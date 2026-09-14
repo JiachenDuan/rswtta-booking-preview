@@ -1,0 +1,22 @@
+{
+  "status": "completed",
+  "productionProjectRef": "xtewfpzsyjeaqgkdttij",
+  "migration": "supabase/migrations/20260914160000_secure_setup_login_routing.sql",
+  "migrationSha256": "ecf5c6ef9e7bd8ad9eda200a3cd2432f2a14e08afb91834f862cb65992ba3dbc",
+  "initial": {
+    "accountCount": 67,
+    "accountHash": "137ce3f1eded3d35cebfa47a0dfcbe731c3febf035f617f69bd36ec9742cd2c4"
+  },
+  "final": {
+    "backup_hash": "137ce3f1eded3d35cebfa47a0dfcbe731c3febf035f617f69bd36ec9742cd2c4",
+    "backup_count": 67,
+    "current_hash": "137ce3f1eded3d35cebfa47a0dfcbe731c3febf035f617f69bd36ec9742cd2c4",
+    "current_count": 67,
+    "public_policies": [
+      "public insert non-account project rows",
+      "public read non-account project rows",
+      "public update non-account project rows"
+    ],
+    "synthetic_fixture_rows": 0
+  }
+}
