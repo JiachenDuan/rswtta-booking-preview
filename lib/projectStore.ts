@@ -334,6 +334,8 @@ function accountFromRow(row: ProjectRow<ParentAccount & { passwordHash: string; 
   return {
     id: row.id,
     preregisteredName: String(row.values.preregisteredName ?? "") || undefined,
+    loginAlias: String(row.values.loginAlias ?? "") || undefined,
+    clubPreregistered: Boolean(row.values.clubPreregistered),
     studentName: String(row.values.studentName ?? "Student"),
     parentName: String(row.values.parentName ?? ""),
     email: String(row.values.email ?? ""),
@@ -451,7 +453,7 @@ function bytesToBase64(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes));
 }
 
-async function hashPassword(password: string, salt = crypto.getRandomValues(new Uint8Array(16))) {
+export async function hashPassword(password: string, salt = crypto.getRandomValues(new Uint8Array(16))) {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
     { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
@@ -604,9 +606,10 @@ function findPreregisteredNameMatches(rows: Array<ProjectRow<AccountValues>>, id
   const identifierFirstName = accountNameTokens(normalizedIdentifier)[0] ?? "";
   if (!identifierFirstName) return [];
   return rows.filter((item) => {
+    const loginAlias = String(item.values.loginAlias ?? "").normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
     const studentName = String(item.values.studentName ?? "").trim().toLowerCase();
     const firstName = accountNameTokens(studentName)[0] ?? "";
-    return studentName === normalizedIdentifier || firstName === identifierFirstName;
+    return loginAlias === normalizedIdentifier || studentName === normalizedIdentifier || firstName === identifierFirstName;
   });
 }
 
@@ -650,6 +653,8 @@ function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier
 
   const matches = findPreregisteredNameMatches(rows, normalizedIdentifier);
   if (matches.length === 0) throw new Error("Invalid login");
+  const exactAliasMatches = matches.filter((item) => String(item.values.loginAlias ?? "").normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ") === normalizedIdentifier);
+  if (exactAliasMatches.length === 1) return exactAliasMatches[0];
   const uniqueMatchNames = new Set(matches.map((item) => normalizedRosterName(item.values.studentName)).filter(Boolean));
   if (uniqueMatchNames.size > 1) throw new Error("More than one student has this first name. Please log in with email.");
 

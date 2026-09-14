@@ -60,6 +60,8 @@ export type ActivityLog = {
 export type ParentAccount = {
   id: string;
   preregisteredName?: string;
+  loginAlias?: string;
+  clubPreregistered?: boolean;
   studentName: string;
   parentName: string;
   email: string;

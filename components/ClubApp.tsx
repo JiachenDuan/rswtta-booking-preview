@@ -57,6 +57,8 @@ import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount 
 import { supabase } from "@/lib/supabase";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
+import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
+import { completeLegacySetup, loginLegacySetupAccount, normalizeLoginAlias } from "@/lib/clubPreregistration";
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
@@ -680,6 +682,8 @@ export function ClubApp() {
   const [notice, setNotice] = useState("");
   const [parentSession, setParentSession] = useState<ParentAccount | null>(null);
   const [clubAuthenticated, setClubAuthenticated] = useState(false);
+  const [legacyClubProof, setLegacyClubProof] = useState("");
+  const legacySetupSessionToken = useRef("");
   const [studentName, setStudentName] = useState("");
   const [familyName, setFamilyName] = useState("");
   const [studentEmail, setStudentEmail] = useState("");
@@ -744,6 +748,14 @@ export function ClubApp() {
   }
 
   async function loginParent(identifier: string, password: string, allowPreregisteredName = false) {
+    const normalizedIdentifier = normalizeLoginAlias(identifier);
+    const protectedAccount = students.find((student) => student.clubPreregistered && student.loginAlias === normalizedIdentifier && student.profileSetupRequired);
+    if (protectedAccount && allowPreregisteredName) {
+      const result = await loginLegacySetupAccount(identifier, password);
+      legacySetupSessionToken.current = result.sessionToken;
+      applyParentSession(result.account);
+      return;
+    }
     const account = await loginParentAccount(identifier, password, { allowPreregisteredName });
     applyParentSession(account);
   }
@@ -781,6 +793,15 @@ export function ClubApp() {
 
   async function completeFirstLoginSetup(input: { studentName: string; parentName: string; email: string; phone: string; password: string }) {
     if (!parentSession) return;
+    if (parentSession.clubPreregistered) {
+      if (!legacySetupSessionToken.current) throw new Error(copy(language, "Log out and sign in again to complete setup.", "请退出并重新登录以完成设置。"));
+      const result = await completeLegacySetup(legacySetupSessionToken.current, input);
+      legacySetupSessionToken.current = "";
+      applyParentSession(result.account);
+      await loadAll();
+      setNotice(copy(language, "Profile setup complete. The temporary credential is invalid.", "资料设置完成。临时凭据已失效。"));
+      return;
+    }
     const account = await completeParentProfileSetup({
       accountId: parentSession.id,
       studentName: input.studentName,
@@ -799,6 +820,7 @@ export function ClubApp() {
       throw new Error("Wrong club login");
     }
     setClubAuthenticated(true);
+    setLegacyClubProof(password);
     window.localStorage.setItem(clubSessionKey, "true");
     setMode("club");
   }
@@ -1486,6 +1508,7 @@ export function ClubApp() {
                 className="filter-button"
                 onClick={() => {
                   setClubAuthenticated(false);
+                  setLegacyClubProof("");
                   window.localStorage.removeItem(clubSessionKey);
                   setMode("parent");
                 }}
@@ -1631,6 +1654,8 @@ export function ClubApp() {
             onBlockTime={blockCoachTime}
             onAddGroupDropIn={addGroupDropIn}
             onAddGroupNewStudent={addGroupNewStudent}
+            clubIdentifier={clubEmail}
+            legacyClubProof={legacyClubProof}
           />
         )}
         {showRequestConfirm && parentPrivateClassRequestsEnabled ? (
@@ -1945,12 +1970,13 @@ function FirstLoginSetup({
   const studentNameReady = setupStudentName.trim().length > 0;
   const emailReady = email.trim().includes("@");
   const phoneReady = phone.trim().replace(/\D/g, "").length >= 7;
-  const passwordReady = password.length >= 6 && password !== preregisteredPasswordTemplate && password === confirmPassword;
-  const ready = studentNameReady && emailReady && phoneReady && passwordReady;
+  const passwordReady = password.length >= 6 && (account.clubPreregistered || password !== preregisteredPasswordTemplate) && password === confirmPassword;
+  const contactReady = account.clubPreregistered || (emailReady && phoneReady);
+  const ready = studentNameReady && contactReady && passwordReady;
 
   async function handleComplete() {
     if (!ready) {
-      setNotice(copy(language, "Student name, email, phone, and matching new password are required.", "必须填写学生姓名、邮箱、电话，并输入一致的新密码。"));
+      setNotice(copy(language, account.clubPreregistered ? "Student name and a matching different password are required." : "Student name, email, phone, and matching new password are required.", account.clubPreregistered ? "必须填写学生姓名并输入一致的不同密码。" : "必须填写学生姓名、邮箱、电话，并输入一致的新密码。"));
       return;
     }
     setBusy(true);
@@ -1973,14 +1999,14 @@ function FirstLoginSetup({
             <p className="section-subtitle">
               {copy(
                 language,
-                `${account.studentName}, update your password and add contact info before using the dashboard.`,
-                `${account.studentName}，请先更新密码并填写联系方式，然后才能使用主页。`
+                account.clubPreregistered ? `${account.studentName}, set a different password before using the dashboard. Contact fields are optional.` : `${account.studentName}, update your password and add contact info before using the dashboard.`,
+                account.clubPreregistered ? `${account.studentName}，请先设置不同密码，再使用主页。联系方式可选。` : `${account.studentName}，请先更新密码并填写联系方式，然后才能使用主页。`
               )}
             </p>
           </div>
         </div>
         <div className="setup-lockout">
-          {copy(language, "Dashboard is locked until email and phone are filled out.", "填写邮箱和电话前，主页会保持锁定。")}
+          {copy(language, account.clubPreregistered ? "Dashboard, schedule, booking, billing, packages, and account data stay locked until the password is replaced." : "Dashboard is locked until email and phone are filled out.", account.clubPreregistered ? "更换密码前，主页、日程、预约、账单、课包和账号数据均保持锁定。" : "填写邮箱和电话前，主页会保持锁定。")}
         </div>
         <div className="simple-form auth-form">
           <label>
@@ -1999,14 +2025,14 @@ function FirstLoginSetup({
             </div>
           </label>
           <label>
-            <span>{copy(language, "Email required", "邮箱（必填）")}</span>
+            <span>{copy(language, account.clubPreregistered ? "Email optional" : "Email required", account.clubPreregistered ? "邮箱（可选）" : "邮箱（必填）")}</span>
             <div className="input-shell">
               <Mail size={18} />
               <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="student@example.com" />
             </div>
           </label>
           <label>
-            <span>{copy(language, "Phone required", "电话（必填）")}</span>
+            <span>{copy(language, account.clubPreregistered ? "Phone optional" : "Phone required", account.clubPreregistered ? "电话（可选）" : "电话（必填）")}</span>
             <div className="input-shell">
               <Phone size={18} />
               <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="(650) 555-0000" />
@@ -2619,7 +2645,9 @@ function ClubAppView({
   onBlockTime,
   onAddGroupDropIn,
   onAddGroupNewStudent,
-  onNotice
+  onNotice,
+  clubIdentifier,
+  legacyClubProof
 }: {
   bookings: Booking[];
   activityLogs: ActivityLog[];
@@ -2655,6 +2683,8 @@ function ClubAppView({
   onAddGroupDropIn: (groupClass: Booking, student: ParentAccount | undefined, scope?: GroupEnrollmentScope, idempotencyKey?: string) => Promise<boolean>;
   onAddGroupNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) => Promise<boolean>;
   onNotice: (message: string) => void;
+  clubIdentifier: string;
+  legacyClubProof: string;
 }) {
   const defaultExportStart = dateInputValue(startOfWeek(selectedSlot.date));
   const defaultExportEnd = dateInputValue(addDays(startOfWeek(selectedSlot.date), 6));
@@ -2667,7 +2697,7 @@ function ClubAppView({
   const [showAddClassModal, setShowAddClassModal] = useState(false);
   const [selectedAddStudent, setSelectedAddStudent] = useState<ParentAccount | null>(null);
   const [selectedClubBooking, setSelectedClubBooking] = useState<Booking | null>(null);
-  const [clubSection, setClubSection] = useState<"calendar" | "packages">("calendar");
+  const [clubSection, setClubSection] = useState<"calendar" | "students" | "packages">("calendar");
   useEffect(() => {
     if (selectedClubBooking) {
       const canonical = bookings.find((booking) => booking.id === selectedClubBooking.id);
@@ -2881,11 +2911,14 @@ function ClubAppView({
         <button type="button" className={clubSection === "calendar" ? "selected" : ""} onClick={() => setClubSection("calendar")}>
           {copy(language, "Calendar / 日历", "日历 / Calendar")}
         </button>
+        <button type="button" className={clubSection === "students" ? "selected" : ""} onClick={() => setClubSection("students")}>
+          {copy(language, "Register student / 注册学生", "注册学生 / Register student")}
+        </button>
         <button type="button" className={clubSection === "packages" ? "selected" : ""} onClick={() => setClubSection("packages")}>
           {copy(language, "Class packages / 课时包", "课时包 / Class packages")}
         </button>
       </nav>
-      {clubSection === "packages" ? <ClassPackagesPanel students={studentDirectory} language={language} /> : <>
+      {clubSection === "packages" ? <ClassPackagesPanel students={studentDirectory} language={language} /> : clubSection === "students" ? <RegisterStudentPanel students={studentDirectory} language={language} clubIdentifier={clubIdentifier} legacyClubProof={legacyClubProof} onCreated={async () => { await onNotice(copy(language, "Student directory refreshed.", "学生列表已刷新。")); }} /> : <>
       <section className="section-block calendar-core">
         <div className="section-head">
           <div>

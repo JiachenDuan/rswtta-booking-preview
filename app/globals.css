@@ -2929,6 +2929,16 @@ button.student-result.selected {
   line-height: 1.35;
 }
 
+/* Club-only student preregistration. */
+.preregister-panel { display: grid; gap: 18px; }
+.preregister-fields { align-items: end; }
+.preregister-fields label { display: grid; gap: 7px; color: var(--muted); font-size: .8rem; font-weight: 800; }
+.preregister-fields input { min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+.preregister-confirm { max-width: 760px; }
+.preregister-confirm ul { display: grid; gap: 6px; margin: 0; padding-left: 20px; color: var(--muted); }
+@media (max-width: 900px) { .preregister-fields { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .preregister-panel { gap: 14px; } .preregister-confirm .modal-actions { grid-template-columns: 1fr; } }
+
 /* Club-only category-aware package ledger. */
 .club-section-nav { display: flex; gap: 8px; margin-bottom: 18px; padding: 5px; width: fit-content; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; background: rgba(255, 255, 255, 0.025); }
 .club-section-nav button { min-height: 40px; padding: 0 15px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-weight: 800; }
