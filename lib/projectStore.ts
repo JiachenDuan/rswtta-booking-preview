@@ -594,24 +594,7 @@ export async function confirmParentAccount(email: string, confirmationCode: stri
   return accountFromRow(updated);
 }
 
-function accountNameTokens(value: unknown) {
-  return normalizePreregisteredLogin(value).split(" ").filter(Boolean);
-}
-
-function normalizedRosterName(value: unknown) {
-  return normalizePreregisteredLogin(value);
-}
-
-function matchesFirstName(name: unknown, identifier: string) {
-  const normalizedName = normalizedRosterName(name);
-  const normalizedIdentifier = normalizedRosterName(identifier);
-  if (!normalizedName || normalizedName === "group class") return false;
-  const identifierFirstName = accountNameTokens(normalizedIdentifier)[0] ?? "";
-  const firstName = accountNameTokens(normalizedName)[0] ?? "";
-  return Boolean(identifierFirstName) && (normalizedName === normalizedIdentifier || firstName === identifierFirstName);
-}
-
-function assertUniquePreregisteredRosterName(accountRows: Array<ProjectRow<AccountValues>>, bookingRows: Array<ProjectRow<Booking>>, identifier: string) {
+function assertUniquePreregisteredLogin(accountRows: Array<ProjectRow<AccountValues>>, identifier: string) {
   const resolution = resolvePreregisteredLogin(
     accountRows.map((row) => ({ id: row.id, studentName: String(row.values.studentName ?? ""), loginAlias: String(row.values.loginAlias ?? "") })),
     identifier
@@ -619,12 +602,6 @@ function assertUniquePreregisteredRosterName(accountRows: Array<ProjectRow<Accou
   if (resolution.status === "unique_exact") return;
   if (resolution.status === "ambiguous") {
     throw new Error("More than one student matches this username. Please use the unique full username or email.");
-  }
-  const uniqueBookingNames = new Set(
-    bookingRows.map((item) => normalizedRosterName(item.values.studentName)).filter((name) => matchesFirstName(name, identifier))
-  );
-  if ((resolution.status === "no_match" && uniqueBookingNames.size > 0) || uniqueBookingNames.size > 1) {
-    throw new Error("More than one student has this first name. Please use the unique full username or email.");
   }
 }
 
@@ -673,8 +650,7 @@ export async function loginParentAccount(identifier: string, password: string, o
 
       const rows = await listAccountRowsWithSeeds();
       if (!isEmail && options.allowPreregisteredName) {
-        const bookingRows = await listRows<Booking>("bookings");
-        assertUniquePreregisteredRosterName(rows, bookingRows, normalizedIdentifier);
+        assertUniquePreregisteredLogin(rows, normalizedIdentifier);
       }
       const row = selectParentLoginRow(rows, normalizedIdentifier, Boolean(options.allowPreregisteredName));
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
@@ -690,8 +666,7 @@ export async function loginParentAccount(identifier: string, password: string, o
       const normalizedIdentifier = normalizePreregisteredLogin(identifier);
       const isEmail = normalizedIdentifier.includes("@");
       if (!isEmail && options.allowPreregisteredName) {
-        const bookingRows = localRows<Booking>("bookings");
-        assertUniquePreregisteredRosterName(rows, bookingRows, normalizedIdentifier);
+        assertUniquePreregisteredLogin(rows, normalizedIdentifier);
       }
       const row = selectParentLoginRow(rows, normalizedIdentifier, Boolean(options.allowPreregisteredName));
       const ok = await verifyPassword(password, String(row.values.passwordSalt ?? ""), String(row.values.passwordHash ?? ""));
@@ -848,8 +823,7 @@ export async function completeParentProfileSetup(input: { accountId: string; stu
   const accountRows = await listRows<AccountValues>("parent_accounts");
   const existing = accountRows.find((item) => item.id === input.accountId);
   if (!existing) throw new Error("Account not found");
-  const bookingRows = await listRows<Booking>("bookings");
-  assertUniquePreregisteredRosterName(accountRows, bookingRows, String(existing.values.studentName ?? ""));
+  assertUniquePreregisteredLogin(accountRows, String(existing.values.studentName ?? ""));
 
   const row = await updateStudentAccountAndReferences(input.accountId, values);
   return accountFromRow(row);

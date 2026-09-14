@@ -9,9 +9,8 @@ export type PreregisteredLoginCandidate = {
 export type PreregisteredLoginResolution = {
   normalizedIdentifier: string;
   exactMatches: PreregisteredLoginCandidate[];
-  firstNameMatches: PreregisteredLoginCandidate[];
   selected?: PreregisteredLoginCandidate;
-  status: "unique_exact" | "unique_first_name" | "ambiguous" | "no_match";
+  status: "unique_exact" | "ambiguous" | "no_match";
 };
 
 export function normalizePreregisteredLogin(value: unknown) {
@@ -24,7 +23,7 @@ export function resolvePreregisteredLogin(
 ): PreregisteredLoginResolution {
   const normalizedIdentifier = normalizePreregisteredLogin(identifier);
   if (!normalizedIdentifier || normalizedIdentifier.includes("@")) {
-    return { normalizedIdentifier, exactMatches: [], firstNameMatches: [], status: "no_match" };
+    return { normalizedIdentifier, exactMatches: [], status: "no_match" };
   }
 
   const exactMatches = candidates.filter((candidate) => {
@@ -32,26 +31,14 @@ export function resolvePreregisteredLogin(
     const fullName = normalizePreregisteredLogin(candidate.studentName);
     return alias === normalizedIdentifier || fullName === normalizedIdentifier;
   });
-  const firstName = normalizedIdentifier.split(" ")[0] ?? "";
-  const firstNameMatches = candidates.filter(
-    (candidate) => normalizePreregisteredLogin(candidate.studentName).split(" ")[0] === firstName
-  );
 
   if (exactMatches.length === 1) {
-    return { normalizedIdentifier, exactMatches, firstNameMatches, selected: exactMatches[0], status: "unique_exact" };
+    return { normalizedIdentifier, exactMatches, selected: exactMatches[0], status: "unique_exact" };
   }
   if (exactMatches.length > 1) {
-    return { normalizedIdentifier, exactMatches, firstNameMatches, status: "ambiguous" };
+    return { normalizedIdentifier, exactMatches, status: "ambiguous" };
   }
-  if (firstNameMatches.length === 1) {
-    return { normalizedIdentifier, exactMatches, firstNameMatches, selected: firstNameMatches[0], status: "unique_first_name" };
-  }
-  return {
-    normalizedIdentifier,
-    exactMatches,
-    firstNameMatches,
-    status: firstNameMatches.length > 1 ? "ambiguous" : "no_match"
-  };
+  return { normalizedIdentifier, exactMatches, status: "no_match" };
 }
 
 function maskEmail(value: string) {

@@ -66,7 +66,7 @@ import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccou
 import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
 import { completeLegacySetup, loginLegacySetupAccount, normalizeLoginAlias } from "@/lib/clubPreregistration";
-import { maskedPreregisteredContact, normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
+import { normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
 import {
   parseParentSetupAccount,
   safeStorageRead,
@@ -204,8 +204,8 @@ function canParentRequestChange(booking: Booking) {
 }
 
 function isCancellationRequest(booking: Booking) {
-  const note = booking.parentNote.toLowerCase();
-  return booking.status === "change_requested" && (note.includes("cancel") || booking.parentNote.includes("取消"));
+  const note = String(booking.parentNote ?? "").toLowerCase();
+  return booking.status === "change_requested" && (note.includes("cancel") || note.includes("取消"));
 }
 
 function lessonProgram(coach: string) {
@@ -1826,9 +1826,7 @@ function UnifiedAuth({
   );
   const [busy, setBusy] = useState(false);
   const preregisteredResolution = resolvePreregisteredLogin(students, identifier);
-  const firstNameMatches = intent === "parent" && preregisteredLogin ? preregisteredResolution.firstNameMatches : [];
   const exactPreregisteredLogin = preregisteredResolution.status === "unique_exact";
-  const firstNameCollision = firstNameMatches.length > 1;
   const preregisteredLoginBlocked = intent === "parent" && preregisteredLogin && Boolean(identifier.trim()) &&
     (preregisteredResolution.status === "ambiguous" || preregisteredResolution.status === "no_match");
   const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;
@@ -1994,27 +1992,15 @@ function UnifiedAuth({
                 <span>{copy(language, "Pre-registered student", "预注册学生")}</span>
               </label>
             ) : null}
-            {firstNameCollision ? (
-              <div className="action-confirm-panel duplicate-student-panel" role={exactPreregisteredLogin ? "status" : "alert"}>
-                <strong>{exactPreregisteredLogin ? copy(language, "Exact username found", "已找到准确用户名") : copy(language, "Use a unique full username", "请使用唯一的完整用户名")}</strong>
-                <p>{exactPreregisteredLogin
-                  ? copy(language, "Other students share this first name, but this exact full username identifies one account.", "其他学生使用相同名字，但此准确的完整用户名只对应一个账号。")
-                  : copy(language, "More than one student has this first name. Enter the exact full username or use email.", "多个学生使用这个名字。请输入准确的完整用户名或使用邮箱。")}</p>
-                <div className="student-results modal-results">
-                  {firstNameMatches.slice(0, 5).map((student) => (
-                    <div className="student-result selected locked-selection" key={student.id}>
-                      <span>
-                        <strong>{student.studentName}</strong>
-                        <em>{maskedPreregisteredContact(student) || copy(language, "Profile incomplete", "资料待完善")}</em>
-                      </span>
-                    </div>
-                  ))}
-                </div>
+            {exactPreregisteredLogin && preregisteredLogin ? (
+              <div className="action-confirm-panel duplicate-student-panel" role="status">
+                <strong>{copy(language, "Exact username found", "已找到准确用户名")}</strong>
+                <p>{copy(language, "This complete username identifies one account.", "此完整用户名只对应一个账号。")}</p>
               </div>
             ) : preregisteredLoginBlocked ? (
               <div className="action-confirm-panel duplicate-student-panel" role="alert">
-                <strong>{copy(language, "No matching username", "没有匹配的用户名")}</strong>
-                <p>{copy(language, "Enter the exact full username or use email.", "请输入准确的完整用户名或使用邮箱。")}</p>
+                <strong>{copy(language, "No unique account matches", "没有唯一匹配的账号")}</strong>
+                <p>{copy(language, "Enter the complete full name or complete login alias, or use email.", "请输入完整姓名或完整登录别名，或使用邮箱。")}</p>
               </div>
             ) : null}
             <button type="submit" className="primary-button auth-submit" disabled={busy || disabled || preregisteredLoginBlocked}>
