@@ -11,11 +11,12 @@ declare
  v_stale_search_key uuid:='00000000-0000-4000-8000-000000001928';
  v_stale_preview_key uuid:='00000000-0000-4000-8000-000000001929';
  v_search jsonb; v_preview jsonb; v_created jsonb; v_replayed jsonb;
- v_accounts_before bigint; v_activity_before bigint; v_requests_before bigint;
+ v_accounts_before bigint; v_activity_before bigint; v_requests_before bigint; v_packages_before bigint; v_packages_after bigint; v_package_hash_before text; v_package_hash_after text;
 begin
  select count(*) into v_accounts_before from public.project_rows r where r.project_table_id='8236c8f8-0fab-400c-bedc-143fd5930707'::uuid;
  select count(*) into v_activity_before from public.project_rows r where r.project_table_id='133ad2fa-44b2-4aab-ab5d-b79c563ab908'::uuid;
  select count(*) into v_requests_before from rswtta_private.club_preregistration_requests;
+ select count(*),encode(extensions.digest(coalesce(string_agg(x.row_value,E'\n' order by x.relation_name,x.row_id),''),'sha256'),'hex') into v_packages_before,v_package_hash_before from (select 'events' relation_name,e.id::text row_id,to_jsonb(e)::text row_value from public.class_package_events e union all select 'keys',k.id::text,to_jsonb(k)::text from public.class_package_keys k) x;
  if exists(select 1 from public.project_rows r where r.id=v_fixture) then raise exception 'Fixture ID retained'; end if;
  perform set_config('rswtta.club_preregister_internal','on',true);
  insert into public.project_rows(id,project_table_id,values) values(v_fixture,'8236c8f8-0fab-400c-bedc-143fd5930707'::uuid,jsonb_build_object('studentName','ROLLBACK ONLY EXISTING','preregisteredName','ROLLBACK ONLY EXISTING','parentName','','email','rollback-existing@example.invalid','phone','+16505550124','loginAlias','rollback-existing-1924','passwordHash',repeat('A',44),'passwordSalt',repeat('A',24),'confirmationCode','','confirmed',true,'profileSetupRequired',false,'clubPreregistered',false,'credentialVersion',1));
@@ -55,5 +56,7 @@ begin
  if (select count(*) from public.project_rows r where r.project_table_id='8236c8f8-0fab-400c-bedc-143fd5930707'::uuid)<>v_accounts_before+3 then raise exception 'Unexpected account side effect'; end if;
  if (select count(*) from public.project_rows r where r.project_table_id='133ad2fa-44b2-4aab-ab5d-b79c563ab908'::uuid)<>v_activity_before+2 then raise exception 'Exactly one activity per create failed'; end if;
  if (select count(*) from rswtta_private.club_preregistration_requests)<>v_requests_before+2 then raise exception 'Unexpected request cardinality'; end if;
+ select count(*),encode(extensions.digest(coalesce(string_agg(x.row_value,E'\n' order by x.relation_name,x.row_id),''),'sha256'),'hex') into v_packages_after,v_package_hash_after from (select 'events' relation_name,e.id::text row_id,to_jsonb(e)::text row_value from public.class_package_events e union all select 'keys',k.id::text,to_jsonb(k)::text from public.class_package_keys k) x;
+ if (v_packages_after,v_package_hash_after) is distinct from (v_packages_before,v_package_hash_before) then raise exception 'Package ledger changed'; end if;
 end $acceptance$;
 rollback;
