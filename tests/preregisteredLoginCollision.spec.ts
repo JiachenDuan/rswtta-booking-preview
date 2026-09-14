@@ -108,6 +108,9 @@ test("setup and completed-account gates remain separate and exact", () => {
 test("legacy setup completion always requires the opaque setup token", () => {
   expect(app).toContain("if (!legacySetupSessionToken.current) throw new Error");
   expect(app).toContain("completeLegacySetup(legacySetupSessionToken.current, input)");
+  expect(app).toContain("loginParentLegacySession(input.email, input.password)");
+  expect(app).toContain("setVerifiedParentSessionToken(session.sessionToken)");
+  expect(app).toContain("applyParentLegacyDashboard(session)");
   expect(app).not.toContain("if (parentSession.clubPreregistered)");
   expect(app).not.toContain("completeParentProfileSetup({");
   expect(setupMigration).toContain("not coalesce((v_row.values->>'profileSetupRequired')::boolean,false)");

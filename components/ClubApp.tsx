@@ -861,8 +861,14 @@ export function ClubApp() {
     if (!legacySetupSessionToken.current) throw new Error(copy(language, "Log out and sign in again to complete setup.", "请退出并重新登录以完成设置。"));
     const result = await completeLegacySetup(legacySetupSessionToken.current, input);
     legacySetupSessionToken.current = "";
-    applyParentSession(result.account);
-    await loadAll();
+    if (!parentSession.clubPreregistered && input.email.trim().includes("@")) {
+      const session = await loginParentLegacySession(input.email, input.password);
+      setVerifiedParentSessionToken(session.sessionToken);
+      applyParentLegacyDashboard(session);
+    } else {
+      applyParentSession(result.account);
+      await loadAll();
+    }
     setNotice(copy(language, "Profile setup complete. The previous password is invalid.", "资料设置完成。之前的密码已失效。"));
   }
 
