@@ -163,33 +163,41 @@ test("the new path uses a narrow opaque legacy session while honestly retaining 
   expect(sessionClient).not.toContain("localStorage");
 });
 
-test("UI is bilingual, two-step, selected-only, responsive-ready, and makes no write before final confirmation", () => {
+test("rolled-back Parent class-time UI remains absent without weakening existing class actions", () => {
   const modal = app.slice(app.indexOf("function ParentClassActionModal"), app.indexOf("function BookingList"));
-  expect(modal).toContain('"Update class time", "更新课程时间"');
-  expect(modal).toContain('"Only this selected occurrence will change.", "只会更改当前选中的这一节课。"');
-  expect(modal).toContain('"Current date/time", "当前日期/时间"');
-  expect(modal).toContain('"New date/time", "新日期/时间"');
-  expect(modal).toContain('"Coach", "教练"');
-  expect(modal).toContain('"Duration", "时长"');
-  expect(modal).toContain('"Approval status", "审批状态"');
-  expect(modal).toContain('"Final confirmation", "最终确认"');
-  expect(modal).toContain('setStage("confirm")');
-  expect(modal.indexOf("onUpdateTime({")).toBeGreaterThan(modal.indexOf('stage === "edit"'));
-  expect(modal.match(/onUpdateTime\(/g)).toHaveLength(1);
+  expect(modal).toContain('"Class actions", "课程操作"');
+  expect(modal).toContain('"Cancel class", "取消课程"');
+  expect(modal).toContain('"Mark complete", "标记完成"');
   expect(modal).toContain("parentCancellationWarning(cancellationBlockReason, language)");
-  expect(modal).toContain("modal-field-grid");
+  expect(modal).not.toContain("Update class time");
+  expect(modal).not.toContain("更新课程时间");
+  expect(modal).not.toContain("onUpdateTime");
+  expect(modal).not.toContain("setStage");
+  expect(app).not.toContain("updateParentOccurrenceTime");
+  expect(app).not.toContain("parentClassTimeEnabled");
 });
 
-test("timestamped audit is exhaustive, exact, redacted, and production read-only", () => {
-  expect(audit.tables.bookings).toMatchObject({ rowCount: 2031, uniqueIdCount: 2031, pageCount: 5, orderedIdSha256: "24600168527f67767eb244338a7a6c05cbf9daaa09cc236938aa1c5e5e04592a" });
-  expect(audit.tables.parent_accounts).toMatchObject({ rowCount: 67, uniqueIdCount: 67, pageCount: 1, orderedIdSha256: "c21ab2679d1173ee1e9b808d1cb8062689a6d62a4aad9ecb76d3dfc047b731c1" });
-  expect(audit.tables.activity_logs).toMatchObject({ rowCount: 81, uniqueIdCount: 81, pageCount: 1, orderedIdSha256: "6e5939718e28b176c8e88ac006cda910878ed10a1c5af421aef145d35fb64391" });
-  for (const table of Object.values(audit.tables) as Array<{ pages: Array<{ returned: number }>; rowCount: number; rowIds: string[] }>) {
+test("fresh timestamped audit is exhaustive, internally exact, redacted, and production read-only", () => {
+  expect(audit.auditKind).toBe("parent-update-class-time-production-readonly-refresh");
+  expect(Date.parse(audit.generatedAt)).toBeGreaterThan(Date.parse("2026-09-14T00:00:00.000Z"));
+  expect(Date.parse(audit.productionServerNow)).toBeGreaterThan(0);
+  expect(Object.keys(audit.tables).sort()).toEqual(["activity_logs", "bill_notifications", "bookings", "parent_accounts"]);
+  for (const table of Object.values(audit.tables) as Array<{ pages: Array<{ from: number; to: number; returned: number }>; rowCount: number; uniqueIdCount: number; rowIds: string[]; orderedIdSha256: string; canonicalRowSha256: string }>) {
+    expect(table.rowCount).toBe(table.uniqueIdCount);
     expect(table.pages.reduce((sum, page) => sum + page.returned, 0)).toBe(table.rowCount);
     expect(table.rowIds).toHaveLength(table.rowCount);
+    expect(new Set(table.rowIds).size).toBe(table.rowCount);
+    expect([...table.rowIds].sort()).toEqual(table.rowIds);
     expect(table.pages.at(-1)?.returned).toBeLessThan(500);
+    expect(table.pages.every((page, index) => page.from === index * 500 && page.to === index * 500 + 499 && page.returned <= 500)).toBe(true);
+    expect(table.orderedIdSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(table.canonicalRowSha256).toMatch(/^[0-9a-f]{64}$/);
   }
-  expect(audit.bookingSummary.eligibleSelectedOccurrenceCount).toBe(1339);
+  expect(audit.tables.bookings.rowCount).toBeGreaterThan(0);
+  expect(audit.tables.parent_accounts.rowCount).toBeGreaterThan(0);
+  expect(audit.bookingSummary.eligibleSelectedOccurrenceIds).toHaveLength(audit.bookingSummary.eligibleSelectedOccurrenceCount);
+  expect(new Set(audit.bookingSummary.eligibleSelectedOccurrenceIds).size).toBe(audit.bookingSummary.eligibleSelectedOccurrenceCount);
+  expect(audit.bookingSummary.eligibleSelectedOccurrenceIds.every((id: string) => audit.tables.bookings.rowIds.includes(id))).toBe(true);
   expect(audit.safety).toEqual({ httpMethods: ["GET"], productionRowMutations: 0, deployments: 0 });
   expect(audit.redaction).toContain("No row values");
 });

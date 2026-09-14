@@ -34,7 +34,6 @@ import {
   listBillNotifications,
   listBookings,
   listParentAccounts,
-  loginParentAccount,
   registerParentAccount,
   resetPasswordForEmail,
   requestBookingAsParent,
@@ -50,6 +49,14 @@ import { groupEnrollmentPreflight, groupOccurrenceScheduleWouldChange, groupOccu
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
+import {
+  clearParentLegacySession,
+  loginParentLegacySession,
+  logoutParentLegacySession,
+  readParentLegacySessionState,
+  resumeParentLegacySession,
+  type ParentLegacyDashboard
+} from "@/lib/parentLegacySession";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
@@ -60,6 +67,13 @@ import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
 import { completeLegacySetup, loginLegacySetupAccount, normalizeLoginAlias } from "@/lib/clubPreregistration";
 import { maskedPreregisteredContact, normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
+import {
+  parseParentSetupAccount,
+  safeStorageRead,
+  safeStorageRemove,
+  safeStorageWrite,
+  serializeParentSetupAccount
+} from "@/lib/parentSessionStorage";
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
@@ -114,9 +128,45 @@ const clubSessionKey = "rswtta-club-session";
 const clubEmail = "rswtta";
 const clubPassword = "rswttatian";
 const preregisteredPasswordTemplate = ["rs", "wt", "ta"].join("");
+const parentSessionRestoreTimeoutMs = 8000;
 
 function copy(language: Language, english: string, chinese: string) {
   return language === "zh" ? chinese : english;
+}
+
+function browserStorage(kind: "localStorage" | "sessionStorage"): Storage | null {
+  try {
+    return window[kind];
+  } catch {
+    return null;
+  }
+}
+
+function readStoredParentSetupState(): { account: ParentAccount | null; hadStored: boolean; storageFailed: boolean } {
+  const result = safeStorageRead(browserStorage("localStorage"), parentSessionKey);
+  if (result.failed) return { account: null, hadStored: false, storageFailed: true };
+  if (!result.value) return { account: null, hadStored: false, storageFailed: false };
+  const account = parseParentSetupAccount(result.value);
+  if (!account) safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
+  return { account, hadStored: true, storageFailed: false };
+}
+
+function readStoredParentSetupAccount(): ParentAccount | null {
+  return readStoredParentSetupState().account;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer = 0;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error("Parent session restore timed out")), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) window.clearTimeout(timer);
+  }
 }
 
 function dollars(cents: number) {
@@ -691,6 +741,8 @@ export function ClubApp() {
   const [showTianYeRestriction, setShowTianYeRestriction] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [saving, setSaving] = useState(false);
+  const [verifiedParentSessionToken, setVerifiedParentSessionToken] = useState("");
+  const [parentSessionRecovery, setParentSessionRecovery] = useState<"idle" | "restoring" | "recovered">("idle");
   const realtimeRefreshTimer = useRef<number | null>(null);
   const authoritativeClockOffsetMs = useRef(0);
   const calendarDays = useMemo(() => weekDays(visibleWeekStart), [visibleWeekStart]);
@@ -722,14 +774,28 @@ export function ClubApp() {
     setSelectedDurationMinutes(60);
   }
 
-  function applyParentSession(account: ParentAccount) {
+  function applyParentSession(account: ParentAccount, persistSetupOnly = false) {
     setParentSession(account);
     setStudentName(account.studentName);
     setFamilyName(account.studentName);
     setStudentEmail(account.email);
     setParentName(account.parentName);
     setPhone(account.phone);
-    window.localStorage.setItem(parentSessionKey, JSON.stringify(account));
+    if (persistSetupOnly && account.profileSetupRequired) {
+      safeStorageWrite(browserStorage("localStorage"), parentSessionKey, serializeParentSetupAccount(account));
+    } else {
+      safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
+    }
+  }
+
+  function applyParentLegacyDashboard(dashboard: ParentLegacyDashboard) {
+    applyParentSession(dashboard.account);
+    setBookings(dashboard.calendarBookings);
+    const serverNow = new Date(dashboard.serverNow);
+    if (Number.isFinite(serverNow.getTime())) {
+      authoritativeClockOffsetMs.current = serverNow.getTime() - Date.now();
+      setCurrentTime(serverNow);
+    }
   }
 
   async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
@@ -748,11 +814,12 @@ export function ClubApp() {
     if (protectedAccount && allowPreregisteredName) {
       const result = await loginLegacySetupAccount(identifier, password);
       legacySetupSessionToken.current = result.sessionToken;
-      applyParentSession(result.account);
+      applyParentSession(result.account, true);
       return;
     }
-    const account = await loginParentAccount(identifier, password, { allowPreregisteredName });
-    applyParentSession(account);
+    const session = await loginParentLegacySession(identifier, password);
+    setVerifiedParentSessionToken(session.sessionToken);
+    applyParentLegacyDashboard(session);
   }
 
   async function requestPasswordReset(email: string) {
@@ -816,7 +883,7 @@ export function ClubApp() {
     }
     setClubAuthenticated(true);
     setLegacyClubProof(password);
-    window.localStorage.setItem(clubSessionKey, "true");
+    safeStorageWrite(browserStorage("localStorage"), clubSessionKey, "true");
     setMode("club");
   }
 
@@ -845,8 +912,7 @@ export function ClubApp() {
       setBills(nextBills);
       setStudents(nextStudents);
       setActivityLogs(nextActivityLogs);
-      const storedParent = window.localStorage.getItem(parentSessionKey);
-      const storedAccount = storedParent ? (JSON.parse(storedParent) as ParentAccount) : parentSession;
+      const storedAccount = readStoredParentSetupAccount() ?? parentSession;
       const canonicalAccount = storedAccount ? nextStudents.find((account) => account.id === storedAccount.id) : undefined;
       if (canonicalAccount && canonicalAccount.studentName !== storedAccount?.studentName) applyParentSession(canonicalAccount);
       setNotice(copy(language, "Supabase backend connected.", "Supabase 已连接。"));
@@ -1409,13 +1475,41 @@ export function ClubApp() {
   }
 
   useEffect(() => {
-    const storedParent = window.localStorage.getItem(parentSessionKey);
-    const storedClub = window.localStorage.getItem(clubSessionKey) === "true";
-    if (storedParent) {
-      applyParentSession(JSON.parse(storedParent) as ParentAccount);
-      setMode("parent");
+    let cancelled = false;
+    const verifiedState = readParentLegacySessionState();
+    const hadVerifiedSession = verifiedState.hadStored;
+    const storedVerifiedSession = verifiedState.session;
+    if (storedVerifiedSession) {
+      setParentSessionRecovery("restoring");
+      withTimeout(resumeParentLegacySession(storedVerifiedSession.sessionToken), parentSessionRestoreTimeoutMs)
+        .then((dashboard) => {
+          if (cancelled) return;
+          setVerifiedParentSessionToken(storedVerifiedSession.sessionToken);
+          applyParentLegacyDashboard(dashboard);
+          setParentSessionRecovery("idle");
+        })
+        .catch(() => {
+          if (cancelled) return;
+          clearParentLegacySession();
+          setVerifiedParentSessionToken("");
+          setParentSession(null);
+          setParentSessionRecovery("recovered");
+        });
+    } else if (hadVerifiedSession || verifiedState.storageFailed) {
+      setParentSessionRecovery("recovered");
     }
-    if (storedClub) {
+    const setupState = readStoredParentSetupState();
+    const storedParent = setupState.account;
+    const storedClub = safeStorageRead(browserStorage("localStorage"), clubSessionKey);
+    if (setupState.hadStored) {
+      // A setup-only snapshot has no resumable proof after a reload. Remove only
+      // that stale app state and require a fresh setup login.
+      if (storedParent) safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
+      if (!storedVerifiedSession) setParentSessionRecovery("recovered");
+    } else if (setupState.storageFailed || storedClub.failed) {
+      setParentSessionRecovery("recovered");
+    }
+    if (storedClub.value === "true") {
       setClubAuthenticated(true);
       setMode("club");
     }
@@ -1433,6 +1527,7 @@ export function ClubApp() {
       .subscribe();
     const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
     return () => {
+      cancelled = true;
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       supabase.removeChannel(realtimeChannel);
       window.clearInterval(clock);
@@ -1488,9 +1583,13 @@ export function ClubApp() {
             {mode === "parent" && parentSession ? (
               <button
                 className="filter-button"
-                onClick={() => {
+                onClick={async () => {
+                  const token = verifiedParentSessionToken;
+                  if (token) await logoutParentLegacySession(token);
+                  clearParentLegacySession();
+                  setVerifiedParentSessionToken("");
                   setParentSession(null);
-                  window.localStorage.removeItem(parentSessionKey);
+                  safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
                   setMode("parent");
                 }}
               >
@@ -1504,7 +1603,7 @@ export function ClubApp() {
                 onClick={() => {
                   setClubAuthenticated(false);
                   setLegacyClubProof("");
-                  window.localStorage.removeItem(clubSessionKey);
+                  safeStorageRemove(browserStorage("localStorage"), clubSessionKey);
                   setMode("parent");
                 }}
               >
@@ -1525,6 +1624,12 @@ export function ClubApp() {
             onLogin={loginUnified}
             onRequestPasswordReset={requestPasswordReset}
             onUpdatePassword={updatePassword}
+            disabled={parentSessionRecovery === "restoring"}
+            externalNotice={parentSessionRecovery === "restoring"
+              ? copy(language, "Restoring your Parent session…", "正在恢复您的家长登录…")
+              : parentSessionRecovery === "recovered"
+                ? copy(language, "Your saved Parent session was invalid or expired. Please sign in again.", "您保存的家长登录已失效或过期。请重新登录。")
+                : ""}
           />
         ) : mode === "parent" && parentSession?.profileSetupRequired ? (
           <FirstLoginSetup
@@ -1532,8 +1637,10 @@ export function ClubApp() {
             language={language}
             onComplete={completeFirstLoginSetup}
             onLogout={() => {
+              clearParentLegacySession();
+              setVerifiedParentSessionToken("");
               setParentSession(null);
-              window.localStorage.removeItem(parentSessionKey);
+              safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
               setMode("parent");
             }}
           />
@@ -1689,7 +1796,9 @@ function UnifiedAuth({
   onRegister,
   onLogin,
   onRequestPasswordReset,
-  onUpdatePassword
+  onUpdatePassword,
+  disabled = false,
+  externalNotice = ""
 }: {
   initialAuthMode: "login" | "register";
   intent: "parent" | "club";
@@ -1699,6 +1808,8 @@ function UnifiedAuth({
   onLogin: (identifier: string, password: string, allowPreregisteredName?: boolean) => Promise<void>;
   onRequestPasswordReset: (email: string) => Promise<void>;
   onUpdatePassword: (password: string) => Promise<void>;
+  disabled?: boolean;
+  externalNotice?: string;
 }) {
   const [authMode, setAuthMode] = useState<AuthMode>(initialAuthMode);
   const [studentName, setStudentName] = useState("");
@@ -1730,6 +1841,10 @@ function UnifiedAuth({
       setNotice(copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。"));
     }
   }, [initialAuthMode, intent]);
+
+  useEffect(() => {
+    if (externalNotice) setNotice(externalNotice);
+  }, [externalNotice]);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event) => {
@@ -1902,7 +2017,7 @@ function UnifiedAuth({
                 <p>{copy(language, "Enter the exact full username or use email.", "请输入准确的完整用户名或使用邮箱。")}</p>
               </div>
             ) : null}
-            <button type="submit" className="primary-button auth-submit" disabled={busy || preregisteredLoginBlocked}>
+            <button type="submit" className="primary-button auth-submit" disabled={busy || disabled || preregisteredLoginBlocked}>
               <LogIn size={18} />
               {copy(language, "Login", "登录")}
             </button>
