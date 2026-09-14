@@ -11,7 +11,7 @@ const context = browser.contexts()[0];
 let page = context.pages().find((p) => p.url().includes('/project/xtewfpzsyjeaqgkdttij/sql'));
 if (!page) page = await context.newPage();
 const authRequest = page.waitForRequest((request) => request.url().includes('/platform/pg-meta/xtewfpzsyjeaqgkdttij/query?key='), { timeout: 30000 });
-await page.reload({ waitUntil: 'domcontentloaded' });
+await page.goto('https://supabase.com/dashboard/project/xtewfpzsyjeaqgkdttij/sql/new', { waitUntil: 'domcontentloaded' });
 const headers = await (await authRequest).allHeaders();
 const safeHeaders = {};
 for (const name of ['authorization','apikey','content-type','x-client-info','x-connection-encrypted']) if (headers[name]) safeHeaders[name] = headers[name];

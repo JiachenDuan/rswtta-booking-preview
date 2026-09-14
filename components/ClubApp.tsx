@@ -3013,7 +3013,7 @@ function ClubAppView({
           {copy(language, "Class packages / 课时包", "课时包 / Class packages")}
         </button>
       </nav>
-      {clubSection === "packages" ? <ClassPackagesPanel students={studentDirectory} language={language} /> : clubSection === "students" ? <RegisterStudentPanel students={studentDirectory} language={language} clubIdentifier={clubIdentifier} legacyClubProof={legacyClubProof} onCreated={async () => { await onNotice(copy(language, "Student directory refreshed.", "学生列表已刷新。")); }} /> : <>
+      {clubSection === "packages" ? <ClassPackagesPanel students={studentDirectory} language={language} /> : clubSection === "students" ? <RegisterStudentPanel students={studentDirectory} language={language} clubIdentifier={clubIdentifier} legacyClubProof={legacyClubProof} onCreated={async () => { await onNotice(copy(language, "Student directory refreshed.", "学生列表已刷新。")); }} onChooseExisting={(student) => { setSelectedAddStudent(student); setStudentQuery(student.studentName); setClubSection("calendar"); setShowAddClassModal(true); }} /> : <>
       <section className="section-block calendar-core">
         <div className="section-head">
           <div>
