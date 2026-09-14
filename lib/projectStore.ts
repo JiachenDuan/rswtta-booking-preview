@@ -5,6 +5,7 @@ import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDeri
 import { expectedGroupOccurrenceRows, selectGroupEnrollmentTargets, selectGroupOccurrenceTargets, type GroupEnrollmentScope, type GroupOccurrenceAction, type GroupOccurrenceScope } from "@/lib/groupOccurrence";
 import { TIAN_YE_BOOKING_MESSAGE_EN } from "@/lib/coachPolicy";
 import { openingAmountToBaseUnits, PACKAGE_UNIT_BASIS } from "@/lib/classPackages";
+import { normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, PackageBalance, PackageCategory, PackageLedgerEvent, ParentAccount, SetPackageOpeningResult } from "@/lib/types";
 
 const projectSlug = "rswtta-booking";
@@ -594,27 +595,11 @@ export async function confirmParentAccount(email: string, confirmationCode: stri
 }
 
 function accountNameTokens(value: unknown) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
-function findPreregisteredNameMatches(rows: Array<ProjectRow<AccountValues>>, identifier: string) {
-  const normalizedIdentifier = identifier.trim().toLowerCase();
-  const identifierFirstName = accountNameTokens(normalizedIdentifier)[0] ?? "";
-  if (!identifierFirstName) return [];
-  return rows.filter((item) => {
-    const loginAlias = String(item.values.loginAlias ?? "").normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
-    const studentName = String(item.values.studentName ?? "").trim().toLowerCase();
-    const firstName = accountNameTokens(studentName)[0] ?? "";
-    return loginAlias === normalizedIdentifier || studentName === normalizedIdentifier || firstName === identifierFirstName;
-  });
+  return normalizePreregisteredLogin(value).split(" ").filter(Boolean);
 }
 
 function normalizedRosterName(value: unknown) {
-  return String(value ?? "").trim().toLowerCase();
+  return normalizePreregisteredLogin(value);
 }
 
 function matchesFirstName(name: unknown, identifier: string) {
@@ -627,19 +612,24 @@ function matchesFirstName(name: unknown, identifier: string) {
 }
 
 function assertUniquePreregisteredRosterName(accountRows: Array<ProjectRow<AccountValues>>, bookingRows: Array<ProjectRow<Booking>>, identifier: string) {
-  const accountMatches = accountRows.filter((item) => matchesFirstName(item.values.studentName, identifier));
-  const uniqueAccountNames = new Set(accountMatches.map((item) => normalizedRosterName(item.values.studentName)).filter(Boolean));
+  const resolution = resolvePreregisteredLogin(
+    accountRows.map((row) => ({ id: row.id, studentName: String(row.values.studentName ?? ""), loginAlias: String(row.values.loginAlias ?? "") })),
+    identifier
+  );
+  if (resolution.status === "unique_exact") return;
+  if (resolution.status === "ambiguous") {
+    throw new Error("More than one student matches this username. Please use the unique full username or email.");
+  }
   const uniqueBookingNames = new Set(
     bookingRows.map((item) => normalizedRosterName(item.values.studentName)).filter((name) => matchesFirstName(name, identifier))
   );
-  const uniqueRosterNames = new Set([...uniqueAccountNames, ...uniqueBookingNames]);
-  if (uniqueRosterNames.size > 1) {
-    throw new Error("More than one student has this first name. Please log in with email.");
+  if ((resolution.status === "no_match" && uniqueBookingNames.size > 0) || uniqueBookingNames.size > 1) {
+    throw new Error("More than one student has this first name. Please use the unique full username or email.");
   }
 }
 
 function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier: string, allowPreregisteredName: boolean) {
-  const normalizedIdentifier = identifier.trim().toLowerCase();
+  const normalizedIdentifier = normalizePreregisteredLogin(identifier);
   const isEmail = normalizedIdentifier.includes("@");
   if (isEmail) {
     const row = rows.find((item) => String(item.values.email ?? "").trim().toLowerCase() === normalizedIdentifier);
@@ -651,14 +641,16 @@ function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier
     throw new Error("Use email/password, or check Pre-registered student to use student name.");
   }
 
-  const matches = findPreregisteredNameMatches(rows, normalizedIdentifier);
-  if (matches.length === 0) throw new Error("Invalid login");
-  const exactAliasMatches = matches.filter((item) => String(item.values.loginAlias ?? "").normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ") === normalizedIdentifier);
-  if (exactAliasMatches.length === 1) return exactAliasMatches[0];
-  const uniqueMatchNames = new Set(matches.map((item) => normalizedRosterName(item.values.studentName)).filter(Boolean));
-  if (uniqueMatchNames.size > 1) throw new Error("More than one student has this first name. Please log in with email.");
-
-  const row = matches.find((item) => item.values.profileSetupRequired || !String(item.values.email ?? "").includes("@")) ?? matches[0];
+  const resolution = resolvePreregisteredLogin(
+    rows.map((row) => ({ id: row.id, studentName: String(row.values.studentName ?? ""), loginAlias: String(row.values.loginAlias ?? "") })),
+    normalizedIdentifier
+  );
+  if (!resolution.selected) {
+    if (resolution.status === "ambiguous") throw new Error("More than one student matches this username. Please use the unique full username or email.");
+    throw new Error("Invalid login");
+  }
+  const row = rows.find((item) => item.id === resolution.selected?.id);
+  if (!row) throw new Error("Invalid login");
   if (!row.values.profileSetupRequired && String(row.values.email ?? "").includes("@")) {
     throw new Error("This account is already set up. Please log in with email and password.");
   }
@@ -668,7 +660,7 @@ function selectParentLoginRow(rows: Array<ProjectRow<AccountValues>>, identifier
 export async function loginParentAccount(identifier: string, password: string, options: { allowPreregisteredName?: boolean } = {}) {
   return withLocalFallback(
     async () => {
-      const normalizedIdentifier = identifier.trim().toLowerCase();
+      const normalizedIdentifier = normalizePreregisteredLogin(identifier);
       const isEmail = normalizedIdentifier.includes("@");
       let authError: Error | null = null;
       if (isEmail) {
@@ -695,7 +687,7 @@ export async function loginParentAccount(identifier: string, password: string, o
     },
     async () => {
       const rows = await seedLocalPreregisteredAccounts(localRows<AccountValues>("parent_accounts"));
-      const normalizedIdentifier = identifier.trim().toLowerCase();
+      const normalizedIdentifier = normalizePreregisteredLogin(identifier);
       const isEmail = normalizedIdentifier.includes("@");
       if (!isEmail && options.allowPreregisteredName) {
         const bookingRows = localRows<Booking>("bookings");

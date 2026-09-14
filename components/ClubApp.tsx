@@ -59,6 +59,7 @@ import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccou
 import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
 import { completeLegacySetup, loginLegacySetupAccount, normalizeLoginAlias } from "@/lib/clubPreregistration";
+import { maskedPreregisteredContact, normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
@@ -176,17 +177,7 @@ function coachTabText(tab: ClubCalendarTab, language: Language) {
 }
 
 function studentKey(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function studentFirstNameKey(value: string) {
-  return studentKey(value).split(" ")[0] ?? "";
-}
-
-function firstNameDuplicateStudents(students: ParentAccount[], identifier: string) {
-  const firstName = studentFirstNameKey(identifier);
-  if (!firstName || identifier.includes("@")) return [];
-  return students.filter((student) => studentFirstNameKey(student.studentName) === firstName);
+  return normalizePreregisteredLogin(value);
 }
 
 function studentDisplayContact(student: ParentAccount, language: Language) {
@@ -749,7 +740,11 @@ export function ClubApp() {
 
   async function loginParent(identifier: string, password: string, allowPreregisteredName = false) {
     const normalizedIdentifier = normalizeLoginAlias(identifier);
-    const protectedAccount = students.find((student) => student.clubPreregistered && student.loginAlias === normalizedIdentifier && student.profileSetupRequired);
+    const protectedResolution = resolvePreregisteredLogin(
+      students.filter((student) => student.clubPreregistered && student.profileSetupRequired),
+      normalizedIdentifier
+    );
+    const protectedAccount = protectedResolution.status === "unique_exact" ? protectedResolution.selected : undefined;
     if (protectedAccount && allowPreregisteredName) {
       const result = await loginLegacySetupAccount(identifier, password);
       legacySetupSessionToken.current = result.sessionToken;
@@ -1719,8 +1714,12 @@ function UnifiedAuth({
       : copy(language, "Login with username and password.", "请用用户名和密码登录。")
   );
   const [busy, setBusy] = useState(false);
-  const firstNameMatches = intent === "parent" && preregisteredLogin ? firstNameDuplicateStudents(students, identifier) : [];
-  const firstNameLoginBlocked = firstNameMatches.length > 1;
+  const preregisteredResolution = resolvePreregisteredLogin(students, identifier);
+  const firstNameMatches = intent === "parent" && preregisteredLogin ? preregisteredResolution.firstNameMatches : [];
+  const exactPreregisteredLogin = preregisteredResolution.status === "unique_exact";
+  const firstNameCollision = firstNameMatches.length > 1;
+  const preregisteredLoginBlocked = intent === "parent" && preregisteredLogin && Boolean(identifier.trim()) &&
+    (preregisteredResolution.status === "ambiguous" || preregisteredResolution.status === "no_match");
   const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;
 
   useEffect(() => {
@@ -1755,8 +1754,8 @@ function UnifiedAuth({
   }
 
   async function handleLogin() {
-    if (firstNameLoginBlocked) {
-      setNotice(copy(language, "More than one student has this first name. Please log in with email so the calendar matches the correct student.", "多个学生使用这个名字。请用邮箱登录，这样日历会匹配正确学生。"));
+    if (preregisteredLoginBlocked) {
+      setNotice(copy(language, "No unique account matches this username. Use the exact full username or email.", "没有唯一账号匹配此用户名。请使用准确的完整用户名或邮箱。"));
       return;
     }
     setBusy(true);
@@ -1862,7 +1861,7 @@ function UnifiedAuth({
         ) : null}
 
         {effectiveAuthMode === "login" ? (
-          <div className="simple-form auth-form">
+          <form className="simple-form auth-form" onSubmit={(event) => { event.preventDefault(); void handleLogin(); }}>
             <label>
               <span>{intent === "club" ? copy(language, "Club email", "俱乐部邮箱") : copy(language, "Username", "用户名")}</span>
               <div className="input-shell">
@@ -1880,23 +1879,30 @@ function UnifiedAuth({
                 <span>{copy(language, "Pre-registered student", "预注册学生")}</span>
               </label>
             ) : null}
-            {firstNameLoginBlocked ? (
-              <div className="action-confirm-panel duplicate-student-panel">
-                <strong>{copy(language, "Use email to log in", "请使用邮箱登录")}</strong>
-                <p>{copy(language, "More than one student has this first name. Email login prevents opening the wrong calendar.", "多个学生使用这个名字。邮箱登录可以避免打开错误的日历。")}</p>
+            {firstNameCollision ? (
+              <div className="action-confirm-panel duplicate-student-panel" role={exactPreregisteredLogin ? "status" : "alert"}>
+                <strong>{exactPreregisteredLogin ? copy(language, "Exact username found", "已找到准确用户名") : copy(language, "Use a unique full username", "请使用唯一的完整用户名")}</strong>
+                <p>{exactPreregisteredLogin
+                  ? copy(language, "Other students share this first name, but this exact full username identifies one account.", "其他学生使用相同名字，但此准确的完整用户名只对应一个账号。")
+                  : copy(language, "More than one student has this first name. Enter the exact full username or use email.", "多个学生使用这个名字。请输入准确的完整用户名或使用邮箱。")}</p>
                 <div className="student-results modal-results">
                   {firstNameMatches.slice(0, 5).map((student) => (
                     <div className="student-result selected locked-selection" key={student.id}>
                       <span>
                         <strong>{student.studentName}</strong>
-                        <em>{studentDisplayContact(student, language)}</em>
+                        <em>{maskedPreregisteredContact(student) || copy(language, "Profile incomplete", "资料待完善")}</em>
                       </span>
                     </div>
                   ))}
                 </div>
               </div>
+            ) : preregisteredLoginBlocked ? (
+              <div className="action-confirm-panel duplicate-student-panel" role="alert">
+                <strong>{copy(language, "No matching username", "没有匹配的用户名")}</strong>
+                <p>{copy(language, "Enter the exact full username or use email.", "请输入准确的完整用户名或使用邮箱。")}</p>
+              </div>
             ) : null}
-            <button type="button" className="primary-button auth-submit" disabled={busy || firstNameLoginBlocked} onClick={handleLogin}>
+            <button type="submit" className="primary-button auth-submit" disabled={busy || preregisteredLoginBlocked}>
               <LogIn size={18} />
               {copy(language, "Login", "登录")}
             </button>
@@ -1906,7 +1912,7 @@ function UnifiedAuth({
               </button>
             ) : null}
             {intent === "club" ? <p className="helper-line">{copy(language, "Login opens Club App.", "登录后进入 Club App。")}</p> : null}
-          </div>
+          </form>
         ) : null}
 
         {effectiveAuthMode === "forgot" && intent === "parent" ? (
