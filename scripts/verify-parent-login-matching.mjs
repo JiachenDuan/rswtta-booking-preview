@@ -147,7 +147,7 @@ async function installSyntheticState(context) {
 }
 
 async function mockIsolatedBackend(page, calls) {
-  await page.route("**://127.0.0.1:4444/**", async (route) => {
+  const handleRequest = async (route) => {
     const request = route.request();
     const url = request.url();
     const corsHeaders = {
@@ -184,7 +184,9 @@ async function mockIsolatedBackend(page, calls) {
       return route.fulfill({ status: 200, contentType: "application/json", headers: corsHeaders, body: JSON.stringify(completedDashboard) });
     }
     return route.fulfill({ status: 503, contentType: "application/json", headers: corsHeaders, body: JSON.stringify({ message: "isolated backend" }) });
-  });
+  };
+  await page.route("**://127.0.0.1:4444/**", handleRequest);
+  await page.route("**://xtewfpzsyjeaqgkdttij.supabase.co/**", handleRequest);
 }
 
 function contextOptions(mobile) {
