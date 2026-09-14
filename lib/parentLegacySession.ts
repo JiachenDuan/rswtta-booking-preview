@@ -40,15 +40,48 @@ function storeSession(session: StoredSession) {
   storage()?.setItem(parentLegacySessionStorageKey, JSON.stringify(session));
 }
 
+function isStoredSession(value: unknown): value is StoredSession {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<StoredSession>;
+  const expiresAt = typeof candidate.expiresAt === "string" ? Date.parse(candidate.expiresAt) : Number.NaN;
+  return typeof candidate.sessionToken === "string" && candidate.sessionToken.length > 0 && Number.isFinite(expiresAt);
+}
+
+function isDashboard(value: unknown): value is ParentLegacyDashboard {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<ParentLegacyDashboard>;
+  return Boolean(
+    candidate.account
+    && typeof candidate.account.id === "string"
+    && typeof candidate.account.studentName === "string"
+    && typeof candidate.account.parentName === "string"
+    && typeof candidate.account.email === "string"
+    && typeof candidate.account.phone === "string"
+    && typeof candidate.account.profileSetupRequired === "boolean"
+  )
+    && Array.isArray(candidate.bookings)
+    && Array.isArray(candidate.calendarBookings)
+    && typeof candidate.serverNow === "string"
+    && Number.isFinite(Date.parse(candidate.serverNow));
+}
+
+function requireDashboard(response: RpcResponse<ParentLegacyDashboard>, fallback: string) {
+  const dashboard = requireData(response, fallback);
+  if (!isDashboard(dashboard)) throw new Error(fallback);
+  return dashboard;
+}
+
 export function readParentLegacySession(): StoredSession | null {
   const raw = storage()?.getItem(parentLegacySessionStorageKey);
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as Partial<StoredSession>;
-    return value.sessionToken && value.expiresAt ? (value as StoredSession) : null;
+    const value: unknown = JSON.parse(raw);
+    if (isStoredSession(value)) return value;
   } catch {
-    return null;
+    // Invalid app session state is removed below; the client key is preserved.
   }
+  clearParentLegacySession();
+  return null;
 }
 
 export function clearParentLegacySession() {
@@ -61,8 +94,11 @@ export async function loginParentLegacySession(identifier: string, password: str
     p_password: password,
     p_client_key: parentLegacyClientKey()
   });
-  const session = requireData(response as RpcResponse<ParentLegacySession>, "Unable to sign in. Check your email and password.");
-  storeSession(session);
+  const session = requireDashboard(response as RpcResponse<ParentLegacySession>, "Unable to sign in. Check your email and password.") as ParentLegacySession;
+  if (!isStoredSession(session)) {
+    throw new Error("Unable to sign in. Check your email and password.");
+  }
+  storeSession({ sessionToken: session.sessionToken, expiresAt: session.expiresAt });
   return session;
 }
 
@@ -71,7 +107,7 @@ export async function resumeParentLegacySession(sessionToken: string): Promise<P
     p_session_token: sessionToken,
     p_client_key: parentLegacyClientKey()
   });
-  return requireData(response as RpcResponse<ParentLegacyDashboard>, "Your Parent session expired. Please sign in again.");
+  return requireDashboard(response as RpcResponse<ParentLegacyDashboard>, "Your Parent session expired. Please sign in again.");
 }
 
 export async function logoutParentLegacySession(sessionToken: string) {
