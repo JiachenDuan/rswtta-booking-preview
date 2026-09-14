@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { normalizeParentLegacyBooking, normalizeParentLegacyDashboard } from "../lib/parentLegacyDashboard";
 import {
   parentLegacySessionVersion,
   parentSetupSessionVersion,
@@ -14,6 +15,7 @@ import type { ParentAccount } from "../lib/types";
 
 const app = readFileSync("components/ClubApp.tsx", "utf8");
 const sessionClient = readFileSync("lib/parentLegacySession.ts", "utf8");
+const dashboardClient = readFileSync("lib/parentLegacyDashboard.ts", "utf8");
 
 const account: ParentAccount = {
   id: "account-1",
@@ -77,11 +79,31 @@ test("invalid and expired verified sessions clear only the app token", () => {
   expect(clearBody).not.toContain("localStorage");
 });
 
-test("login and resume reject incomplete dashboard responses before rendering", () => {
-  expect(sessionClient).toContain("Array.isArray(candidate.bookings)");
-  expect(sessionClient).toContain("Array.isArray(candidate.calendarBookings)");
-  expect(sessionClient).toContain('typeof candidate.serverNow === "string"');
-  expect(sessionClient.match(/requireDashboard\(/g)).toHaveLength(3);
+test("fresh login normalizes legacy booking rows before dashboard rendering", () => {
+  const normalized = normalizeParentLegacyBooking({
+    id: "legacy-booking",
+    startsAt: "2026-09-15T18:00:00.000Z",
+    status: "change_requested"
+  });
+  expect(normalized.parentNote).toBe("");
+  expect(normalized.studentName).toBe("Student");
+  expect(normalized.familyName).toBe("Student");
+  expect(normalized.requestedCoach).toBe("National A");
+  expect(() => normalized.parentNote.toLowerCase().includes("cancel")).not.toThrow();
+  const dashboard = normalizeParentLegacyDashboard({
+    account,
+    bookings: [],
+    calendarBookings: [normalized],
+    serverNow: "2026-09-14T17:00:00.000Z"
+  });
+  expect(dashboard.calendarBookings).toHaveLength(1);
+});
+
+test("login and resume reject incomplete dashboard envelopes before rendering", () => {
+  expect(dashboardClient).toContain("Array.isArray(candidate.bookings)");
+  expect(dashboardClient).toContain("Array.isArray(candidate.calendarBookings)");
+  expect(dashboardClient).toContain('typeof candidate.serverNow === "string"');
+  expect(sessionClient.match(/requireDashboard\(/g)).toHaveLength(2);
   expect(sessionClient).toContain("if (!isStoredSession(session))");
 });
 

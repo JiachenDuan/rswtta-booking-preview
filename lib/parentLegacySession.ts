@@ -1,4 +1,9 @@
 import {
+  isParentLegacyDashboard,
+  normalizeParentLegacyDashboard,
+  type ParentLegacyDashboardPayload
+} from "@/lib/parentLegacyDashboard";
+import {
   parentLegacySessionVersion,
   parseParentLegacyStoredSession,
   safeStorageRead,
@@ -6,17 +11,11 @@ import {
   safeStorageWrite
 } from "@/lib/parentSessionStorage";
 import { supabase } from "@/lib/supabase";
-import type { Booking, ParentAccount } from "@/lib/types";
 
 export const parentLegacySessionStorageKey = "rswtta-parent-legacy-session";
 const parentLegacyClientKeyStorageKey = "rswtta-parent-legacy-client-key";
 
-export type ParentLegacyDashboard = {
-  account: ParentAccount;
-  bookings: Booking[];
-  calendarBookings: Booking[];
-  serverNow: string;
-};
+export type ParentLegacyDashboard = ParentLegacyDashboardPayload;
 
 export type ParentLegacySession = ParentLegacyDashboard & {
   sessionToken: string;
@@ -68,28 +67,14 @@ function isStoredSession(value: unknown): value is StoredSession {
     && expiresAt > Date.now();
 }
 
-function isDashboard(value: unknown): value is ParentLegacyDashboard {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<ParentLegacyDashboard>;
-  return Boolean(
-    candidate.account
-    && typeof candidate.account.id === "string"
-    && typeof candidate.account.studentName === "string"
-    && typeof candidate.account.parentName === "string"
-    && typeof candidate.account.email === "string"
-    && typeof candidate.account.phone === "string"
-    && typeof candidate.account.profileSetupRequired === "boolean"
-  )
-    && Array.isArray(candidate.bookings)
-    && Array.isArray(candidate.calendarBookings)
-    && typeof candidate.serverNow === "string"
-    && Number.isFinite(Date.parse(candidate.serverNow));
-}
-
-function requireDashboard(response: RpcResponse<ParentLegacyDashboard>, fallback: string) {
+function requireDashboard<T extends ParentLegacyDashboard>(response: RpcResponse<T>, fallback: string): T {
   const dashboard = requireData(response, fallback);
-  if (!isDashboard(dashboard)) throw new Error(fallback);
-  return dashboard;
+  if (!isParentLegacyDashboard(dashboard)) throw new Error(fallback);
+  try {
+    return normalizeParentLegacyDashboard(dashboard);
+  } catch {
+    throw new Error(fallback);
+  }
 }
 
 export function readParentLegacySessionState(): { session: StoredSession | null; hadStored: boolean; storageFailed: boolean } {
