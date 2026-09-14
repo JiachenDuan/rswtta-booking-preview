@@ -34,6 +34,7 @@ import {
   listBillNotifications,
   listBookings,
   listParentAccounts,
+  loginParentAccount,
   registerParentAccount,
   resetPasswordForEmail,
   requestBookingAsParent,
@@ -49,16 +50,6 @@ import { groupEnrollmentPreflight, groupOccurrenceScheduleWouldChange, groupOccu
 import { parentCancellationBlockReason, parentCancellationWarning } from "@/lib/cancellationPolicy";
 import { isTianYeCoach, TIAN_YE_BOOKING_MESSAGE_EN, TIAN_YE_BOOKING_MESSAGE_ZH } from "@/lib/coachPolicy";
 import { isParentRequestIntervalUnavailable } from "@/lib/parentRequestPolicy";
-import { canParentUpdateClassTime, isValidParentClassTimeTarget, parentClassDurationMinutes, parentClassTimeResultStatus } from "@/lib/parentClassTime";
-import { updateParentClassTime } from "@/lib/parentClassTimeClient";
-import {
-  clearParentLegacySession,
-  loginParentLegacySession,
-  logoutParentLegacySession,
-  readParentLegacySessionState,
-  resumeParentLegacySession,
-  type ParentLegacyDashboard
-} from "@/lib/parentLegacySession";
 import { classReportAuditRows, classReportBillingReconciliationRows, planClassReportExport, serializeCsvRows, unresolvedClassReportRows } from "@/lib/classReport";
 import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
@@ -69,13 +60,6 @@ import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
 import { completeLegacySetup, loginLegacySetupAccount, normalizeLoginAlias } from "@/lib/clubPreregistration";
 import { maskedPreregisteredContact, normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
-import {
-  parseParentSetupAccount,
-  safeStorageRead,
-  safeStorageRemove,
-  safeStorageWrite,
-  serializeParentSetupAccount
-} from "@/lib/parentSessionStorage";
 
 const coaches = ["Coach Tian Ye", "Coach Jorden", "National A", "National B"] as const;
 const clubCalendarTabs = [...coaches, "Combined"] as const;
@@ -130,45 +114,9 @@ const clubSessionKey = "rswtta-club-session";
 const clubEmail = "rswtta";
 const clubPassword = "rswttatian";
 const preregisteredPasswordTemplate = ["rs", "wt", "ta"].join("");
-const parentSessionRestoreTimeoutMs = 8000;
 
 function copy(language: Language, english: string, chinese: string) {
   return language === "zh" ? chinese : english;
-}
-
-function browserStorage(kind: "localStorage" | "sessionStorage"): Storage | null {
-  try {
-    return window[kind];
-  } catch {
-    return null;
-  }
-}
-
-function readStoredParentSetupState(): { account: ParentAccount | null; hadStored: boolean; storageFailed: boolean } {
-  const result = safeStorageRead(browserStorage("localStorage"), parentSessionKey);
-  if (result.failed) return { account: null, hadStored: false, storageFailed: true };
-  if (!result.value) return { account: null, hadStored: false, storageFailed: false };
-  const account = parseParentSetupAccount(result.value);
-  if (!account) safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
-  return { account, hadStored: true, storageFailed: false };
-}
-
-function readStoredParentSetupAccount(): ParentAccount | null {
-  return readStoredParentSetupState().account;
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer = 0;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = window.setTimeout(() => reject(new Error("Parent session restore timed out")), timeoutMs);
-      })
-    ]);
-  } finally {
-    if (timer) window.clearTimeout(timer);
-  }
 }
 
 function dollars(cents: number) {
@@ -743,8 +691,6 @@ export function ClubApp() {
   const [showTianYeRestriction, setShowTianYeRestriction] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [saving, setSaving] = useState(false);
-  const [verifiedParentSessionToken, setVerifiedParentSessionToken] = useState("");
-  const [parentSessionRecovery, setParentSessionRecovery] = useState<"idle" | "restoring" | "recovered">("idle");
   const realtimeRefreshTimer = useRef<number | null>(null);
   const authoritativeClockOffsetMs = useRef(0);
   const calendarDays = useMemo(() => weekDays(visibleWeekStart), [visibleWeekStart]);
@@ -776,28 +722,14 @@ export function ClubApp() {
     setSelectedDurationMinutes(60);
   }
 
-  function applyParentSession(account: ParentAccount, persistSetupOnly = false) {
+  function applyParentSession(account: ParentAccount) {
     setParentSession(account);
     setStudentName(account.studentName);
     setFamilyName(account.studentName);
     setStudentEmail(account.email);
     setParentName(account.parentName);
     setPhone(account.phone);
-    if (persistSetupOnly && account.profileSetupRequired) {
-      safeStorageWrite(browserStorage("localStorage"), parentSessionKey, serializeParentSetupAccount(account));
-    } else {
-      safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
-    }
-  }
-
-  function applyParentLegacyDashboard(dashboard: ParentLegacyDashboard) {
-    applyParentSession(dashboard.account);
-    setBookings(dashboard.calendarBookings);
-    const serverNow = new Date(dashboard.serverNow);
-    if (Number.isFinite(serverNow.getTime())) {
-      authoritativeClockOffsetMs.current = serverNow.getTime() - Date.now();
-      setCurrentTime(serverNow);
-    }
+    window.localStorage.setItem(parentSessionKey, JSON.stringify(account));
   }
 
   async function registerParent(input: { studentName: string; email: string; phone: string; password: string }) {
@@ -816,12 +748,11 @@ export function ClubApp() {
     if (protectedAccount && allowPreregisteredName) {
       const result = await loginLegacySetupAccount(identifier, password);
       legacySetupSessionToken.current = result.sessionToken;
-      applyParentSession(result.account, true);
+      applyParentSession(result.account);
       return;
     }
-    const session = await loginParentLegacySession(identifier, password);
-    setVerifiedParentSessionToken(session.sessionToken);
-    applyParentLegacyDashboard(session);
+    const account = await loginParentAccount(identifier, password, { allowPreregisteredName });
+    applyParentSession(account);
   }
 
   async function requestPasswordReset(email: string) {
@@ -885,7 +816,7 @@ export function ClubApp() {
     }
     setClubAuthenticated(true);
     setLegacyClubProof(password);
-    safeStorageWrite(browserStorage("localStorage"), clubSessionKey, "true");
+    window.localStorage.setItem(clubSessionKey, "true");
     setMode("club");
   }
 
@@ -914,7 +845,8 @@ export function ClubApp() {
       setBills(nextBills);
       setStudents(nextStudents);
       setActivityLogs(nextActivityLogs);
-      const storedAccount = readStoredParentSetupAccount() ?? parentSession;
+      const storedParent = window.localStorage.getItem(parentSessionKey);
+      const storedAccount = storedParent ? (JSON.parse(storedParent) as ParentAccount) : parentSession;
       const canonicalAccount = storedAccount ? nextStudents.find((account) => account.id === storedAccount.id) : undefined;
       if (canonicalAccount && canonicalAccount.studentName !== storedAccount?.studentName) applyParentSession(canonicalAccount);
       setNotice(copy(language, "Supabase backend connected.", "Supabase 已连接。"));
@@ -1068,35 +1000,6 @@ export function ClubApp() {
         // Preserve the mutation error if the database clock cannot be refreshed.
       }
       setNotice(message);
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function updateParentOccurrenceTime(
-    booking: Booking,
-    target: { startsAt: string; dateLabel: string; timeLabel: string },
-    idempotencyKey: string
-  ) {
-    if (!verifiedParentSessionToken) {
-      setNotice(copy(language, "A verified Parent session is required. No changes were saved.", "需要已验证的家长会话。未保存任何更改。"));
-      return false;
-    }
-    setSaving(true);
-    setNotice(copy(language, "Updating class time...", "正在更新时间..."));
-    try {
-      const result = await updateParentClassTime(verifiedParentSessionToken, booking, target, idempotencyKey);
-      setBookings(result.calendarBookings);
-      const serverNow = new Date(result.serverNow);
-      if (Number.isFinite(serverNow.getTime())) {
-        authoritativeClockOffsetMs.current = serverNow.getTime() - Date.now();
-        setCurrentTime(serverNow);
-      }
-      setNotice(copy(language, "Class-time update submitted.", "课程时间更新已提交。"));
-      return true;
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : copy(language, "Could not update class time. No changes were saved.", "无法更新时间。未保存任何更改。"));
       return false;
     } finally {
       setSaving(false);
@@ -1506,41 +1409,13 @@ export function ClubApp() {
   }
 
   useEffect(() => {
-    let cancelled = false;
-    const verifiedState = readParentLegacySessionState();
-    const hadVerifiedSession = verifiedState.hadStored;
-    const storedVerifiedSession = verifiedState.session;
-    if (storedVerifiedSession) {
-      setParentSessionRecovery("restoring");
-      withTimeout(resumeParentLegacySession(storedVerifiedSession.sessionToken), parentSessionRestoreTimeoutMs)
-        .then((dashboard) => {
-          if (cancelled) return;
-          setVerifiedParentSessionToken(storedVerifiedSession.sessionToken);
-          applyParentLegacyDashboard(dashboard);
-          setParentSessionRecovery("idle");
-        })
-        .catch(() => {
-          if (cancelled) return;
-          clearParentLegacySession();
-          setVerifiedParentSessionToken("");
-          setParentSession(null);
-          setParentSessionRecovery("recovered");
-        });
-    } else if (hadVerifiedSession || verifiedState.storageFailed) {
-      setParentSessionRecovery("recovered");
+    const storedParent = window.localStorage.getItem(parentSessionKey);
+    const storedClub = window.localStorage.getItem(clubSessionKey) === "true";
+    if (storedParent) {
+      applyParentSession(JSON.parse(storedParent) as ParentAccount);
+      setMode("parent");
     }
-    const setupState = readStoredParentSetupState();
-    const storedParent = setupState.account;
-    const storedClub = safeStorageRead(browserStorage("localStorage"), clubSessionKey);
-    if (setupState.hadStored) {
-      // A setup-only snapshot has no resumable proof after a reload. Remove only
-      // that stale app state and require a fresh setup login.
-      if (storedParent) safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
-      if (!storedVerifiedSession) setParentSessionRecovery("recovered");
-    } else if (setupState.storageFailed || storedClub.failed) {
-      setParentSessionRecovery("recovered");
-    }
-    if (storedClub.value === "true") {
+    if (storedClub) {
       setClubAuthenticated(true);
       setMode("club");
     }
@@ -1558,7 +1433,6 @@ export function ClubApp() {
       .subscribe();
     const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
     return () => {
-      cancelled = true;
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       supabase.removeChannel(realtimeChannel);
       window.clearInterval(clock);
@@ -1614,13 +1488,9 @@ export function ClubApp() {
             {mode === "parent" && parentSession ? (
               <button
                 className="filter-button"
-                onClick={async () => {
-                  const token = verifiedParentSessionToken;
-                  if (token) await logoutParentLegacySession(token);
-                  clearParentLegacySession();
-                  setVerifiedParentSessionToken("");
+                onClick={() => {
                   setParentSession(null);
-                  safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
+                  window.localStorage.removeItem(parentSessionKey);
                   setMode("parent");
                 }}
               >
@@ -1634,7 +1504,7 @@ export function ClubApp() {
                 onClick={() => {
                   setClubAuthenticated(false);
                   setLegacyClubProof("");
-                  safeStorageRemove(browserStorage("localStorage"), clubSessionKey);
+                  window.localStorage.removeItem(clubSessionKey);
                   setMode("parent");
                 }}
               >
@@ -1655,12 +1525,6 @@ export function ClubApp() {
             onLogin={loginUnified}
             onRequestPasswordReset={requestPasswordReset}
             onUpdatePassword={updatePassword}
-            disabled={parentSessionRecovery === "restoring"}
-            externalNotice={parentSessionRecovery === "restoring"
-              ? copy(language, "Restoring your Parent session…", "正在恢复您的家长登录…")
-              : parentSessionRecovery === "recovered"
-                ? copy(language, "Your saved Parent session was invalid or expired. Please sign in again.", "您保存的家长登录已失效或过期。请重新登录。")
-                : ""}
           />
         ) : mode === "parent" && parentSession?.profileSetupRequired ? (
           <FirstLoginSetup
@@ -1668,10 +1532,8 @@ export function ClubApp() {
             language={language}
             onComplete={completeFirstLoginSetup}
             onLogout={() => {
-              clearParentLegacySession();
-              setVerifiedParentSessionToken("");
               setParentSession(null);
-              safeStorageRemove(browserStorage("localStorage"), parentSessionKey);
+              window.localStorage.removeItem(parentSessionKey);
               setMode("parent");
             }}
           />
@@ -1740,8 +1602,6 @@ export function ClubApp() {
               replaceSelectedSlot(initialCalendarSlot);
             }}
             onCancel={cancelParentClass}
-            parentClassTimeEnabled={Boolean(verifiedParentSessionToken)}
-            onUpdateClassTime={updateParentOccurrenceTime}
             onComplete={completeParentClass}
             onRestrictedCoachSelect={() => {
               setShowRequestConfirm(false);
@@ -1829,9 +1689,7 @@ function UnifiedAuth({
   onRegister,
   onLogin,
   onRequestPasswordReset,
-  onUpdatePassword,
-  disabled = false,
-  externalNotice = ""
+  onUpdatePassword
 }: {
   initialAuthMode: "login" | "register";
   intent: "parent" | "club";
@@ -1841,8 +1699,6 @@ function UnifiedAuth({
   onLogin: (identifier: string, password: string, allowPreregisteredName?: boolean) => Promise<void>;
   onRequestPasswordReset: (email: string) => Promise<void>;
   onUpdatePassword: (password: string) => Promise<void>;
-  disabled?: boolean;
-  externalNotice?: string;
 }) {
   const [authMode, setAuthMode] = useState<AuthMode>(initialAuthMode);
   const [studentName, setStudentName] = useState("");
@@ -1874,10 +1730,6 @@ function UnifiedAuth({
       setNotice(copy(language, "Club login opens the dashboard.", "俱乐部登录会直接进入管理界面。"));
     }
   }, [initialAuthMode, intent]);
-
-  useEffect(() => {
-    if (externalNotice) setNotice(externalNotice);
-  }, [externalNotice]);
 
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((event) => {
@@ -2050,7 +1902,7 @@ function UnifiedAuth({
                 <p>{copy(language, "Enter the exact full username or use email.", "请输入准确的完整用户名或使用邮箱。")}</p>
               </div>
             ) : null}
-            <button type="submit" className="primary-button auth-submit" disabled={busy || disabled || preregisteredLoginBlocked}>
+            <button type="submit" className="primary-button auth-submit" disabled={busy || preregisteredLoginBlocked}>
               <LogIn size={18} />
               {copy(language, "Login", "登录")}
             </button>
@@ -2278,8 +2130,6 @@ function ParentApp({
   onNextWeek,
   onToday,
   onCancel,
-  parentClassTimeEnabled,
-  onUpdateClassTime,
   onComplete,
   onRestrictedCoachSelect,
   onGroupClassRequest
@@ -2321,8 +2171,6 @@ function ParentApp({
   onNextWeek: () => void;
   onToday: () => void;
   onCancel: (booking: Booking) => Promise<boolean>;
-  parentClassTimeEnabled: boolean;
-  onUpdateClassTime: (booking: Booking, target: { startsAt: string; dateLabel: string; timeLabel: string }, idempotencyKey: string) => Promise<boolean>;
   onComplete: (booking: Booking) => void;
   onRestrictedCoachSelect: () => void;
   onGroupClassRequest: (booking: Booking) => Promise<boolean>;
@@ -2424,7 +2272,7 @@ function ParentApp({
             privacyMode
             parentMyCalendar={parentCalendarTab === "My calendar"}
             onUnavailableSlotSelect={isTianYeCoach(requestedCoach) ? onRestrictedCoachSelect : undefined}
-            isBookingActionable={(booking) => isGroupClassBlock(booking) || canParentRequestChange(booking) || (parentClassTimeEnabled && canParentUpdateClassTime(booking, currentTime.getTime()))}
+            isBookingActionable={(booking) => isGroupClassBlock(booking) || canParentRequestChange(booking)}
             onSlotChange={onSlotChange}
             onBookingSelect={(booking) => {
               if (isGroupClassBlock(booking) && isTianYeCoach(booking.assignedCoach || booking.requestedCoach)) {
@@ -2435,7 +2283,7 @@ function ParentApp({
                 setSelectedGroupClass(booking);
                 return;
               }
-              if (canParentRequestChange(booking) || (parentClassTimeEnabled && canParentUpdateClassTime(booking, currentTime.getTime()))) setSelectedParentBooking(booking);
+              if (canParentRequestChange(booking)) setSelectedParentBooking(booking);
             }}
           />
         </div>
@@ -2529,9 +2377,6 @@ function ParentApp({
               booking={selectedParentBooking}
               language={language}
               now={currentTime.getTime()}
-              allBookings={allBookings}
-              saving={saving}
-              updateEnabled={parentClassTimeEnabled}
               onClose={() => setSelectedParentBooking(null)}
               onComplete={() => {
                 onComplete(selectedParentBooking);
@@ -2540,11 +2385,6 @@ function ParentApp({
               onCancel={async () => {
                 const cancelled = await onCancel(selectedParentBooking);
                 if (cancelled) setSelectedParentBooking(null);
-              }}
-              onUpdateTime={async (target, idempotencyKey) => {
-                const updated = await onUpdateClassTime(selectedParentBooking, target, idempotencyKey);
-                if (updated) setSelectedParentBooking(null);
-                return updated;
               }}
             />
           ) : null}
@@ -4411,134 +4251,54 @@ function GroupClassRequestModal({
 
 function ParentClassActionModal({
   booking,
-  allBookings,
   language,
   now,
-  saving,
-  updateEnabled,
   onClose,
   onComplete,
-  onCancel,
-  onUpdateTime
+  onCancel
 }: {
   booking: Booking;
-  allBookings: Booking[];
   language: Language;
   now: number;
-  saving: boolean;
-  updateEnabled: boolean;
   onClose: () => void;
   onComplete: () => void;
   onCancel: () => void;
-  onUpdateTime: (target: { startsAt: string; dateLabel: string; timeLabel: string }, idempotencyKey: string) => Promise<boolean>;
 }) {
-  const bookingStart = new Date(booking.startsAt);
-  const durationMinutes = parentClassDurationMinutes(booking);
-  const [stage, setStage] = useState<"actions" | "edit" | "confirm">("actions");
-  const [dateValue, setDateValue] = useState(dateInputValue(bookingStart));
-  const [startTime, setStartTime] = useState(timeLabel(bookingStart));
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
-  const targetSlot = makeSlotFromInput(dateValue, startTime);
-  const targetTimeLabel = rangeLabel(targetSlot, durationMinutes);
-  const targetValid = isValidParentClassTimeTarget(targetSlot.startsAt, durationMinutes, now);
-  const unavailable = targetValid && isRangeUnavailableExceptBooking(allBookings, booking.assignedCoach || booking.requestedCoach, targetSlot, durationMinutes, booking.id);
-  const changed = targetSlot.startsAt !== booking.startsAt || targetTimeLabel !== booking.timeLabel;
   const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking);
   const cancellationBlockReason = parentCancellationBlockReason(booking, now);
   const canCancel = canParentRequestChange(booking) && !cancellationBlockReason;
-  const canUpdate = updateEnabled && canParentUpdateClassTime(booking, now);
-  const resultingStatus = parentClassTimeResultStatus(booking.status);
-  const targetDateText = copy(language, targetSlot.dateLabel, dateZh(new Date(targetSlot.startsAt)));
-
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="confirm-modal class-action-modal parent-time-update-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
+      <section className="confirm-modal class-action-modal" role="dialog" aria-modal="true" aria-labelledby="student-class-actions-title">
         <button className="modal-close-icon" type="button" aria-label="Close" onClick={onClose}>
           <span aria-hidden="true">×</span>
         </button>
         <div className="section-head compact class-action-head">
           <div>
-            <p className="eyebrow">{copy(language, stage === "actions" ? "Class actions" : "Update class time", stage === "actions" ? "课程操作" : "更新课程时间")}</p>
+            <p className="eyebrow">{copy(language, "Class actions", "课程操作")}</p>
             <h2 id="student-class-actions-title">{booking.studentName}</h2>
-            <p className="section-subtitle">{copy(language, "Only this selected occurrence will change.", "只会更改当前选中的这一节课。")}</p>
+            <p className="section-subtitle">{copy(language, "Mark this class complete after it is finished.", "课程结束后可以标记完成。")}</p>
           </div>
           <span className={`status-chip ${booking.status}`}>{statusText(booking.status, language)}</span>
         </div>
-
-        {stage === "actions" ? (
-          <>
-            <dl className="confirm-summary">
-              <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{coachDisplayName(booking.assignedCoach || booking.requestedCoach, language)}</dd></div>
-              <div><dt>{copy(language, "Date", "日期")}</dt><dd>{bookingDateText(booking, language)}</dd></div>
-              <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
-            </dl>
-            {cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
-            {canUpdate ? (
-              <button className="filter-button parent-update-time-button" type="button" onClick={() => setStage("edit")}>
-                <RefreshCcw size={18} />
-                {copy(language, "Update class time", "更新课程时间")}
-              </button>
-            ) : null}
-            <div className={`modal-actions ${!canCancel ? "single-action" : ""}`}>
-              {canCancel ? (
-                <button className="decline" onClick={onCancel} disabled={saving}>
-                  <X size={18} />
-                  {copy(language, "Cancel class", "取消课程")}
-                </button>
-              ) : null}
-              <button className="primary-button" disabled={!canComplete} onClick={onComplete}>
-                <Check size={18} />
-                {copy(language, "Mark complete", "标记完成")}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <dl className="confirm-summary old-new-summary">
-              <div><dt>{copy(language, "Current date/time", "当前日期/时间")}</dt><dd>{bookingDateText(booking, language)} · {booking.timeLabel}</dd></div>
-              <div><dt>{copy(language, "New date/time", "新日期/时间")}</dt><dd>{targetDateText} · {targetTimeLabel}</dd></div>
-              <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{coachDisplayName(booking.assignedCoach || booking.requestedCoach, language)}</dd></div>
-              <div><dt>{copy(language, "Duration", "时长")}</dt><dd>{durationMinutes} {copy(language, "minutes", "分钟")}</dd></div>
-              <div><dt>{copy(language, "Approval status", "审批状态")}</dt><dd>{statusText(resultingStatus, language)}</dd></div>
-            </dl>
-            {stage === "edit" ? (
-              <div className="modal-field-grid time-range-picker">
-                <label>
-                  <span>{copy(language, "New date", "新日期")}</span>
-                  <input className="modal-input" type="date" value={dateValue} onChange={(event) => setDateValue(event.target.value)} />
-                </label>
-                <label>
-                  <span>{copy(language, "New start time", "新开始时间")}</span>
-                  <select className="modal-select" value={startTime} onChange={(event) => setStartTime(event.target.value)}>
-                    {modalTimeOptions.slice(0, -1).map((option) => <option key={option} value={option}>{option}</option>)}
-                  </select>
-                </label>
-              </div>
-            ) : (
-              <div className="action-confirm-panel final-parent-time-confirm">
-                <strong>{copy(language, "Final confirmation", "最终确认")}</strong>
-                <p>{copy(language, "Submit this selected-occurrence change now? The Club may need to approve it.", "现在提交这一次课程的改期吗？Club 可能需要审批。")}</p>
-              </div>
-            )}
-            {!targetValid ? <p className="modal-warning">{copy(language, "Choose a 30-minute start strictly more than 12 hours from the server time. Contact the Club assistant for a closer change.", "请选择严格晚于服务器时间 12 小时、以 30 分钟为单位的开始时间。临近改期请联系 Club 助理。")}</p> : null}
-            {unavailable ? <p className="modal-warning">{copy(language, "The coach or student already has an overlapping class or unavailable block.", "教练或学生已有重叠课程或不可用时段。")}</p> : null}
-            <div className="modal-actions">
-              <button className="filter-button" type="button" disabled={saving} onClick={() => setStage(stage === "confirm" ? "edit" : "actions")}>
-                {copy(language, "Back", "返回")}
-              </button>
-              {stage === "edit" ? (
-                <button className="primary-button" type="button" disabled={!targetValid || unavailable || !changed} onClick={() => setStage("confirm")}>
-                  {copy(language, "Review change", "查看更改")}
-                </button>
-              ) : (
-                <button className="primary-button" type="button" disabled={saving} onClick={() => onUpdateTime({ startsAt: targetSlot.startsAt, dateLabel: targetSlot.dateLabel, timeLabel: targetTimeLabel }, idempotencyKey)}>
-                  <Check size={18} />
-                  {saving ? copy(language, "Submitting...", "正在提交...") : copy(language, "Confirm update", "确认更新")}
-                </button>
-              )}
-            </div>
-          </>
-        )}
+        <dl className="confirm-summary">
+          <div><dt>{copy(language, "Coach", "教练")}</dt><dd>{coachDisplayName(booking.assignedCoach, language)}</dd></div>
+          <div><dt>{copy(language, "Date", "日期")}</dt><dd>{booking.dateLabel}</dd></div>
+          <div><dt>{copy(language, "Time", "时间")}</dt><dd>{booking.timeLabel}</dd></div>
+        </dl>
+        {cancellationBlockReason ? <p className="modal-warning">{parentCancellationWarning(cancellationBlockReason, language)}</p> : null}
+        <div className={`modal-actions ${!canCancel ? "single-action" : ""}`}>
+          {canCancel ? (
+            <button className="decline" onClick={onCancel}>
+              <X size={18} />
+              {copy(language, "Cancel class", "取消课程")}
+            </button>
+          ) : null}
+          <button className="primary-button" disabled={!canComplete} onClick={onComplete}>
+            <Check size={18} />
+            {copy(language, "Mark complete", "标记完成")}
+          </button>
+        </div>
       </section>
     </div>
   );

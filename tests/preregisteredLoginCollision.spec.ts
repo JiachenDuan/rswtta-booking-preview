@@ -23,7 +23,7 @@ test("a first-name collision warns and blocks only when no unique exact username
   expect(resolvePreregisteredLogin(accounts, "Alex").status).toBe("ambiguous");
   expect(resolvePreregisteredLogin(accounts, "alex ma").status).toBe("unique_exact");
   expect(app).toContain("Other students share this first name, but this exact full username identifies one account.");
-  expect(app).toContain('disabled={busy || disabled || preregisteredLoginBlocked}');
+  expect(app).toContain('disabled={busy || preregisteredLoginBlocked}');
 });
 
 test("duplicate exact names are ambiguous and resolution never first-matches", () => {
