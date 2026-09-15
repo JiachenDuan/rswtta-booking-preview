@@ -38,13 +38,21 @@ test("trusted routing activates only after membership verification and Parent st
   expect(app).toContain('useState<"parent" | "club">(operatorOnly ? "club" : "parent")');
 });
 
-test("generic directory loading and realtime start only behind verified Club state", () => {
+test("generic directory loading starts only after Club auth and trusted mode never subscribes to project_rows", () => {
   const effect = app.slice(app.indexOf('if (!clubAuthenticated || (!legacyClubProof && !isTrustedOperatorContextActive())) return'), app.indexOf("}, [clubAuthenticated, legacyClubProof])"));
+  const trustedBranch = effect.slice(effect.indexOf("if (isTrustedOperatorContextActive())"), effect.indexOf("const refreshFromPush"));
+  expect(trustedBranch).toContain("window.setInterval(() => void loadAll(), 30_000)");
+  expect(trustedBranch).not.toContain('.channel("rswtta-project-rows-push")');
   expect(effect).toContain('.channel("rswtta-project-rows-push")');
-  expect(effect).toContain("void loadAll()");
   const mount = app.slice(app.indexOf("useEffect(() => {", app.indexOf("function ClubApp")), app.indexOf('if (!clubAuthenticated || (!legacyClubProof'));
   expect(mount).not.toContain('.channel("rswtta-project-rows-push")');
   expect(app.slice(app.indexOf("async function loginParent"), app.indexOf("async function requestPasswordReset"))).not.toContain("loadAll()");
+});
+
+test("completed preregistered Parent setup requires the email used by verified dashboard login", () => {
+  expect(app).toContain("const contactReady = emailReady && (account.clubPreregistered || phoneReady)");
+  expect(app).toContain('copy(language, "Email required", "邮箱（必填）")');
+  expect(app).not.toContain('account.clubPreregistered ? "Email optional"');
 });
 
 test("TOTP enrollment, challenge, AAL2 verification, recovery, and sign-out are wired", () => {

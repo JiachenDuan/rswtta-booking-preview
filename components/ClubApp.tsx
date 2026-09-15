@@ -1500,6 +1500,12 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
 
   useEffect(() => {
     if (!clubAuthenticated || (!legacyClubProof && !isTrustedOperatorContextActive())) return;
+    if (isTrustedOperatorContextActive()) {
+      // The trusted client cannot subscribe to generic project_rows after closure.
+      // Poll the scoped RPC projections instead; all writes still refresh immediately.
+      const refresh = window.setInterval(() => void loadAll(), 30_000);
+      return () => window.clearInterval(refresh);
+    }
     const refreshFromPush = () => {
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       realtimeRefreshTimer.current = window.setTimeout(() => {
@@ -2132,12 +2138,14 @@ function FirstLoginSetup({
   const emailReady = email.trim().includes("@");
   const phoneReady = phone.trim().replace(/\D/g, "").length >= 7;
   const passwordReady = password.length >= 6 && (account.clubPreregistered || password !== preregisteredPasswordTemplate) && password === confirmPassword;
-  const contactReady = account.clubPreregistered || (emailReady && phoneReady);
+  // A completed legacy Parent profile must have an email because the verified
+  // dashboard login contract authenticates completed profiles by email.
+  const contactReady = emailReady && (account.clubPreregistered || phoneReady);
   const ready = studentNameReady && contactReady && passwordReady;
 
   async function handleComplete() {
     if (!ready) {
-      setNotice(copy(language, account.clubPreregistered ? "Student name and a matching different password are required." : "Student name, email, phone, and matching new password are required.", account.clubPreregistered ? "必须填写学生姓名并输入一致的不同密码。" : "必须填写学生姓名、邮箱、电话，并输入一致的新密码。"));
+      setNotice(copy(language, account.clubPreregistered ? "Student name, email, and a matching different password are required." : "Student name, email, phone, and matching new password are required.", account.clubPreregistered ? "必须填写学生姓名、邮箱，并输入一致的不同密码。" : "必须填写学生姓名、邮箱、电话，并输入一致的新密码。"));
       return;
     }
     setBusy(true);
@@ -2160,14 +2168,14 @@ function FirstLoginSetup({
             <p className="section-subtitle">
               {copy(
                 language,
-                account.clubPreregistered ? `${account.studentName}, set a different password before using the dashboard. Contact fields are optional.` : `${account.studentName}, update your password and add contact info before using the dashboard.`,
-                account.clubPreregistered ? `${account.studentName}，请先设置不同密码，再使用主页。联系方式可选。` : `${account.studentName}，请先更新密码并填写联系方式，然后才能使用主页。`
+                account.clubPreregistered ? `${account.studentName}, add a login email and set a different password before using the dashboard. Phone is optional.` : `${account.studentName}, update your password and add contact info before using the dashboard.`,
+                account.clubPreregistered ? `${account.studentName}，请先添加登录邮箱并设置不同密码，再使用主页。电话可选。` : `${account.studentName}，请先更新密码并填写联系方式，然后才能使用主页。`
               )}
             </p>
           </div>
         </div>
         <div className="setup-lockout">
-          {copy(language, account.clubPreregistered ? "Dashboard, schedule, booking, billing, packages, and account data stay locked until the password is replaced." : "Dashboard is locked until email and phone are filled out.", account.clubPreregistered ? "更换密码前，主页、日程、预约、账单、课包和账号数据均保持锁定。" : "填写邮箱和电话前，主页会保持锁定。")}
+          {copy(language, account.clubPreregistered ? "Dashboard, schedule, booking, billing, packages, and account data stay locked until a login email and new password are saved." : "Dashboard is locked until email and phone are filled out.", account.clubPreregistered ? "保存登录邮箱和新密码前，主页、日程、预约、账单、课包和账号数据均保持锁定。" : "填写邮箱和电话前，主页会保持锁定。")}
         </div>
         <div className="simple-form auth-form">
           <label>
@@ -2186,7 +2194,7 @@ function FirstLoginSetup({
             </div>
           </label>
           <label>
-            <span>{copy(language, account.clubPreregistered ? "Email optional" : "Email required", account.clubPreregistered ? "邮箱（可选）" : "邮箱（必填）")}</span>
+            <span>{copy(language, "Email required", "邮箱（必填）")}</span>
             <div className="input-shell">
               <Mail size={18} />
               <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="student@example.com" />
