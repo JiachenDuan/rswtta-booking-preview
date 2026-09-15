@@ -855,6 +855,18 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
     setNotice(copy(language, "Profile setup complete. The previous password is invalid.", "资料设置完成。之前的密码已失效。"));
   }
 
+  async function verifyOperatorMembership() {
+    let membership = await supabase.rpc("app_my_membership");
+    if (membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) {
+      const acceptance = await supabase.rpc("operator_accept_invitation", { p_request_id: globalThis.crypto.randomUUID() });
+      if (acceptance.error) throw new Error("This account does not have active Club operator access.");
+      membership = await supabase.rpc("app_my_membership");
+    }
+    if (membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) {
+      throw new Error("This account does not have active Club operator access.");
+    }
+  }
+
   async function activateVerifiedOperator() {
     activateTrustedOperatorContext();
     try {
@@ -887,12 +899,13 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
     if (!isTrustedOperatorClientEnabled()) throw new Error("Wrong club login");
     const login = await supabase.auth.signInWithPassword({ email: normalizedIdentifier, password });
     if (login.error) throw login.error;
-    const membership = await supabase.rpc("app_my_membership");
-    if (membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) {
+    try {
+      await verifyOperatorMembership();
+      await activateVerifiedOperator();
+    } catch (error) {
       await supabase.auth.signOut();
-      throw new Error("This account does not have active Club operator access.");
+      throw error;
     }
-    await activateVerifiedOperator();
   }
 
   async function loginUnified(identifier: string, password: string, allowPreregisteredName = false) {
@@ -1493,9 +1506,12 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
     if (secureOperatorClient && storedClub.value !== "true") {
       supabase.auth.getSession().then(async ({ data }) => {
         if (cancelled || !data.session) return;
-        const membership = await supabase.rpc("app_my_membership");
-        if (cancelled || membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) return;
-        await activateVerifiedOperator();
+        try {
+          await verifyOperatorMembership();
+          if (!cancelled) await activateVerifiedOperator();
+        } catch {
+          if (!cancelled) await supabase.auth.signOut();
+        }
       });
     }
     const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
