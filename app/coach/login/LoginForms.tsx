@@ -1,18 +1,60 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { coachLoginAction, coachResetAction } from "../actions";
-import { initialCoachActionState } from "@/lib/coachAuth/actionState";
+import { type FormEvent, useActionState, useEffect, useRef, useState } from "react";
+import { coachResetAction } from "../actions";
+import { initialCoachActionState, type CoachActionState } from "@/lib/coachAuth/actionState";
+import { createCoachSupabaseBrowserClient } from "@/lib/coachAuth/browser";
 
-function Message({ state }: { state: typeof initialCoachActionState }) {
+function Message({ state }: { state: CoachActionState }) {
   if (state.status === "idle") return null;
   return <p className={`coach-message ${state.status}`} role={state.status === "error" ? "alert" : "status"}>{state.message}</p>;
 }
 
 export function LoginForms() {
   const [resetMode, setResetMode] = useState(false);
-  const [loginState, loginAction, loginPending] = useActionState(coachLoginAction, initialCoachActionState);
+  const [loginState, setLoginState] = useState<CoachActionState>(initialCoachActionState);
+  const [loginPending, setLoginPending] = useState(false);
   const [resetState, resetAction, resetPending] = useActionState(coachResetAction, initialCoachActionState);
+  const supabase = useRef<ReturnType<typeof createCoachSupabaseBrowserClient> | null>(null);
+
+  useEffect(() => {
+    try {
+      const client = createCoachSupabaseBrowserClient();
+      supabase.current = client;
+      void client.auth.getSession().then(({ data }) => {
+        if (data.session) window.location.replace("/club");
+      });
+    } catch {
+      setLoginState({ status: "error", message: "Sign-in is temporarily unavailable. 登录暂时不可用。" });
+    }
+  }, []);
+
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (loginPending || !supabase.current) return;
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get("email") ?? "").trim().toLowerCase();
+    const password = String(formData.get("password") ?? "");
+    if (!email || !password) {
+      setLoginState({ status: "error", message: "Enter your email and password. 请输入邮箱和密码。" });
+      return;
+    }
+
+    setLoginPending(true);
+    setLoginState(initialCoachActionState);
+    try {
+      const { error } = await supabase.current.auth.signInWithPassword({ email, password });
+      if (error) {
+        setLoginState({ status: "error", message: "Unable to sign in with those details. 登录信息不正确。" });
+        setLoginPending(false);
+        return;
+      }
+      window.location.assign("/club");
+    } catch {
+      setLoginState({ status: "error", message: "Sign-in is temporarily unavailable. 登录暂时不可用。" });
+      setLoginPending(false);
+    }
+  }
 
   if (resetMode) {
     return (
@@ -26,7 +68,7 @@ export function LoginForms() {
   }
 
   return (
-    <form action={loginAction} className="coach-form">
+    <form onSubmit={login} className="coach-form">
       <label>Email · 邮箱<input name="email" type="email" autoComplete="username" required /></label>
       <label>Password · 密码<input name="password" type="password" autoComplete="current-password" required /></label>
       <button className="coach-primary" type="submit" disabled={loginPending}>{loginPending ? "Signing in… · 正在登录…" : "Sign in · 登录"}</button>

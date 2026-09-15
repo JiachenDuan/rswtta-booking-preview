@@ -9,22 +9,6 @@ function unavailable(): CoachActionState {
   return { status: "error", message: "Club operator access is unavailable. 俱乐部员工入口暂不可用。" };
 }
 
-export async function coachLoginAction(_state: CoachActionState, formData: FormData): Promise<CoachActionState> {
-  if (!isOperatorAuthEnabled()) return unavailable();
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const password = String(formData.get("password") ?? "");
-  if (!email || !password) return { status: "error", message: "Enter your email and password. 请输入邮箱和密码。" };
-
-  try {
-    const supabase = await createCoachSupabaseClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { status: "error", message: "Unable to sign in with those details. 登录信息不正确。" };
-  } catch {
-    return { status: "error", message: "Sign-in is temporarily unavailable. 登录暂时不可用。" };
-  }
-  redirect("/club");
-}
-
 export async function coachResetAction(_state: CoachActionState, formData: FormData): Promise<CoachActionState> {
   if (!isOperatorAuthEnabled()) return unavailable();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();

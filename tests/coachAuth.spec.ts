@@ -4,13 +4,16 @@ import { normalizeCoachProfile, normalizeCoachSchedule, partitionCoachSchedule }
 
 const actions = readFileSync("app/coach/actions.ts", "utf8");
 const confirmForm = readFileSync("app/coach/confirm/ConfirmForm.tsx", "utf8");
+const loginForms = readFileSync("app/coach/login/LoginForms.tsx", "utf8");
+const loginPage = readFileSync("app/coach/login/page.tsx", "utf8");
+const browser = readFileSync("lib/coachAuth/browser.ts", "utf8");
 const config = readFileSync("lib/coachAuth/config.ts", "utf8");
 const server = readFileSync("lib/coachAuth/server.ts", "utf8");
 const page = readFileSync("app/coach/page.tsx", "utf8");
 const proxy = readFileSync("proxy.ts", "utf8");
 const migration = readFileSync("supabase/migrations/20260915102000_coach_auth_foundation.sql", "utf8");
 
- test("Club operator activation works during dual-auth rollout and uses SSR cookies", () => {
+ test("Club login persists into the app session store while the Coach shell retains SSR cookies", () => {
   expect(actions).toContain('if (!isOperatorAuthEnabled())');
   expect(config).toContain('isCoachAuthEnabled() || process.env.NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED !== "false"');
   expect(config).toContain("VERCEL_PROJECT_PRODUCTION_URL");
@@ -20,7 +23,12 @@ const migration = readFileSync("supabase/migrations/20260915102000_coach_auth_fo
   expect(actions).not.toContain("service_role");
   expect(proxy).toContain('matcher: ["/coach/:path*"]');
   expect(proxy).toContain("await supabase.auth.getUser()");
-  expect(actions).toContain('redirect("/club")');
+  expect(loginForms).toContain("createCoachSupabaseBrowserClient");
+  expect(loginForms).toContain("auth.signInWithPassword");
+  expect(loginForms).toContain('window.location.assign("/club")');
+  expect(browser).toContain("persistSession: true");
+  expect(loginPage).not.toContain("createCoachSupabaseClient");
+  expect(actions).not.toContain("coachLoginAction");
  });
 
  test("Operator shell reads equal-permission RPC projections", () => {
