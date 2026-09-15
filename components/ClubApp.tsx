@@ -24,7 +24,6 @@ import {
 import {
   authoritativeCurrentTime,
   cancelBookingAsClub,
-  cancelBookingAsParent,
   createActivityLog,
   createBillNotification,
   createBooking,
@@ -35,12 +34,10 @@ import {
   listParentAccounts,
   registerParentAccount,
   resetPasswordForEmail,
-  requestBookingAsParent,
   addStudentToGroupOccurrencesAtomically,
   manageGroupOccurrencesAtomically,
   rescheduleBookingsAtomically,
   updateUserPassword,
-  updateParentAccount,
   updateBooking as updateStoredBooking
 } from "@/lib/projectStore";
 import { parentCancellationActivityMessage } from "@/lib/activityLog";
@@ -62,6 +59,8 @@ import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/re
 import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
 import { isTrustedOperatorClientEnabled } from "@/lib/coachAuth/config";
+import { activateTrustedOperatorContext, deactivateTrustedOperatorContext, isTrustedOperatorContextActive } from "@/lib/coachAuth/clientContext";
+import { cancelVerifiedParentBooking, completeVerifiedParentBooking, requestVerifiedParentGroupClass, requestVerifiedParentPrivateBooking, updateVerifiedParentProfile } from "@/lib/parentVerifiedMutations";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
@@ -714,7 +713,7 @@ const parentPrivateClassRequestsEnabled = true;
 const parentSelfRegistrationEnabled = false;
 
 export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
-  const [mode, setMode] = useState<"parent" | "club">("parent");
+  const [mode, setMode] = useState<"parent" | "club">(operatorOnly ? "club" : "parent");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
@@ -724,6 +723,7 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
   const [parentSession, setParentSession] = useState<ParentAccount | null>(null);
   const [clubAuthenticated, setClubAuthenticated] = useState(false);
   const [legacyClubProof, setLegacyClubProof] = useState("");
+  const [operatorMfaRequired, setOperatorMfaRequired] = useState(false);
   const legacySetupSessionToken = useRef("");
   const [studentName, setStudentName] = useState("");
   const [familyName, setFamilyName] = useState("");
@@ -833,15 +833,8 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
     setSaving(true);
     setNotice(copy(language, "Updating student info...", "正在更新学生信息..."));
     try {
-      const account = await updateParentAccount({
-        accountId: parentSession.id,
-        studentName: input.studentName,
-        parentName: input.parentName,
-        email: input.email,
-        phone: input.phone
-      });
-      applyParentSession(account);
-      await loadAll();
+      const result = await updateVerifiedParentProfile(verifiedParentSessionToken, input);
+      applyParentLegacyDashboard(result);
       setNotice(copy(language, "Student info updated.", "学生信息已更新。"));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : copy(language, "Could not update student info.", "无法更新学生信息。"));
@@ -853,17 +846,29 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
   async function completeFirstLoginSetup(input: { studentName: string; parentName: string; email: string; phone: string; password: string }) {
     if (!parentSession) return;
     if (!legacySetupSessionToken.current) throw new Error(copy(language, "Log out and sign in again to complete setup.", "请退出并重新登录以完成设置。"));
-    const result = await completeLegacySetup(legacySetupSessionToken.current, input);
+    await completeLegacySetup(legacySetupSessionToken.current, input);
     legacySetupSessionToken.current = "";
-    if (!parentSession.clubPreregistered && input.email.trim().includes("@")) {
-      const session = await loginParentLegacySession(input.email, input.password);
-      setVerifiedParentSessionToken(session.sessionToken);
-      applyParentLegacyDashboard(session);
-    } else {
-      applyParentSession(result.account);
-      await loadAll();
-    }
+    if (!input.email.trim().includes("@")) throw new Error("A verified Parent email login is required after setup.");
+    const session = await loginParentLegacySession(input.email, input.password);
+    setVerifiedParentSessionToken(session.sessionToken);
+    applyParentLegacyDashboard(session);
     setNotice(copy(language, "Profile setup complete. The previous password is invalid.", "资料设置完成。之前的密码已失效。"));
+  }
+
+  async function activateVerifiedOperator() {
+    activateTrustedOperatorContext();
+    try {
+      const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      if (assurance.error) throw assurance.error;
+      setOperatorMfaRequired(assurance.data.currentLevel !== "aal2");
+      setClubAuthenticated(true);
+      setLegacyClubProof("");
+      setMode("club");
+      await loadAll();
+    } catch (error) {
+      deactivateTrustedOperatorContext();
+      throw error;
+    }
   }
 
   async function loginClub(identifier: string, password: string) {
@@ -875,10 +880,7 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
         await supabase.auth.signOut();
         throw new Error("This account does not have active Club operator access.");
       }
-      setClubAuthenticated(true);
-      setLegacyClubProof("");
-      setMode("club");
-      await loadAll();
+      await activateVerifiedOperator();
       return;
     }
     if (identifier.trim().toLowerCase() !== clubEmail || password !== clubPassword) {
@@ -892,7 +894,7 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
   }
 
   async function loginUnified(identifier: string, password: string, allowPreregisteredName = false) {
-    if (isTrustedOperatorClientEnabled() || identifier.trim().toLowerCase() === clubEmail) {
+    if (operatorOnly || isTrustedOperatorClientEnabled() || identifier.trim().toLowerCase() === clubEmail) {
       await loginClub(identifier, password);
       return;
     }
@@ -965,7 +967,7 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
     try {
       await Promise.all(
         slots.map((slot) =>
-          requestBookingAsParent({
+          requestVerifiedParentPrivateBooking(verifiedParentSessionToken, {
             studentAccountId: parentSession?.id,
             studentName,
             familyName,
@@ -979,11 +981,11 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
             startsAt: slot.startsAt,
             priceCents: lessonPriceCents(requestedCoach),
             parentNote
-          }, parentSession?.id ?? "")
+          })
         )
       );
 
-      await loadAll();
+      applyParentLegacyDashboard(await resumeParentLegacySession(verifiedParentSessionToken));
       setNotice(copy(language, `Saved ${slots.length} request${slots.length === 1 ? "" : "s"}. Club can see it now.`, `已保存 ${slots.length} 个请求。Club 现在可以看到。`));
       return true;
     } catch (error) {
@@ -1013,23 +1015,8 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
     setSaving(true);
     setNotice(copy(language, "Saving group class request...", "正在保存团体课请求..."));
     try {
-      await createBooking({
-        studentAccountId: parentSession?.id,
-        studentName,
-        familyName: studentName,
-        studentEmail,
-        phone,
-        requestedCoach: coach,
-        assignedCoach: coach,
-        program: "Group enrollment",
-        groupClassId: groupClass.groupClassId || groupClass.id,
-        dateLabel: groupClass.dateLabel,
-        timeLabel: groupClass.timeLabel,
-        startsAt: groupClass.startsAt,
-        priceCents: 7500,
-        parentNote: "Parent requested to join group class."
-      });
-      await loadAll();
+      const result = await requestVerifiedParentGroupClass(verifiedParentSessionToken, groupClass.id);
+      applyParentLegacyDashboard(result);
       setNotice(copy(language, "Saved group class request. Club can confirm or reject it.", "已保存团体课请求，Club 可以确认或拒绝。"));
       return true;
     } catch (error) {
@@ -1053,9 +1040,8 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
       if (booking.id.startsWith("virtual-") && !booking.studentAccountId) {
         throw new Error("This recurring class has unresolved student identity.");
       }
-      const cancelled = await cancelBookingAsParent(booking, parentSession?.id ?? "");
-      await recordClassActivity("cancelled", [cancelled], cancelled, "parent/student");
-      await loadAll();
+      const result = await cancelVerifiedParentBooking(verifiedParentSessionToken, booking);
+      applyParentLegacyDashboard(result);
       setNotice(copy(language, "Class cancelled.", "课程已取消。"));
       return true;
     } catch (error) {
@@ -1079,32 +1065,8 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
   async function completeParentClass(booking: Booking) {
     setNotice(copy(language, "Marking class complete...", "正在标记课程完成..."));
     try {
-      if (booking.id.startsWith("virtual-")) {
-        if (!booking.studentAccountId) throw new Error("This recurring class has unresolved student identity.");
-        const created = await createBooking({
-          studentAccountId: booking.studentAccountId,
-          seriesId: booking.seriesId,
-          recurrenceOccurrenceId: booking.recurrenceOccurrenceId,
-          recurrenceOriginalStartsAt: booking.recurrenceOriginalStartsAt,
-          groupClassId: booking.groupClassId,
-          studentName: booking.studentName,
-          familyName: booking.familyName,
-          studentEmail: booking.studentEmail,
-          phone: booking.phone,
-          requestedCoach: booking.requestedCoach,
-          assignedCoach: booking.assignedCoach,
-          program: booking.program,
-          dateLabel: booking.dateLabel,
-          timeLabel: booking.timeLabel,
-          startsAt: booking.startsAt,
-          priceCents: booking.priceCents,
-          parentNote: `${booking.parentNote} Marked complete by student.`
-        });
-        await updateStoredBooking(created.id, { status: "coach_confirmed", assignedCoach: booking.assignedCoach });
-      } else {
-        await updateStoredBooking(booking.id, { status: "coach_confirmed", assignedCoach: booking.assignedCoach });
-      }
-      await loadAll();
+      const result = await completeVerifiedParentBooking(verifiedParentSessionToken, booking);
+      applyParentLegacyDashboard(result);
       setNotice(copy(language, "Class marked complete.", "课程已标记完成。"));
     } catch {
       setNotice(copy(language, "Could not mark class complete.", "无法标记课程完成。"));
@@ -1480,7 +1442,9 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
 
   useEffect(() => {
     let cancelled = false;
-    const verifiedState = readParentLegacySessionState();
+    const verifiedState = operatorOnly
+      ? { session: null, hadStored: false, storageFailed: false }
+      : readParentLegacySessionState();
     const hadVerifiedSession = verifiedState.hadStored;
     const storedVerifiedSession = verifiedState.session;
     if (storedVerifiedSession) {
@@ -1502,7 +1466,9 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
     } else if (hadVerifiedSession || verifiedState.storageFailed) {
       setParentSessionRecovery("recovered");
     }
-    const setupState = readStoredParentSetupState();
+    const setupState = operatorOnly
+      ? { account: null, hadStored: false, storageFailed: false }
+      : readStoredParentSetupState();
     const storedParent = setupState.account;
     const storedClub = safeStorageRead(browserStorage("localStorage"), clubSessionKey);
     if (setupState.hadStored) {
@@ -1521,30 +1487,36 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
         if (cancelled || !data.session) return;
         const membership = await supabase.rpc("app_my_membership");
         if (cancelled || membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) return;
-        setClubAuthenticated(true);
-        setMode("club");
-        await loadAll();
+        await activateVerifiedOperator();
       });
     }
+    const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
+    return () => {
+      cancelled = true;
+      deactivateTrustedOperatorContext();
+      window.clearInterval(clock);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!clubAuthenticated || (!legacyClubProof && !isTrustedOperatorContextActive())) return;
     const refreshFromPush = () => {
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       realtimeRefreshTimer.current = window.setTimeout(() => {
         realtimeRefreshTimer.current = null;
-        loadAll();
+        void loadAll();
       }, 250);
     };
-    const realtimeChannel = secureOperatorClient ? null : supabase
+    const realtimeChannel = supabase
       .channel("rswtta-project-rows-push")
       .on("postgres_changes", { event: "*", schema: "public", table: "project_rows" }, refreshFromPush)
       .subscribe();
-    const clock = window.setInterval(() => setCurrentTime(new Date(Date.now() + authoritativeClockOffsetMs.current)), 60000);
     return () => {
-      cancelled = true;
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
-      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
-      window.clearInterval(clock);
+      realtimeRefreshTimer.current = null;
+      void supabase.removeChannel(realtimeChannel);
     };
-  }, []);
+  }, [clubAuthenticated, legacyClubProof]);
 
   return (
     <main className="shell simple-shell">
@@ -1614,10 +1586,12 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
                 className="filter-button"
                 onClick={async () => {
                   if (isTrustedOperatorClientEnabled()) await supabase.auth.signOut();
+                  deactivateTrustedOperatorContext();
+                  setOperatorMfaRequired(false);
                   setClubAuthenticated(false);
                   setLegacyClubProof("");
                   safeStorageRemove(browserStorage("localStorage"), clubSessionKey);
-                  setMode("parent");
+                  setMode(operatorOnly ? "club" : "parent");
                 }}
               >
                 <LogOut size={17} />
@@ -1749,6 +1723,7 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
             saving={saving}
             language={language}
             onNotice={setNotice}
+            onRefresh={loadAll}
             onSlotChange={selectSingleSlot}
             onDurationChange={setSelectedDurationMinutes}
             onCalendarTabChange={setClubCalendarTab}
@@ -1796,9 +1771,71 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
         {showTianYeRestriction && mode === "parent" && parentSession ? (
           <CoachBookingRestrictionNotice language={language} onClose={() => setShowTianYeRestriction(false)} />
         ) : null}
+        {operatorMfaRequired && mode === "club" && clubAuthenticated ? (
+          <OperatorMfaModal
+            language={language}
+            onVerified={() => setOperatorMfaRequired(false)}
+            onSignOut={async () => {
+              await supabase.auth.signOut();
+              deactivateTrustedOperatorContext();
+              setOperatorMfaRequired(false);
+              setClubAuthenticated(false);
+              setMode(operatorOnly ? "club" : "parent");
+            }}
+          />
+        ) : null}
       </section>
     </main>
   );
+}
+
+function OperatorMfaModal({ language, onVerified, onSignOut }: { language: Language; onVerified: () => void; onSignOut: () => Promise<void> }) {
+  const [factorId, setFactorId] = useState("");
+  const [qrCode, setQrCode] = useState("");
+  const [secret, setSecret] = useState("");
+  const [code, setCode] = useState("");
+  const [notice, setNotice] = useState(copy(language, "A second factor is required before Club changes.", "更改俱乐部数据前需要第二重验证。"));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.auth.mfa.listFactors().then(async ({ data, error }) => {
+      if (cancelled) return;
+      if (error) { setNotice(error.message); return; }
+      const verified = data.totp.find((factor) => factor.status === "verified");
+      if (verified) { setFactorId(verified.id); return; }
+      const unfinished = data.all.find((factor) => factor.factor_type === "totp" && factor.status === "unverified");
+      if (unfinished) {
+        const removed = await supabase.auth.mfa.unenroll({ factorId: unfinished.id });
+        if (removed.error) { setNotice(copy(language, `Could not restart MFA enrollment: ${removed.error.message}. Sign out and try again.`, `无法重新开始 MFA 注册：${removed.error.message}。请退出后重试。`)); return; }
+      }
+      const enrollment = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "RSWTTA Club" });
+      if (cancelled) return;
+      if (enrollment.error) { setNotice(enrollment.error.message); return; }
+      setFactorId(enrollment.data.id);
+      setQrCode(enrollment.data.totp.qr_code);
+      setSecret(enrollment.data.totp.secret);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function verify() {
+    if (!factorId || !/^\d{6}$/.test(code.trim())) return;
+    setBusy(true); setNotice(copy(language, "Verifying authenticator code…", "正在验证身份验证器代码…"));
+    const result = await supabase.auth.mfa.challengeAndVerify({ factorId, code: code.trim() });
+    if (result.error) { setNotice(copy(language, `Verification failed: ${result.error.message}. Try a fresh code or sign out.`, `验证失败：${result.error.message}。请尝试新代码或退出。`)); setBusy(false); return; }
+    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assurance.error || assurance.data.currentLevel !== "aal2") { setNotice(copy(language, "Verification did not reach AAL2. Try again or sign out.", "验证未达到 AAL2。请重试或退出。")); setBusy(false); return; }
+    onVerified();
+  }
+
+  return <div className="modal-backdrop"><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="operator-mfa-title">
+    <div className="modal-title-row"><div><p className="eyebrow">{copy(language, "Operator security", "操作员安全验证")}</p><h2 id="operator-mfa-title">{copy(language, "Verify with an authenticator", "使用身份验证器验证")}</h2></div></div>
+    {qrCode ? <><p>{copy(language, "Scan this QR code in an authenticator app, then enter the six-digit code.", "请用身份验证器应用扫描二维码，然后输入六位代码。")}</p><img src={qrCode} alt={copy(language, "TOTP enrollment QR code", "TOTP 注册二维码")} width={180} height={180}/><details><summary>{copy(language, "Cannot scan? Show setup key", "无法扫描？显示设置密钥")}</summary><code>{secret}</code></details></> : <p>{copy(language, "Enter the current six-digit code from your enrolled authenticator.", "请输入已注册身份验证器中的当前六位代码。")}</p>}
+    <label><span>{copy(language, "Authenticator code", "身份验证器代码")}</span><input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}/></label>
+    <p className="system-note" role="status">{notice}</p>
+    <div className="modal-actions"><button className="ghost-button" type="button" disabled={busy} onClick={() => void onSignOut()}><LogOut size={17}/>{copy(language, "Sign out", "退出")}</button><button className="primary-button" type="button" disabled={busy || !factorId || code.length !== 6} onClick={() => void verify()}><KeyRound size={17}/>{copy(language, "Verify", "验证")}</button></div>
+  </section></div>;
 }
 
 function UnifiedAuth({
@@ -2770,6 +2807,7 @@ function ClubAppView({
   onAddGroupDropIn,
   onAddGroupNewStudent,
   onNotice,
+  onRefresh,
   clubIdentifier,
   legacyClubProof
 }: {
@@ -2807,6 +2845,7 @@ function ClubAppView({
   onAddGroupDropIn: (groupClass: Booking, student: ParentAccount | undefined, scope?: GroupEnrollmentScope, idempotencyKey?: string) => Promise<boolean>;
   onAddGroupNewStudent: (groupClass: Booking, input: { studentName: string; email: string; phone: string; note: string }) => Promise<boolean>;
   onNotice: (message: string) => void;
+  onRefresh: () => Promise<void>;
   clubIdentifier: string;
   legacyClubProof: string;
 }) {
@@ -3042,7 +3081,7 @@ function ClubAppView({
           {copy(language, "Class packages / 课时包", "课时包 / Class packages")}
         </button>
       </nav>
-      {clubSection === "packages" ? <ClassPackagesPanel students={studentDirectory} language={language} /> : clubSection === "students" ? <RegisterStudentPanel students={studentDirectory} language={language} clubIdentifier={clubIdentifier} legacyClubProof={legacyClubProof} onCreated={async () => { await onNotice(copy(language, "Student directory refreshed.", "学生列表已刷新。")); }} onChooseExisting={(student) => { setSelectedAddStudent(student); setStudentQuery(student.studentName); setClubSection("calendar"); setShowAddClassModal(true); }} /> : <>
+      {clubSection === "packages" ? <ClassPackagesPanel students={studentDirectory} language={language} /> : clubSection === "students" ? <RegisterStudentPanel students={studentDirectory} language={language} clubIdentifier={clubIdentifier} legacyClubProof={legacyClubProof} onCreated={async () => { await onRefresh(); onNotice(copy(language, "Student directory refreshed.", "学生列表已刷新。")); }} onChooseExisting={(student) => { setSelectedAddStudent(student); setStudentQuery(student.studentName); setClubSection("calendar"); setShowAddClassModal(true); }} /> : <>
       <section className="section-block calendar-core">
         <div className="section-head">
           <div>
@@ -4382,7 +4421,7 @@ function ParentClassActionModal({
   onComplete: () => void;
   onCancel: () => void;
 }) {
-  const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking);
+  const canComplete = booking.status === "club_confirmed" && !isBlockedTime(booking) && !isGroupClassBlock(booking) && bookingEndDate(booking).getTime() <= now;
   const cancellationBlockReason = parentCancellationBlockReason(booking, now);
   const canCancel = canParentRequestChange(booking) && !cancellationBlockReason;
   return (

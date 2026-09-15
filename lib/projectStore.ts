@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { isTrustedOperatorClientEnabled } from "@/lib/coachAuth/config";
+import { isTrustedOperatorContextActive } from "@/lib/coachAuth/clientContext";
 import { canonicalizeStudentReference, prepareStudentReferenceForCreation } from "@/lib/studentIdentity";
 import { reusableStudentAccountByEmail } from "@/lib/studentCreation";
 import { importedSeriesId, planRecurringReschedule, recurrenceIdentity, withDerivedRecurringIdentity, type RecurrenceScope } from "@/lib/recurrence";
@@ -235,7 +235,7 @@ async function withLocalFallback<T>(remoteAction: () => Promise<T>, localAction:
   try {
     return await remoteAction();
   } catch (error) {
-    if (isTrustedOperatorClientEnabled() || shouldSkipLocalFallback(error)) throw error;
+    if (isTrustedOperatorContextActive() || shouldSkipLocalFallback(error)) throw error;
     return localAction();
   }
 }
@@ -407,7 +407,7 @@ function activityLogFromRow(row: ProjectRow<ActivityLog>): ActivityLog {
 }
 
 async function listRows<T>(tableSlug: keyof typeof tableDefinitions) {
-  if (isTrustedOperatorClientEnabled()) {
+  if (isTrustedOperatorContextActive()) {
     const rpc = {
       bookings: "operator_list_bookings",
       parent_accounts: "operator_list_parent_accounts",
@@ -439,12 +439,12 @@ async function listRows<T>(tableSlug: keyof typeof tableDefinitions) {
 }
 
 async function createRow<T extends Record<string, unknown>>(tableSlug: keyof typeof tableDefinitions, values: T) {
-  if (isTrustedOperatorClientEnabled()) {
+  if (isTrustedOperatorContextActive()) {
+    if (tableSlug === "parent_accounts") throw new Error("Secure student creation must use the reviewed preregistration RPC.");
     const rpc = {
       bookings: "operator_create_booking",
       bill_notifications: "operator_create_bill_notification",
-      activity_logs: "operator_create_activity_log",
-      parent_accounts: "operator_create_parent_account"
+      activity_logs: "operator_create_activity_log"
     }[tableSlug];
     const response = await supabase.rpc(rpc, { p_values: values, p_request_id: crypto.randomUUID() });
     if (response.error) throw setupError(response.error.message);
@@ -461,7 +461,7 @@ async function createRow<T extends Record<string, unknown>>(tableSlug: keyof typ
 }
 
 async function updateRow<T extends Record<string, unknown>>(tableSlug: keyof typeof tableDefinitions, id: string, values: T) {
-  if (isTrustedOperatorClientEnabled()) {
+  if (isTrustedOperatorContextActive()) {
     if (tableSlug !== "bookings") throw new Error(`Secure ${tableSlug} updates require a purpose-specific RPC`);
     const response = await supabase.rpc("operator_update_booking", { p_booking_id: id, p_values: values, p_request_id: crypto.randomUUID() });
     if (response.error) throw setupError(response.error.message);
@@ -715,7 +715,7 @@ export async function listParentAccounts() {
 }
 
 export async function createClubStudentAccount(input: { studentName: string; email?: string; phone?: string }) {
-  if (isTrustedOperatorClientEnabled()) {
+  if (isTrustedOperatorContextActive()) {
     throw new Error("Secure student creation must use the reviewed search and preregistration workflow.");
   }
   const studentName = input.studentName.trim();
@@ -802,7 +802,7 @@ export async function updateUserPassword(password: string) {
 
 async function updateStudentAccountAndReferences(accountId: string, values: Partial<AccountValues>) {
   const response = await supabase
-    .rpc(isTrustedOperatorClientEnabled() ? "operator_rename_student_account" : "rename_student_account", { p_account_id: accountId, p_values: values, ...(isTrustedOperatorClientEnabled() ? { p_request_id: crypto.randomUUID() } : {}) })
+    .rpc(isTrustedOperatorContextActive() ? "operator_rename_student_account" : "rename_student_account", { p_account_id: accountId, p_values: values, ...(isTrustedOperatorContextActive() ? { p_request_id: crypto.randomUUID() } : {}) })
     .select("id, project_table_id, values, created_at, updated_at")
     .single();
   if (response.error) {
@@ -1159,7 +1159,7 @@ export async function listBookings() {
 async function findExistingActiveBooking(values: Partial<Booking>) {
   const startsAt = String(values.startsAt ?? "").trim();
   if (!startsAt) return null;
-  if (isTrustedOperatorClientEnabled()) {
+  if (isTrustedOperatorContextActive()) {
     const rows = await listRows<Booking>("bookings");
     return rows.find((row) => isActiveBooking(row.values) && sameBookingNaturalKey(row.values, values)) ?? null;
   }
@@ -1257,7 +1257,7 @@ export async function rescheduleBookingsAtomically(input: {
   // Do not fall back after an RPC error: the server transaction is the source of
   // truth, and callers must see any validation failure rather than a local-only move.
   const selectedIdentity = withDerivedRecurringIdentity(input.selected);
-  const response = await supabase.rpc(isTrustedOperatorClientEnabled() ? "operator_reschedule_booking_occurrences" : "reschedule_booking_occurrences", {
+  const response = await supabase.rpc(isTrustedOperatorContextActive() ? "operator_reschedule_booking_occurrences" : "reschedule_booking_occurrences", {
     p_changes: planned.map((change) => ({
       id: change.id ?? null,
       oldStartsAt: change.oldStartsAt,
@@ -1267,7 +1267,7 @@ export async function rescheduleBookingsAtomically(input: {
     p_scope: input.scope,
     p_series_id: selectedIdentity.seriesId ?? null,
     p_boundary: selectedIdentity.recurrenceOriginalStartsAt ?? selectedIdentity.startsAt,
-    ...(isTrustedOperatorClientEnabled() ? { p_request_id: crypto.randomUUID() } : {})
+    ...(isTrustedOperatorContextActive() ? { p_request_id: crypto.randomUUID() } : {})
   });
   if (response.error) throw setupError(response.error.message);
   return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);
@@ -1284,7 +1284,7 @@ export async function manageGroupOccurrencesAtomically(input: {
   now?: Date;
 }) {
   const selection = selectGroupOccurrenceTargets(input.bookings, input.selected, input.scope, input.now);
-  const response = await supabase.rpc(isTrustedOperatorClientEnabled() ? "operator_manage_group_occurrences" : "manage_group_occurrences", {
+  const response = await supabase.rpc(isTrustedOperatorContextActive() ? "operator_manage_group_occurrences" : "manage_group_occurrences", {
     p_selected_block_id: input.selected.id,
     p_action: input.action,
     p_scope: input.scope,
@@ -1298,7 +1298,7 @@ export async function manageGroupOccurrencesAtomically(input: {
     p_new_starts_at: input.action === "update" ? input.newStartsAt : null,
     p_new_date_label: input.action === "update" ? input.newDateLabel : null,
     p_new_time_label: input.action === "update" ? input.newTimeLabel : null,
-    ...(isTrustedOperatorClientEnabled() ? { p_request_id: crypto.randomUUID() } : {})
+    ...(isTrustedOperatorContextActive() ? { p_request_id: crypto.randomUUID() } : {})
   });
   if (response.error) throw setupError(response.error.message);
   return ((response.data ?? []) as Array<ProjectRow<Booking>>).map(bookingFromRow);
@@ -1313,7 +1313,7 @@ export async function addStudentToGroupOccurrencesAtomically(input: {
   now?: Date;
 }) {
   const selection = selectGroupEnrollmentTargets(input.bookings, input.selected, input.scope, input.now);
-  const response = await supabase.rpc(isTrustedOperatorClientEnabled() ? "operator_add_student_to_group_occurrences" : "add_student_to_group_occurrences", {
+  const response = await supabase.rpc(isTrustedOperatorContextActive() ? "operator_add_student_to_group_occurrences" : "add_student_to_group_occurrences", {
     p_selected_block_id: input.selected.id,
     p_scope: input.scope,
     p_student_account_id: input.student.id,
@@ -1371,7 +1371,7 @@ export async function cancelBookingAsParent(booking: Booking, studentAccountId: 
 }
 
 export async function cancelBookingAsClub(id: string) {
-  const response = isTrustedOperatorClientEnabled()
+  const response = isTrustedOperatorContextActive()
     ? await supabase.rpc("operator_cancel_booking", { p_booking_id: id, p_request_id: crypto.randomUUID() })
     : await supabase.rpc("cancel_booking_as_club", { p_booking_id: id });
   if (response.error) throw setupError(response.error.message);
@@ -1421,7 +1421,7 @@ export async function listActivityLogs() {
 }
 
 export async function listPackageBalances(): Promise<PackageBalance[]> {
-  const response = await supabase.rpc(isTrustedOperatorClientEnabled() ? "operator_list_class_package_balances" : "list_class_package_balances_v2");
+  const response = await supabase.rpc(isTrustedOperatorContextActive() ? "operator_list_class_package_balances" : "list_class_package_balances_v2");
   if (response.error) throw setupError(response.error.message);
   return ((response.data ?? []) as Array<{
     package_id: string | null;
@@ -1449,7 +1449,7 @@ export async function listPackageBalances(): Promise<PackageBalance[]> {
 }
 
 export async function listPackageHistory(studentAccountId: string, category: PackageCategory): Promise<PackageLedgerEvent[]> {
-  const response = await supabase.rpc(isTrustedOperatorClientEnabled() ? "operator_list_class_package_history" : "list_class_package_history", {
+  const response = await supabase.rpc(isTrustedOperatorContextActive() ? "operator_list_class_package_history" : "list_class_package_history", {
     p_student_account_id: studentAccountId,
     p_category: category
   });
@@ -1499,7 +1499,7 @@ export async function setPackageOpening(input: {
 }): Promise<SetPackageOpeningResult> {
   const unitBasis = PACKAGE_UNIT_BASIS[input.category];
   const openingAmountBaseUnits = openingAmountToBaseUnits(input.category, input.openingAmount);
-  const response = await supabase.rpc(isTrustedOperatorClientEnabled() ? "operator_set_class_package_opening" : "set_class_package_opening", {
+  const response = await supabase.rpc(isTrustedOperatorContextActive() ? "operator_set_class_package_opening" : "set_class_package_opening", {
     p_student_account_id: input.studentAccountId,
     p_category: input.category,
     p_unit_basis: unitBasis,

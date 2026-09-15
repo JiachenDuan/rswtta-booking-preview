@@ -58,7 +58,7 @@ test("one RPC call uses stable account ID, exact snapshot, and one idempotency k
   expect(store).toContain("selectGroupEnrollmentTargets(input.bookings");
   expect(store).toContain("p_student_account_id: input.student.id");
   expect(store).toContain("p_expected_blocks: expectedGroupOccurrenceRows(selection.blocks)");
-  expect(store).toContain('isTrustedOperatorClientEnabled() ? "operator_add_student_to_group_occurrences" : "add_student_to_group_occurrences"');
+  expect(store).toContain('isTrustedOperatorContextActive() ? "operator_add_student_to_group_occurrences" : "add_student_to_group_occurrences"');
   const enrollmentAdapter = store.slice(store.indexOf("export async function addStudentToGroupOccurrencesAtomically"), store.indexOf("export async function authoritativeCurrentTime"));
   expect((enrollmentAdapter.match(/p_idempotency_key: input\.idempotencyKey/g)??[])).toHaveLength(1);
 });

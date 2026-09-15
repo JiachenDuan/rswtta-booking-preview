@@ -4,7 +4,8 @@ export function isCoachAuthEnabled(): boolean {
 
 /** True only in the browser on /club when the trusted rollout is configured. */
 export function isTrustedOperatorClientEnabled(): boolean {
-  return typeof window !== "undefined" && window.location.pathname === "/club" && process.env.NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED === "true";
+  const path = typeof window === "undefined" ? "" : window.location.pathname.replace(/\/+$/, "") || "/";
+  return path === "/club" && process.env.NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED === "true";
 }
 
 export function coachAuthConfiguration() {

@@ -10,6 +10,9 @@ const preregistration = readFileSync("lib/clubPreregistration.ts", "utf8");
 const clubRoute = readFileSync("app/club/page.tsx", "utf8");
 const parentRoute = readFileSync("app/parent/page.tsx", "utf8");
 const operatorConfig = readFileSync("lib/coachAuth/config.ts", "utf8");
+const operatorContext = readFileSync("lib/coachAuth/clientContext.ts", "utf8");
+const activationSql = readFileSync("supabase/migrations/20260915130000_activation_auth_boundaries.sql", "utf8");
+const registerStudentPanel = readFileSync("components/RegisterStudentPanel.tsx", "utf8");
 
 function body(name: string) {
   const start = sql.indexOf(`function ${name}`);
@@ -39,11 +42,13 @@ test("parent account projection is explicit and never returns credential fields"
 });
 
 test("secure store has purpose-specific RPCs and no local fallback", () => {
-  expect(store).toContain("if (isTrustedOperatorClientEnabled() || shouldSkipLocalFallback(error)) throw error");
+  expect(store).toContain("if (isTrustedOperatorContextActive() || shouldSkipLocalFallback(error)) throw error");
   for (const rpc of ["operator_create_booking", "operator_update_booking", "operator_cancel_booking", "operator_reschedule_booking_occurrences", "operator_manage_group_occurrences", "operator_add_student_to_group_occurrences", "operator_create_bill_notification", "operator_create_activity_log", "operator_set_class_package_opening"]) expect(store).toContain(rpc);
   expect(preregistration).toContain("operator_search_students");
   expect(preregistration).toContain("operator_preview_student_preregistration");
-  expect(preregistration).toContain("no legacy shared credential was sent");
+  expect(preregistration).toContain("operator_create_student_preregistration");
+  expect(activationSql).toContain("rswtta_private.require_operator(true)");
+  expect(registerStudentPanel).toContain("hasVerifiedClubGate");
 });
 
 test("auth.uid audit, AAL2, immutable history and lockout are enforced", () => {
@@ -61,14 +66,17 @@ test("unauthenticated and stale legacy mounts never preload or subscribe", () =>
   expect(clubClient).not.toContain("if (!secureOperatorClient) loadAll()");
   expect(clubClient).toContain("A legacy boolean is not authentication proof");
   expect(clubClient).toContain("if (storedClub.value === \"true\") safeStorageRemove");
-  expect(clubClient).toContain("secureOperatorClient ? null : supabase");
+  expect(clubClient).toContain("if (!clubAuthenticated || (!legacyClubProof && !isTrustedOperatorContextActive())) return");
+  expect(clubClient).toContain("activateTrustedOperatorContext()");
+  expect(operatorContext).toContain("let activeTrustedOperator = false");
+  expect(operatorContext).toContain("isTrustedOperatorClientEnabled() && activeTrustedOperator");
   expect(clubClient).toContain("supabase.auth.getSession()");
   expect(clubClient).toContain("supabase.auth.signInWithPassword");
   expect(clubClient).toContain("supabase.auth.signOut");
   expect(clubRoute).toContain("<ClubApp operatorOnly />");
   expect(parentRoute).toContain("<ClubApp />");
-  expect(operatorConfig).toContain('window.location.pathname === "/club"');
-  expect(operatorConfig).toContain('typeof window !== "undefined"');
+  expect(operatorConfig).toContain('path === "/club"');
+  expect(operatorConfig).toContain('typeof window === "undefined"');
 });
 
 test("closure is staged, catalog-specific, and targets replacement contracts", () => {

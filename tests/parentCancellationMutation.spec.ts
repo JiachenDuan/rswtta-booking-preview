@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 const storeSource = readFileSync("lib/projectStore.ts", "utf8");
 const appSource = readFileSync("components/ClubApp.tsx", "utf8");
 const migration = readFileSync("supabase/migrations/20260910220000_restore_parent_calendar_cancellation.sql", "utf8");
+const verifiedClient = readFileSync("lib/parentVerifiedMutations.ts", "utf8");
+const activationMigration = readFileSync("supabase/migrations/20260915130000_activation_auth_boundaries.sql", "utf8");
 
 const parentStoreMutation = storeSource.slice(
   storeSource.indexOf("export async function cancelBookingAsParent"),
@@ -15,12 +17,13 @@ const parentHandler = appSource.slice(
 );
 
 test("Calendar cancellation uses one atomic database-clock RPC for persisted and virtual bookings", () => {
-  expect(parentStoreMutation).toContain('supabase.rpc("cancel_booking_as_parent"');
-  expect(parentStoreMutation).toContain("p_booking_id: isVirtual ? null : booking.id");
-  expect(parentStoreMutation).toContain("p_virtual_values: isVirtual ? virtualCancellationValues(booking) : null");
-  expect(parentStoreMutation).not.toContain("Date.now()");
-  expect(parentStoreMutation).not.toContain("updateRow(");
-  expect(parentHandler).toContain('cancelBookingAsParent(booking, parentSession?.id ?? "")');
+  expect(verifiedClient).toContain('supabase.rpc("parent_verified_cancel_booking"');
+  expect(verifiedClient).toContain("p_booking_id: virtual ? null : booking.id");
+  expect(verifiedClient).toContain("p_virtual_values: virtual ? virtualValues(booking) : null");
+  expect(verifiedClient).not.toContain("accountId");
+  expect(parentHandler).toContain("cancelVerifiedParentBooking(verifiedParentSessionToken, booking)");
+  expect(activationMigration).toContain("rswtta_private.parent_verified_account(p_session_token,p_client_key)");
+  expect(activationMigration).toContain("public.cancel_booking_as_parent(p_booking_id,v_account::text");
   expect(parentHandler).not.toContain("createBooking(");
 });
 

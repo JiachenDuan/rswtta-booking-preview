@@ -7,6 +7,8 @@ import type { Booking } from "../lib/types";
 const appSource = readFileSync("components/ClubApp.tsx", "utf8");
 const storeSource = readFileSync("lib/projectStore.ts", "utf8");
 const migration = readFileSync("supabase/migrations/20260911220500_restore_parent_calendar_class_requests.sql", "utf8");
+const verifiedClient = readFileSync("lib/parentVerifiedMutations.ts", "utf8");
+const activationMigration = readFileSync("supabase/migrations/20260915130000_activation_auth_boundaries.sql", "utf8");
 const parentApp = appSource.slice(appSource.indexOf("function ParentApp"), appSource.indexOf("function CalendarControls"));
 const bookingList = appSource.slice(appSource.indexOf("function BookingList"));
 
@@ -19,7 +21,7 @@ test("Tian Ye aliases share one stable ID and the UI contains the exact bilingua
   expect(appSource).toContain("if (isGroupClassBlock(booking) && isTianYeCoach(booking.assignedCoach || booking.requestedCoach))");
   const groupRequestHandler = appSource.slice(appSource.indexOf("async function requestGroupClass"), appSource.indexOf("async function cancelParentClass"));
   expect(groupRequestHandler.indexOf("if (isTianYeCoach(coach))")).toBeGreaterThanOrEqual(0);
-  expect(groupRequestHandler.indexOf("if (isTianYeCoach(coach))")).toBeLessThan(groupRequestHandler.indexOf("createBooking({"));
+  expect(groupRequestHandler.indexOf("if (isTianYeCoach(coach))")).toBeLessThan(groupRequestHandler.indexOf("requestVerifiedParentGroupClass("));
   expect(appSource).toContain("setShowRequestConfirm(false)");
   expect(parentApp).toContain("onUnavailableSlotSelect={isTianYeCoach(requestedCoach) ? onRestrictedCoachSelect : undefined}");
   expect(appSource).toContain("disabled={(unavailable && !actionable && !onUnavailableSlotSelect)");
@@ -34,8 +36,9 @@ test("Tian Ye aliases share one stable ID and the UI contains the exact bilingua
 
 test("Parent Calendar uses the dedicated request RPC while My Classes stays inert", () => {
   expect(appSource).toContain("const parentPrivateClassRequestsEnabled = true");
-  expect(appSource).toContain("requestBookingAsParent({");
-  expect(storeSource).toContain('supabase.rpc("request_booking_as_parent"');
+  expect(appSource).toContain("requestVerifiedParentPrivateBooking(verifiedParentSessionToken");
+  expect(verifiedClient).toContain('supabase.rpc("parent_verified_request_private_booking"');
+  expect(activationMigration).toContain("v_account:=rswtta_private.parent_verified_account(p_session_token,p_client_key)");
   expect(parentApp).toContain("onSlotChange={onSlotChange}");
   expect(parentApp).toContain('<BookingList bookings={filteredClassBookings} language={language} />');
   expect(bookingList).not.toContain("requestBookingAsParent");
