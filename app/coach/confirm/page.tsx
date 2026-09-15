@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { coachAuthConfiguration, isCoachAuthEnabled } from "@/lib/coachAuth/config";
+import { coachAuthConfiguration, isOperatorAuthEnabled } from "@/lib/coachAuth/config";
 import { CoachUnavailable } from "../Unavailable";
 import { ConfirmForm } from "./ConfirmForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function CoachConfirmPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  if (!isCoachAuthEnabled() || !coachAuthConfiguration()) return <CoachUnavailable />;
+  if (!isOperatorAuthEnabled() || !coachAuthConfiguration()) return <CoachUnavailable />;
   const params = await searchParams;
   const value = (key: string) => typeof params[key] === "string" ? params[key] : "";
   const code = value("code");

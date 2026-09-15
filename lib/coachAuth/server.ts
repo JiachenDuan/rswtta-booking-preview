@@ -1,9 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { coachAuthConfiguration, isCoachAuthEnabled } from "./config";
+import { coachAuthConfiguration, isOperatorAuthEnabled } from "./config";
 
 export async function createCoachSupabaseClient() {
-  if (!isCoachAuthEnabled()) throw new Error("Coach access is disabled.");
+  if (!isOperatorAuthEnabled()) throw new Error("Club operator access is disabled.");
   const configuration = coachAuthConfiguration();
   if (!configuration) throw new Error("Coach authentication is not configured.");
 

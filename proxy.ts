@@ -1,9 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { coachAuthConfiguration, isCoachAuthEnabled } from "@/lib/coachAuth/config";
+import { coachAuthConfiguration, isOperatorAuthEnabled } from "@/lib/coachAuth/config";
 
 export async function proxy(request: NextRequest) {
-  if (!isCoachAuthEnabled()) return NextResponse.next({ request });
+  if (!isOperatorAuthEnabled()) return NextResponse.next({ request });
   const configuration = coachAuthConfiguration();
   if (!configuration) return NextResponse.next({ request });
 
