@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { createCoachSupabaseBrowserClient } from "@/lib/coachAuth/browser";
+import { coachExchangeCodeAction } from "../actions";
 import {
   invitationCompletionErrorMessage,
   parseCoachConfirmationInput,
@@ -45,6 +46,15 @@ export function ConfirmForm({ code, tokenHash, type }: { code: string; tokenHash
           }));
         } else if (confirmation.kind === "pkce") {
           ({ error } = await client.auth.exchangeCodeForSession(confirmation.code));
+          if (error) {
+            const fallback = await coachExchangeCodeAction(confirmation.code);
+            if (fallback.status === "success") {
+              ({ error } = await client.auth.setSession({
+                access_token: fallback.accessToken,
+                refresh_token: fallback.refreshToken
+              }));
+            }
+          }
         } else if (confirmation.kind === "otp") {
           ({ error } = await client.auth.verifyOtp({
             token_hash: confirmation.tokenHash,

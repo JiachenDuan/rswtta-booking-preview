@@ -43,6 +43,9 @@ test("PKCE, token-hash, existing-session, and callback-error fallbacks remain ex
   expect(parseCoachConfirmationInput({ tokenHash: "hashed-otp", type: "signup" })).toEqual({ kind: "session" });
 
   for (const call of ["exchangeCodeForSession", "verifyOtp", "getUser"]) expect(confirmForm).toContain(call);
+  expect(confirmForm).toContain("coachExchangeCodeAction(confirmation.code)");
+  expect(actions).toContain("export async function coachExchangeCodeAction");
+  expect(actions).toContain("data.session.access_token");
 });
 
 test("recovery requests deliberately omit browser-bound PKCE", () => {

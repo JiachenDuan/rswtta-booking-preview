@@ -9,6 +9,25 @@ function unavailable(): CoachActionState {
   return { status: "error", message: "Club operator access is unavailable. 俱乐部员工入口暂不可用。" };
 }
 
+export async function coachExchangeCodeAction(code: string): Promise<
+  | { status: "success"; accessToken: string; refreshToken: string }
+  | { status: "error" }
+> {
+  if (!isOperatorAuthEnabled() || !code) return { status: "error" };
+  try {
+    const supabase = await createCoachSupabaseClient();
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error || !data.session?.access_token || !data.session.refresh_token) return { status: "error" };
+    return {
+      status: "success",
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token
+    };
+  } catch {
+    return { status: "error" };
+  }
+}
+
 export async function coachResetAction(_state: CoachActionState, formData: FormData): Promise<CoachActionState> {
   if (!isOperatorAuthEnabled()) return unavailable();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
