@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { normalizeCoachProfile, normalizeCoachSchedule, partitionCoachSchedule } from "../lib/coachAuth/data";
 
 const actions = readFileSync("app/coach/actions.ts", "utf8");
+const confirmForm = readFileSync("app/coach/confirm/ConfirmForm.tsx", "utf8");
 const config = readFileSync("lib/coachAuth/config.ts", "utf8");
 const server = readFileSync("lib/coachAuth/server.ts", "utf8");
 const page = readFileSync("app/coach/page.tsx", "utf8");
@@ -25,7 +26,7 @@ const migration = readFileSync("supabase/migrations/20260915102000_coach_auth_fo
  test("Operator shell reads equal-permission RPC projections", () => {
   expect(page).toContain('supabase.rpc("app_my_membership")');
   expect(page).toContain('supabase.rpc("operator_calendar")');
-  expect(actions).toContain('supabase.rpc("operator_accept_invitation",');
+  expect(confirmForm).toContain('rpc("operator_accept_invitation",');
   expect(page).toContain("Operator access is not active");
   expect(page).toContain("profileRows.length !== 1");
  });

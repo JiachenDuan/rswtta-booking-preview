@@ -14,7 +14,7 @@ const client = readFileSync("lib/parentClassTimeClient.ts", "utf8");
 const sessionClient = readFileSync("lib/parentLegacySession.ts", "utf8");
 const sql = readFileSync("supabase/migrations/20260913203000_stage_verified_parent_class_time_update.sql", "utf8");
 const acceptanceSql = readFileSync("sql/verification/20260913203000_stage_verified_parent_class_time_update.acceptance.sql", "utf8");
-const audit = JSON.parse(readFileSync("artifacts/parent-update-class-time/production-readonly-audit-20260914T061312Z.json", "utf8"));
+const audit = JSON.parse(readFileSync("artifacts/parent-update-class-time/production-baseline-final-attempt-20260914.json", "utf8"));
 const now = Date.parse("2026-09-13T20:00:00.000Z");
 
 function booking(input: Partial<Booking> = {}): Booking {
