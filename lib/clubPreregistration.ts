@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { isTrustedOperatorClientEnabled } from "@/lib/coachAuth/config";
 import { hashPassword } from "@/lib/projectStore";
 import type { ParentAccount } from "@/lib/types";
 
@@ -86,19 +87,24 @@ export function creationDecision(collisions: PreregistrationCollision[], input: 
 export async function searchClubStudents(query: string, clubIdentifier: string, legacyClubProof: string): Promise<StudentSearchResponse> {
   const normalizedQuery = normalizeIdentityValue(query);
   if (!normalizedQuery) throw new Error("Search for an existing student first.");
-  const { data, error } = await supabase.rpc("club_search_students", { p_club_identifier: clubIdentifier, p_club_proof: legacyClubProof, p_client_key: preregistrationClientKey(), p_query: normalizedQuery });
+  const { data, error } = isTrustedOperatorClientEnabled()
+    ? await supabase.rpc("operator_search_students", { p_query: normalizedQuery })
+    : await supabase.rpc("club_search_students", { p_club_identifier: clubIdentifier, p_club_proof: legacyClubProof, p_client_key: preregistrationClientKey(), p_query: normalizedQuery });
   if (error) throw error;
   return data as StudentSearchResponse;
 }
 
 export async function previewClubPreregistration(input: PreregistrationInput, requestKey: string, clubIdentifier: string, legacyClubProof: string): Promise<PreregistrationPreview> {
   const normalized = validatePreregistrationInput(input);
-  const { data, error } = await supabase.rpc("club_preview_student_preregistration_v2", { p_club_identifier: clubIdentifier, p_club_proof: legacyClubProof, p_client_key: preregistrationClientKey(), p_request_key: requestKey, p_input: normalized });
+  const { data, error } = isTrustedOperatorClientEnabled()
+    ? await supabase.rpc("operator_preview_student_preregistration", { p_input: normalized, p_request_id: requestKey })
+    : await supabase.rpc("club_preview_student_preregistration_v2", { p_club_identifier: clubIdentifier, p_club_proof: legacyClubProof, p_client_key: preregistrationClientKey(), p_request_key: requestKey, p_input: normalized });
   if (error) throw error;
   return data as PreregistrationPreview;
 }
 
 export async function createClubPreregistration(input: PreregistrationInput, preview: PreregistrationPreview, search: StudentSearchResponse, requestKey: string, reviewedSameName: boolean, clubIdentifier: string, legacyClubProof: string): Promise<PreregistrationResult> {
+  if (isTrustedOperatorClientEnabled()) throw new Error("Secure preregistration create is not yet available; no legacy shared credential was sent.");
   const normalized = validatePreregistrationInput(input);
   const { data, error } = await supabase.rpc("club_preregister_student_v3", { p_club_identifier: clubIdentifier, p_club_proof: legacyClubProof, p_client_key: preregistrationClientKey(), p_request_key: requestKey, p_search_query: search.normalizedQuery, p_search_snapshot_hash: search.snapshotHash, p_input: normalized, p_duplicate_snapshot_hash: preview.snapshotHash, p_reviewed_same_name: reviewedSameName });
   if (error) throw error;

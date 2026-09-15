@@ -66,7 +66,7 @@ import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccou
 import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
 import { completeLegacySetup, loginLegacySetupAccount, normalizeLoginAlias } from "@/lib/clubPreregistration";
-import { normalizePreregisteredLogin, resolvePreregisteredLogin } from "@/lib/preregisteredLogin";
+import { normalizePreregisteredLogin } from "@/lib/preregisteredLogin";
 import {
   parseParentSetupAccount,
   safeStorageRead,
@@ -713,7 +713,7 @@ const initialCalendarSlot = makeCalendarSlot(initialCalendarDay, "7 PM");
 const parentPrivateClassRequestsEnabled = true;
 const parentSelfRegistrationEnabled = false;
 
-export function ClubApp() {
+export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
   const [mode, setMode] = useState<"parent" | "club">("parent");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [bills, setBills] = useState<BillNotification[]>([]);
@@ -807,15 +807,8 @@ export function ClubApp() {
   async function loginParent(identifier: string, password: string, allowPreregisteredName = false) {
     const normalizedIdentifier = normalizeLoginAlias(identifier);
     if (allowPreregisteredName && !normalizedIdentifier.includes("@")) {
-      const setupResolution = resolvePreregisteredLogin(
-        students.filter((student) => student.profileSetupRequired),
-        normalizedIdentifier
-      );
-      if (setupResolution.status !== "unique_exact") {
-        throw new Error(copy(language, "No unique account matches this username. Use the exact full username or login alias.", "没有唯一账号匹配此用户名。请使用准确的完整用户名或登录别名。"));
-      }
-      // Client matching only enables submission. The setup RPC remains authoritative
-      // for exact private alias binding, password verification, setup status, and rate limits.
+      // Do not preload the account directory before authentication. The setup RPC is
+      // authoritative for exact alias binding, ambiguity, password, status and rate limits.
       const result = await loginLegacySetupAccount(identifier, password);
       legacySetupSessionToken.current = result.sessionToken;
       applyParentSession(result.account, true);
@@ -875,8 +868,18 @@ export function ClubApp() {
 
   async function loginClub(identifier: string, password: string) {
     if (isTrustedOperatorClientEnabled()) {
-      window.location.assign("/coach/login");
-      throw new Error("Use your individual Club operator account");
+      const login = await supabase.auth.signInWithPassword({ email: identifier.trim().toLowerCase(), password });
+      if (login.error) throw login.error;
+      const membership = await supabase.rpc("app_my_membership");
+      if (membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) {
+        await supabase.auth.signOut();
+        throw new Error("This account does not have active Club operator access.");
+      }
+      setClubAuthenticated(true);
+      setLegacyClubProof("");
+      setMode("club");
+      await loadAll();
+      return;
     }
     if (identifier.trim().toLowerCase() !== clubEmail || password !== clubPassword) {
       throw new Error("Wrong club login");
@@ -885,10 +888,11 @@ export function ClubApp() {
     setLegacyClubProof(password);
     safeStorageWrite(browserStorage("localStorage"), clubSessionKey, "true");
     setMode("club");
+    await loadAll();
   }
 
   async function loginUnified(identifier: string, password: string, allowPreregisteredName = false) {
-    if (identifier.trim().toLowerCase() === clubEmail) {
+    if (isTrustedOperatorClientEnabled() || identifier.trim().toLowerCase() === clubEmail) {
       await loginClub(identifier, password);
       return;
     }
@@ -1510,11 +1514,18 @@ export function ClubApp() {
       setParentSessionRecovery("recovered");
     }
     const secureOperatorClient = isTrustedOperatorClientEnabled();
-    if (!secureOperatorClient && storedClub.value === "true") {
-      setClubAuthenticated(true);
-      setMode("club");
+    // A legacy boolean is not authentication proof. Never restore it or preload rows.
+    if (storedClub.value === "true") safeStorageRemove(browserStorage("localStorage"), clubSessionKey);
+    if (secureOperatorClient) {
+      supabase.auth.getSession().then(async ({ data }) => {
+        if (cancelled || !data.session) return;
+        const membership = await supabase.rpc("app_my_membership");
+        if (cancelled || membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) return;
+        setClubAuthenticated(true);
+        setMode("club");
+        await loadAll();
+      });
     }
-    if (!secureOperatorClient) loadAll();
     const refreshFromPush = () => {
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       realtimeRefreshTimer.current = window.setTimeout(() => {
@@ -1601,7 +1612,8 @@ export function ClubApp() {
             {mode === "club" && clubAuthenticated ? (
               <button
                 className="filter-button"
-                onClick={() => {
+                onClick={async () => {
+                  if (isTrustedOperatorClientEnabled()) await supabase.auth.signOut();
                   setClubAuthenticated(false);
                   setLegacyClubProof("");
                   safeStorageRemove(browserStorage("localStorage"), clubSessionKey);
@@ -1618,7 +1630,7 @@ export function ClubApp() {
         {!parentSession && !clubAuthenticated ? (
           <UnifiedAuth
             initialAuthMode="login"
-            intent="parent"
+            intent={operatorOnly ? "club" : "parent"}
             language={language}
             students={students}
             onRegister={registerParent}
@@ -1826,13 +1838,11 @@ function UnifiedAuth({
       : copy(language, "Login with username and password.", "请用用户名和密码登录。")
   );
   const [busy, setBusy] = useState(false);
-  const preregisteredResolution = resolvePreregisteredLogin(
-    students.filter((student) => student.profileSetupRequired),
-    identifier
-  );
   const preregisteredLoginMode = intent === "parent" && preregisteredLogin;
-  const exactPreregisteredLogin = preregisteredResolution.status === "unique_exact";
-  const preregisteredLoginUnmatched = preregisteredLoginMode && Boolean(identifier.trim()) && !exactPreregisteredLogin;
+  // The account directory is deliberately unavailable before authentication.
+  // Any non-empty identifier may reach the rate-limited authoritative setup RPC.
+  const exactPreregisteredLogin = Boolean(identifier.trim());
+  const preregisteredLoginUnmatched = false;
   const preregisteredLoginReady = preregisteredLoginMode && exactPreregisteredLogin && password.length > 0;
   const preregisteredLoginBlocked = preregisteredLoginMode && !preregisteredLoginReady;
   const effectiveAuthMode = intent === "parent" && !parentSelfRegistrationEnabled && authMode === "register" ? "login" : authMode;

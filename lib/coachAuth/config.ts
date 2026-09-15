@@ -2,9 +2,9 @@ export function isCoachAuthEnabled(): boolean {
   return process.env.COACH_AUTH_ENABLED === "true";
 }
 
-/** Public rollout switch: when true the browser must not use the legacy Club credential or generic tables. */
+/** True only in the browser on /club when the trusted rollout is configured. */
 export function isTrustedOperatorClientEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED === "true";
+  return typeof window !== "undefined" && window.location.pathname === "/club" && process.env.NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED === "true";
 }
 
 export function coachAuthConfiguration() {

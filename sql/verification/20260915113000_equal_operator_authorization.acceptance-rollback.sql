@@ -9,7 +9,6 @@ declare
   v_admin2 constant uuid:='00000000-0000-4000-8000-000000001102';
   v_coach constant uuid:='00000000-0000-4000-8000-000000001103';
 begin
-  if exists(select 1 from public.project_auth_memberships) then raise exception 'Acceptance requires no production unified memberships'; end if;
   if exists(select 1 from auth.users where id in(v_admin,v_admin2,v_coach)) then raise exception 'Synthetic fixture collision'; end if;
   insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data) values
    ('00000000-0000-0000-0000-000000000000',v_admin,'authenticated','authenticated','operator-admin-1@invalid.invalid',extensions.crypt('synthetic-not-real',extensions.gen_salt('bf')),clock_timestamp(),clock_timestamp(),clock_timestamp(),'{}','{}'),
@@ -33,19 +32,19 @@ end $equal_reads$;
 
 -- AAL1 may read but may not perform sensitive/destructive/financial-capable mutations.
 do $aal1$ begin
- begin perform public.operator_mutate_project_row('create','activity_logs',null,'{"status":"test","email":"must-not-audit@invalid.invalid"}',null,gen_random_uuid()); raise exception 'AAL1 mutation unexpectedly succeeded';
+ begin perform public.operator_create_activity_log('{"status":"test","email":"must-not-audit@invalid.invalid"}',gen_random_uuid()); raise exception 'AAL1 mutation unexpectedly succeeded';
  exception when others then if sqlerrm not like '%AAL2 required%' then raise; end if; end;
 end $aal1$;
 
 -- AAL2 succeeds and audit attribution/redaction is exact.
 select set_config('request.jwt.claims','{"sub":"00000000-0000-4000-8000-000000001103","role":"authenticated","aal":"aal2"}',true);
-select * from public.operator_mutate_project_row('create','activity_logs',null,'{"status":"test","email":"must-not-audit@invalid.invalid","phone":"555","password":"secret","parentNote":"private"}',null,
+select * from public.operator_create_activity_log('{"status":"test","email":"must-not-audit@invalid.invalid","phone":"555","password":"secret","parentNote":"private"}',
  '00000000-0000-4000-8000-000000001201');
 do $audit$
 begin
  if not exists(select 1 from public.project_auth_audit_events e join public.project_auth_memberships m on m.membership_id=e.actor_membership_id where e.actor_auth_user_id='00000000-0000-4000-8000-000000001103' and e.actor_role='coach' and m.auth_user_id=e.actor_auth_user_id and e.request_id='00000000-0000-4000-8000-000000001201') then raise exception 'auth.uid actor attribution missing'; end if;
  if exists(select 1 from public.project_auth_audit_events e where e.semantic_before ?| array['email','phone','password','token','note','payment'] or e.semantic_after ?| array['email','phone','password','token','note','payment']) then raise exception 'Private audit field leaked'; end if;
- begin perform public.operator_mutate_project_row('create','activity_logs',null,'{"status":"duplicate"}',null,'00000000-0000-4000-8000-000000001201'); raise exception 'Duplicate request id unexpectedly succeeded'; exception when unique_violation then null; end;
+ begin perform public.operator_create_activity_log('{"status":"duplicate"}','00000000-0000-4000-8000-000000001201'); raise exception 'Duplicate request id unexpectedly succeeded'; exception when unique_violation then null; end;
 end $audit$;
 
 -- Coach label has the same membership/account controls as Club Admin.

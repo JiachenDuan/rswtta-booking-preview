@@ -164,7 +164,7 @@ test("opening RPC preserves stale, idempotency, category, unit, and account isol
   expect(migration).toContain("on conflict on constraint class_package_keys_account_category do nothing");
   expect(migration).toContain("where e.package_id=v_package.id");
   expect(migration).not.toContain("on conflict(project_id,student_account_id,category)");
-  expect(store).toContain('supabase.rpc("set_class_package_opening"');
+  expect(store).toContain('isTrustedOperatorClientEnabled() ? "operator_set_class_package_opening" : "set_class_package_opening"');
   expect(store).toContain("p_unit_basis: unitBasis");
 });
 

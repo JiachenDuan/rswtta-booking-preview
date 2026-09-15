@@ -1,4 +1,15 @@
-# Club operator authorization and activation
+# Club operator authorization foundation (not activation-ready)
+
+## Current status
+
+This commit is a security-first partial integration and **must not be activated yet**. It removes the dangerous generic operator projection/mutator, adds credential-free per-family reads, routes the secure client’s existing booking/group/recurrence/cancel/billing/activity/package paths through authenticated purpose-specific adapters, blocks unauthenticated/stale-boolean preloading, and restores individual Auth sessions. The following exact paths remain blockers:
+
+- `createClubPreregistration` / `createClubStudentAccount`: secure create intentionally fails closed until `club_preregister_student_v3` is refactored behind an Auth-operator entry point without the shared Club proof.
+- `updateParentAccount`, `completeParentProfileSetup`, `requestBookingAsParent`, `cancelBookingAsParent`, `completeParentClass`, `requestGroupClass`, and `issueParentClassTimeNonce` / `updateParentClassTime`: these need session-token/Auth-binding wrappers deriving Parent ownership server-side; several still pass a caller-supplied account ID.
+- `/club` does secure password login, session restore, logout, membership verification and the full existing Club view, but MFA enrollment/challenge UI is not wired. Sensitive RPCs reject AAL1 at the database boundary.
+- Package read adapters are present, but activation still requires rollback-catalog execution against a representative local Supabase database and a true two-session concurrency run.
+
+Do not apply the staged closure or enable `NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED` until these blockers are closed and the acceptance transaction passes.
 
 ## Final model
 

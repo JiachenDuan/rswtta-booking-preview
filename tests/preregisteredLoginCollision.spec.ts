@@ -117,10 +117,9 @@ test("setup and completed-account gates remain separate and exact", () => {
   ]) expect(setupLogin).toContain(text);
   expect(setupLogin).not.toMatch(/split_part|first.?name|like\s|ilike/i);
   expect(setupLogin).not.toContain("clubPreregistered')::boolean,false) or not coalesce((v_row.values->>'profileSetupRequired");
-  expect(app).toContain("students.filter((student) => student.profileSetupRequired)");
-  expect(app).toContain('setupResolution.status !== "unique_exact"');
-  expect(app).toContain("Client matching only enables submission");
-  expect(app).toContain("password verification, setup status, and rate limits");
+  expect(app).not.toContain("students.filter((student) => student.profileSetupRequired)");
+  expect(app).toContain("Do not preload the account directory before authentication");
+  expect(app).toContain("authoritative for exact alias binding, ambiguity, password, status and rate limits");
   expect(app).toContain("legacySetupSessionToken.current = result.sessionToken");
   expect(app).toContain("loginParentLegacySession(identifier, password)");
   expect(app).not.toContain("loginParentAccount(identifier, password, { allowPreregisteredName })");
