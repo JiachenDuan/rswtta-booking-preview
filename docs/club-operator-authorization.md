@@ -1,21 +1,14 @@
-# Club operator authorization foundation (not activation-ready)
+# Club operator authorization foundation
 
 ## Current status
 
-This commit is a security-first partial integration and **must not be activated yet**. It removes the dangerous generic operator projection/mutator, adds credential-free per-family reads, routes the secure client’s existing booking/group/recurrence/cancel/billing/activity/package paths through authenticated purpose-specific adapters, blocks unauthenticated/stale-boolean preloading, and restores individual Auth sessions. The following exact paths remain blockers:
-
-- `createClubPreregistration` / `createClubStudentAccount`: secure create intentionally fails closed until `club_preregister_student_v3` is refactored behind an Auth-operator entry point without the shared Club proof.
-- `updateParentAccount`, `completeParentProfileSetup`, `requestBookingAsParent`, `cancelBookingAsParent`, `completeParentClass`, `requestGroupClass`, and `issueParentClassTimeNonce` / `updateParentClassTime`: these need session-token/Auth-binding wrappers deriving Parent ownership server-side; several still pass a caller-supplied account ID.
-- `/club` does secure password login, session restore, logout, membership verification and the full existing Club view, but MFA enrollment/challenge UI is not wired. Sensitive RPCs reject AAL1 at the database boundary.
-- Package read adapters are present, but activation still requires rollback-catalog execution against a representative local Supabase database and a true two-session concurrency run.
-
-Do not apply the staged closure or enable `NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED` until these blockers are closed and the acceptance transaction passes.
+The additive boundary supports individual Club operator Auth, route-scoped membership verification, MFA, immutable actor audit, verified Parent mutation wrappers, and authenticated Club preregistration. During the transition, `/club` accepts both individual operator accounts and the established shared Club login; the shared path retains its existing reload behavior. Do not apply the separately staged generic-storage closure or revoke the shared login until a later explicitly approved cutover.
 
 ## Final model
 
 `club_admin` and `coach` are the only membership labels. Both labels call the same `rswtta_private.require_operator(...)` predicate and receive the same full Club-operator capabilities: calendar and data reads; create, edit, reschedule, confirm, cancel, complete; student, billing, package, coach/member, invitation, and authentication-account management. A role label never grants or removes a capability. `coach_id` is immutable identity metadata used only for display, scheduling assignment, and affected-coach notification routing.
 
-Each person signs in with an individual Supabase Auth account. The legacy shared Club password is disabled when `NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED=true`; it is retained only behind the off-state zero-downtime compatibility switch. The operator boundary derives identity exclusively from `auth.uid()`.
+Each new operator signs in with an individual Supabase Auth account. While `NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED=true`, the legacy shared Club login remains available as a temporary compatibility path; individual operator authorization and audit derive identity exclusively from `auth.uid()`.
 
 Sensitive member/account, destructive, and financial writes require a JWT with `aal=aal2`. Reads may use AAL1. Authentication-account operations are written to the private `project_auth_account_requests` outbox; a separately deployed trusted worker must claim them with `service_role` and call the Supabase Auth Admin API. It must preserve the request ID and mark the row completed or failed. Browser code never receives an admin key.
 
@@ -30,7 +23,7 @@ Parent legacy sessions remain scoped and available during rollout. Push/inbox fa
 - The final active accepted `club_admin` cannot be suspended or requested for deletion.
 - Advisory locks plus row locks serialize concurrent membership changes; request IDs provide mutation idempotency.
 
-## Activation sequence (not performed by this change)
+## Activation sequence
 
 1. Apply `20260915102000_coach_auth_foundation.sql`, then the additive `20260915113000_trusted_application_boundary.sql`. Do not apply the staged closure.
 2. Provision individual Auth users and exact memberships through a separately approved operator procedure. Start with at least two active accepted Club Admin memberships. Never infer identity from a name and never use the shared password.

@@ -872,25 +872,27 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
   }
 
   async function loginClub(identifier: string, password: string) {
-    if (isTrustedOperatorClientEnabled()) {
-      const login = await supabase.auth.signInWithPassword({ email: identifier.trim().toLowerCase(), password });
-      if (login.error) throw login.error;
-      const membership = await supabase.rpc("app_my_membership");
-      if (membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) {
-        await supabase.auth.signOut();
-        throw new Error("This account does not have active Club operator access.");
-      }
-      await activateVerifiedOperator();
+    const normalizedIdentifier = identifier.trim().toLowerCase();
+    // During the additive transition, the established shared Club login remains
+    // available while individual operator accounts use Supabase Auth.
+    if (normalizedIdentifier === clubEmail) {
+      if (password !== clubPassword) throw new Error("Wrong club login");
+      setClubAuthenticated(true);
+      setLegacyClubProof(password);
+      safeStorageWrite(browserStorage("localStorage"), clubSessionKey, "true");
+      setMode("club");
+      await loadAll();
       return;
     }
-    if (identifier.trim().toLowerCase() !== clubEmail || password !== clubPassword) {
-      throw new Error("Wrong club login");
+    if (!isTrustedOperatorClientEnabled()) throw new Error("Wrong club login");
+    const login = await supabase.auth.signInWithPassword({ email: normalizedIdentifier, password });
+    if (login.error) throw login.error;
+    const membership = await supabase.rpc("app_my_membership");
+    if (membership.error || !Array.isArray(membership.data) || membership.data.length !== 1) {
+      await supabase.auth.signOut();
+      throw new Error("This account does not have active Club operator access.");
     }
-    setClubAuthenticated(true);
-    setLegacyClubProof(password);
-    safeStorageWrite(browserStorage("localStorage"), clubSessionKey, "true");
-    setMode("club");
-    await loadAll();
+    await activateVerifiedOperator();
   }
 
   async function loginUnified(identifier: string, password: string, allowPreregisteredName = false) {
@@ -1480,9 +1482,15 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
       setParentSessionRecovery("recovered");
     }
     const secureOperatorClient = isTrustedOperatorClientEnabled();
-    // A legacy boolean is not authentication proof. Never restore it or preload rows.
-    if (storedClub.value === "true") safeStorageRemove(browserStorage("localStorage"), clubSessionKey);
-    if (secureOperatorClient) {
+    // Preserve the established shared-login reload behavior only during the
+    // explicitly additive transition. The staged closure removes this path later.
+    if (storedClub.value === "true") {
+      setClubAuthenticated(true);
+      setLegacyClubProof(clubPassword);
+      setMode("club");
+      void loadAll();
+    }
+    if (secureOperatorClient && storedClub.value !== "true") {
       supabase.auth.getSession().then(async ({ data }) => {
         if (cancelled || !data.session) return;
         const membership = await supabase.rpc("app_my_membership");
@@ -1591,7 +1599,7 @@ export function ClubApp({ operatorOnly = false }: { operatorOnly?: boolean }) {
               <button
                 className="filter-button"
                 onClick={async () => {
-                  if (isTrustedOperatorClientEnabled()) await supabase.auth.signOut();
+                  if (isTrustedOperatorContextActive()) await supabase.auth.signOut();
                   deactivateTrustedOperatorContext();
                   setOperatorMfaRequired(false);
                   setClubAuthenticated(false);

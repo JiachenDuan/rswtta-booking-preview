@@ -62,10 +62,11 @@ test("auth.uid audit, AAL2, immutable history and lockout are enforced", () => {
   for (const fn of ["public.operator_create_booking", "public.operator_update_booking", "public.operator_cancel_booking", "public.operator_change_membership_status", "public.operator_request_auth_account_action"]) expect(body(fn)).toContain("require_operator(true)");
 });
 
-test("unauthenticated and stale legacy mounts never preload or subscribe", () => {
+test("individual Auth and explicitly retained shared Club sessions stay route-scoped", () => {
   expect(clubClient).not.toContain("if (!secureOperatorClient) loadAll()");
-  expect(clubClient).toContain("A legacy boolean is not authentication proof");
-  expect(clubClient).toContain("if (storedClub.value === \"true\") safeStorageRemove");
+  expect(clubClient).toContain("Preserve the established shared-login reload behavior");
+  expect(clubClient).toContain("if (storedClub.value === \"true\") {");
+  expect(clubClient).toContain("setLegacyClubProof(clubPassword)");
   expect(clubClient).toContain("if (!clubAuthenticated || (!legacyClubProof && !isTrustedOperatorContextActive())) return");
   expect(clubClient).toContain("activateTrustedOperatorContext()");
   expect(operatorContext).toContain("let activeTrustedOperator = false");
@@ -76,6 +77,7 @@ test("unauthenticated and stale legacy mounts never preload or subscribe", () =>
   expect(clubRoute).toContain("<ClubApp operatorOnly />");
   expect(parentRoute).toContain("<ClubApp />");
   expect(operatorConfig).toContain('path === "/club"');
+  expect(operatorConfig).toContain('NEXT_PUBLIC_TRUSTED_OPERATOR_AUTH_ENABLED !== "false"');
   expect(operatorConfig).toContain('typeof window === "undefined"');
 });
 

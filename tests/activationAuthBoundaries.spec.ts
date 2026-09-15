@@ -29,6 +29,9 @@ test("Parent mutations derive ownership from opaque session proof and never acce
 test("trusted routing activates only after membership verification and Parent stays on legacy contracts", () => {
   const login = app.slice(app.indexOf("async function loginClub"), app.indexOf("async function loginUnified"));
   expect(login.indexOf('supabase.rpc("app_my_membership")')).toBeLessThan(login.indexOf("activateVerifiedOperator()"));
+  expect(login).toContain("if (normalizedIdentifier === clubEmail)");
+  expect(login.indexOf("normalizedIdentifier === clubEmail")).toBeLessThan(login.indexOf("signInWithPassword"));
+  expect(login).toContain("safeStorageWrite(browserStorage(\"localStorage\"), clubSessionKey, \"true\")");
   expect(context).toContain("let activeTrustedOperator = false");
   expect(store).toContain("isTrustedOperatorContextActive()");
   expect(store).not.toContain("isTrustedOperatorClientEnabled()");
