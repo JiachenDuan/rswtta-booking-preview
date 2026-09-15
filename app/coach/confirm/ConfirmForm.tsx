@@ -52,10 +52,10 @@ export function ConfirmForm({ code, tokenHash, type }: { code: string; tokenHash
           }));
         }
         if (error) throw error;
+        cleanConfirmationUrl();
 
         const { data, error: userError } = await client.auth.getUser();
         if (userError || !data.user) throw userError ?? new Error("Missing confirmation session");
-        cleanConfirmationUrl();
         setStatus("ready");
       })().catch(() => {
         setMessage(invalidLinkMessage);
