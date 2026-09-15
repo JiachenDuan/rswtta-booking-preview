@@ -85,6 +85,13 @@ test("closure is staged, catalog-specific, and targets replacement contracts", (
   expect(closure).toContain("manage_group_occurrences(uuid,text,text,text,text,text,text,integer,integer,jsonb,text,text,text)");
   expect(closure).toContain("add_student_to_group_occurrences(uuid,text,uuid,text,text,text,integer,jsonb,uuid)");
   expect(closure).toContain("public.operator_list_bookings(integer)");
+  for (const insecure of [
+    "request_booking_as_parent(uuid,text,jsonb)",
+    "cancel_booking_as_parent(uuid,text,jsonb)",
+    "club_preregister_student_v3(text,text,text,uuid,text,text,jsonb,text,boolean)",
+    "add_class_package_hours(uuid,integer,text,text,uuid)",
+    "coach_accept_invitation()"
+  ]) expect(closure).toContain(insecure);
   expect(closure).not.toContain("operator_project_rows");
 });
 

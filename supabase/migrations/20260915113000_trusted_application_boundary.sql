@@ -258,19 +258,19 @@ end $$;
 
 -- Explicit per-family projections. Parent credentials and setup secrets are never projected.
 create or replace function public.operator_list_parent_accounts(p_limit integer default 5000)
-returns table(id uuid,project_table_id uuid,values jsonb,created_at timestamptz,updated_at timestamptz)
+returns table(id uuid,project_table_id uuid,"values" jsonb,created_at timestamptz,updated_at timestamptz)
 language plpgsql stable security definer set search_path=public,rswtta_private,pg_temp as $$
 declare v_actor public.project_auth_memberships%rowtype;
 begin v_actor:=rswtta_private.require_operator(false); if p_limit not between 1 and 10000 then raise exception 'Invalid row limit'; end if;
  return query select r.id,r.project_table_id,jsonb_build_object('preregisteredName',r.values->>'preregisteredName','studentName',r.values->>'studentName','parentName',r.values->>'parentName','email',r.values->>'email','phone',r.values->>'phone','loginAlias',r.values->>'loginAlias','clubPreregistered',coalesce((r.values->>'clubPreregistered')::boolean,false),'confirmed',coalesce((r.values->>'confirmed')::boolean,false),'profileSetupRequired',coalesce((r.values->>'profileSetupRequired')::boolean,false)),r.created_at,r.updated_at from public.project_rows r where r.project_table_id='8236c8f8-0fab-400c-bedc-143fd5930707'::uuid order by r.id limit p_limit; end $$;
 create or replace function public.operator_list_bookings(p_limit integer default 10000)
-returns table(id uuid,project_table_id uuid,values jsonb,created_at timestamptz,updated_at timestamptz)
+returns table(id uuid,project_table_id uuid,"values" jsonb,created_at timestamptz,updated_at timestamptz)
 language plpgsql stable security definer set search_path=public,rswtta_private,pg_temp as $$ declare v_actor public.project_auth_memberships%rowtype; begin v_actor:=rswtta_private.require_operator(false); if p_limit not between 1 and 10000 then raise exception 'Invalid row limit'; end if; return query select r.id,r.project_table_id,r.values,r.created_at,r.updated_at from public.project_rows r where r.project_table_id='a7a8a308-2305-4ab6-ad20-5ce174558035'::uuid order by r.id limit p_limit; end $$;
 create or replace function public.operator_list_bill_notifications(p_limit integer default 5000)
-returns table(id uuid,project_table_id uuid,values jsonb,created_at timestamptz,updated_at timestamptz)
+returns table(id uuid,project_table_id uuid,"values" jsonb,created_at timestamptz,updated_at timestamptz)
 language plpgsql stable security definer set search_path=public,rswtta_private,pg_temp as $$ declare v_actor public.project_auth_memberships%rowtype; begin v_actor:=rswtta_private.require_operator(false); if p_limit not between 1 and 10000 then raise exception 'Invalid row limit'; end if; return query select r.id,r.project_table_id,r.values,r.created_at,r.updated_at from public.project_rows r where r.project_table_id='47f053f4-af24-4e6c-a3ea-984f6bd36943'::uuid order by r.id limit p_limit; end $$;
 create or replace function public.operator_list_activity_logs(p_limit integer default 5000)
-returns table(id uuid,project_table_id uuid,values jsonb,created_at timestamptz,updated_at timestamptz)
+returns table(id uuid,project_table_id uuid,"values" jsonb,created_at timestamptz,updated_at timestamptz)
 language plpgsql stable security definer set search_path=public,rswtta_private,pg_temp as $$ declare v_actor public.project_auth_memberships%rowtype; begin v_actor:=rswtta_private.require_operator(false); if p_limit not between 1 and 10000 then raise exception 'Invalid row limit'; end if; return query select r.id,r.project_table_id,r.values,r.created_at,r.updated_at from public.project_rows r where r.project_table_id='133ad2fa-44b2-4aab-ab5d-b79c563ab908'::uuid order by r.id limit p_limit; end $$;
 
 -- Narrow row-family writes preserve the current table triggers and constraints; there is no caller-selected table.

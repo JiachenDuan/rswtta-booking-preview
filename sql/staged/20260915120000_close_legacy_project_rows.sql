@@ -21,17 +21,25 @@ end $drop_policies$;
 
 -- Legacy anonymous mutations overlap the trusted boundary. These are exact
 -- signatures from the repository catalog and a mismatch aborts application.
+revoke execute on function public.club_preview_student_preregistration(text,text,text,jsonb) from public,anon,authenticated;
+revoke execute on function public.club_preregister_student(text,text,text,uuid,jsonb,text) from public,anon,authenticated;
+revoke execute on function public.club_preregister_student_v2(text,text,text,uuid,jsonb,text) from public,anon,authenticated;
 revoke execute on function public.club_search_students(text,text,text,text) from public,anon,authenticated;
 revoke execute on function public.club_preview_student_preregistration_v2(text,text,text,uuid,jsonb) from public,anon,authenticated;
 revoke execute on function public.club_preregister_student_v3(text,text,text,uuid,text,text,jsonb,text,boolean) from public,anon,authenticated;
 revoke execute on function public.rename_student_account(uuid,jsonb) from public,anon,authenticated;
+revoke execute on function public.request_booking_as_parent(uuid,text,jsonb) from public,anon,authenticated;
+revoke execute on function public.cancel_booking_as_parent(uuid,text,jsonb) from public,anon,authenticated;
 revoke execute on function public.reschedule_booking_occurrences(jsonb,text,text,text) from public,anon,authenticated;
 revoke execute on function public.manage_group_occurrences(uuid,text,text,text,text,text,text,integer,integer,jsonb,text,text,text) from public,anon,authenticated;
 revoke execute on function public.add_student_to_group_occurrences(uuid,text,uuid,text,text,text,integer,jsonb,uuid) from public,anon,authenticated;
 revoke execute on function public.cancel_booking_as_club(uuid) from public,anon,authenticated;
+revoke execute on function public.add_class_package_hours(uuid,integer,text,text,uuid) from public,anon,authenticated;
+revoke execute on function public.list_class_package_balances() from public,anon,authenticated;
 revoke execute on function public.set_class_package_opening(uuid,text,text,integer,integer,bigint,text,text,uuid) from public,anon,authenticated;
 revoke execute on function public.list_class_package_balances_v2() from public,anon,authenticated;
 revoke execute on function public.list_class_package_history(uuid,text) from public,anon,authenticated;
+revoke execute on function public.coach_accept_invitation() from public,anon,authenticated;
 revoke execute on function public.coach_my_schedule(integer) from public,anon,authenticated;
 revoke execute on function public.coach_my_profile() from public,anon,authenticated;
 
