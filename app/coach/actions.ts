@@ -69,7 +69,9 @@ export async function coachConfirmAction(_state: CoachActionState, formData: For
 
     const { error: updateError } = await supabase.auth.updateUser({ password });
     if (updateError) throw updateError;
-    const { error: invitationError } = await supabase.rpc("coach_accept_invitation");
+    const { error: invitationError } = await supabase.rpc("operator_accept_invitation", {
+      p_request_id: crypto.randomUUID()
+    });
     if (invitationError) throw invitationError;
   } catch {
     return { status: "error", message: "This secure link is invalid or expired. Please request a new one. 安全链接无效或已过期，请重新申请。" };

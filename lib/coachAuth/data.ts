@@ -1,6 +1,7 @@
 export type CoachProfile = {
   displayName: string;
   email: string;
+  role: "Club Admin" | "Coach";
 };
 
 export type CoachScheduleItem = {
@@ -28,8 +29,9 @@ function text(source: Record<string, unknown>, keys: string[]): string {
 export function normalizeCoachProfile(value: unknown, fallbackEmail = ""): CoachProfile {
   const source = record(value);
   return {
-    displayName: text(source, ["display_name", "displayName", "name", "coach_name"]) || "Coach",
-    email: text(source, ["email"]) || fallbackEmail
+    displayName: text(source, ["display_name", "displayName", "name", "coach_name"]) || fallbackEmail || "Club operator",
+    email: text(source, ["email"]) || fallbackEmail,
+    role: text(source, ["role"]) === "club_admin" ? "Club Admin" : "Coach"
   };
 }
 
@@ -46,7 +48,7 @@ export function normalizeCoachSchedule(value: unknown): CoachScheduleItem[] {
     return [{
       startsAt,
       endsAt: endsAt && !Number.isNaN(Date.parse(endsAt)) ? endsAt : null,
-      studentName: text(source, ["student_display_name", "student_name", "student_first_name"]) || "Student",
+      studentName: text(source, ["student_display_identifier", "student_display_name", "student_name", "student_first_name"]) || "Student",
       className: text(source, ["program", "class_name", "class_type", "category", "title"]) || "Coaching session",
       location: text(source, ["location_name", "location"]),
       status: text(source, ["status"]) || "scheduled"

@@ -18,11 +18,11 @@ const migration = readFileSync("supabase/migrations/20260915102000_coach_auth_fo
   expect(proxy).toContain("await supabase.auth.getUser()");
  });
 
- test("Coach shell reads only Coach-owned RPC projections", () => {
-  expect(page).toContain('supabase.rpc("coach_my_profile")');
-  expect(page).toContain('supabase.rpc("coach_my_schedule")');
-  expect(actions).toContain('supabase.rpc("coach_accept_invitation")');
-  expect(page).toContain("Coach access is not active");
+ test("Operator shell reads equal-permission RPC projections", () => {
+  expect(page).toContain('supabase.rpc("app_my_membership")');
+  expect(page).toContain('supabase.rpc("operator_calendar")');
+  expect(actions).toContain('supabase.rpc("operator_accept_invitation",');
+  expect(page).toContain("Operator access is not active");
   expect(page).toContain("profileRows.length !== 1");
  });
 
@@ -52,6 +52,6 @@ const migration = readFileSync("supabase/migrations/20260915102000_coach_auth_fo
  });
 
  test("profile normalization exposes only Coach identity", () => {
-  expect(normalizeCoachProfile({ display_name: "Coach Li", phone: "555", role: "admin" }, "li@example.com"))
-    .toEqual({ displayName: "Coach Li", email: "li@example.com" });
+  expect(normalizeCoachProfile({ display_name: "Coach Li", phone: "555", role: "club_admin" }, "li@example.com"))
+    .toEqual({ displayName: "Coach Li", email: "li@example.com", role: "Club Admin" });
  });

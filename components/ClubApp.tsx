@@ -61,6 +61,7 @@ import { createStudentAccountThenPersist } from "@/lib/studentCreation";
 import { newSeriesId, recurrenceIdentity, stableBookingEntityId } from "@/lib/recurrence";
 import { partitionStudentReferencesByIdentity, studentReferenceBelongsToAccount } from "@/lib/studentIdentity";
 import { supabase } from "@/lib/supabase";
+import { isTrustedOperatorClientEnabled } from "@/lib/coachAuth/config";
 import type { ActivityLog, BillNotification, Booking, BookingStatus, ParentAccount } from "@/lib/types";
 import { ClassPackagesPanel } from "@/components/ClassPackagesPanel";
 import { RegisterStudentPanel } from "@/components/RegisterStudentPanel";
@@ -873,6 +874,10 @@ export function ClubApp() {
   }
 
   async function loginClub(identifier: string, password: string) {
+    if (isTrustedOperatorClientEnabled()) {
+      window.location.assign("/coach/login");
+      throw new Error("Use your individual Club operator account");
+    }
     if (identifier.trim().toLowerCase() !== clubEmail || password !== clubPassword) {
       throw new Error("Wrong club login");
     }
@@ -1504,11 +1509,12 @@ export function ClubApp() {
     } else if (setupState.storageFailed || storedClub.failed) {
       setParentSessionRecovery("recovered");
     }
-    if (storedClub.value === "true") {
+    const secureOperatorClient = isTrustedOperatorClientEnabled();
+    if (!secureOperatorClient && storedClub.value === "true") {
       setClubAuthenticated(true);
       setMode("club");
     }
-    loadAll();
+    if (!secureOperatorClient) loadAll();
     const refreshFromPush = () => {
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
       realtimeRefreshTimer.current = window.setTimeout(() => {
@@ -1516,7 +1522,7 @@ export function ClubApp() {
         loadAll();
       }, 250);
     };
-    const realtimeChannel = supabase
+    const realtimeChannel = secureOperatorClient ? null : supabase
       .channel("rswtta-project-rows-push")
       .on("postgres_changes", { event: "*", schema: "public", table: "project_rows" }, refreshFromPush)
       .subscribe();
@@ -1524,7 +1530,7 @@ export function ClubApp() {
     return () => {
       cancelled = true;
       if (realtimeRefreshTimer.current) window.clearTimeout(realtimeRefreshTimer.current);
-      supabase.removeChannel(realtimeChannel);
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel);
       window.clearInterval(clock);
     };
   }, []);

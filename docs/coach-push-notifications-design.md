@@ -1,5 +1,7 @@
 # Coach push notifications — read-only design plan
 
+> Authorization update (2026-09-15): any earlier Coach-own-schedule or Club-Admin-only operational assumption in this historical design is superseded by `docs/club-operator-authorization.md`. Active `club_admin` and `coach` memberships have one identical full Club-operator permission set. Assignment identity remains relevant only to scheduling, display, and targeted push/inbox recipients.
+
 Prepared: 2026-09-15 (America/Los_Angeles)
 
 Scope: design/audit only; no implementation, migration, commit, deployment, or production write was performed.
